@@ -901,9 +901,7 @@ class CodebaseSummarizationEngine:
             "unresolved_imports": await self._check_unresolved_imports(),
             "token_ratio_outliers": await self._check_token_ratios(),
             "manual_spot_check": await self._perform_spot_check()
-        }
-        
-        # Determine if quality gates pass
+        }        # Determine if quality gates pass
         self.quality_gates_passed = all([
             len(quality_metrics["missing_references"]) == 0,
             len(quality_metrics["unresolved_imports"]) == 0,
@@ -917,8 +915,7 @@ class CodebaseSummarizationEngine:
             
     async def _check_missing_references(self) -> List[str]:
         """Check for missing file references"""
-        # Placeholder - would implement reference checking
-        return []
+        # Placeholder - would implement reference checking        return []
         
     async def _check_unresolved_imports(self) -> List[str]:
         """Check for unresolved imports"""
@@ -934,10 +931,17 @@ class CodebaseSummarizationEngine:
         """Perform manual spot check on random 5% of summaries"""
         # Placeholder for manual validation metrics
         return {"files_checked": 0, "issues_found": 0}
-
+        
     async def _prepare_secure_bundle(self, chunks: List[Dict[str, Any]]) -> SummaryBundle:
         """Step 8: Prepare secure transfer bundle"""
         logger.info("Step 8: Preparing secure transfer bundle")
+        
+        # Load quality metrics from file
+        quality_metrics = {}
+        quality_metrics_file = self.output_dir / "quality_metrics.json"
+        if quality_metrics_file.exists():
+            with open(quality_metrics_file, 'r') as f:
+                quality_metrics = json.load(f)
         
         # Create summary bundle
         bundle = SummaryBundle(
@@ -945,7 +949,7 @@ class CodebaseSummarizationEngine:
             global_overview="Repository overview and architecture summary",
             hierarchical_summaries={},
             chunk_manifest=chunks,
-            quality_metrics={},
+            quality_metrics=quality_metrics,
             checksum="",
             created_at=datetime.now(timezone.utc).isoformat(),
             version="1.0.0"
