@@ -14,6 +14,8 @@ import os
 import subprocess
 import tempfile
 import fnmatch
+import re
+import ast
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -900,8 +902,9 @@ class CodebaseSummarizationEngine:
             "missing_references": await self._check_missing_references(),
             "unresolved_imports": await self._check_unresolved_imports(),
             "token_ratio_outliers": await self._check_token_ratios(),
-            "manual_spot_check": await self._perform_spot_check()
-        }        # Determine if quality gates pass
+            "manual_spot_check": await self._perform_spot_check()        }
+        
+        # Determine if quality gates pass
         self.quality_gates_passed = all([
             len(quality_metrics["missing_references"]) == 0,
             len(quality_metrics["unresolved_imports"]) == 0,
@@ -912,25 +915,389 @@ class CodebaseSummarizationEngine:
         
         with open(self.output_dir / "quality_metrics.json", 'w') as f:
             json.dump(quality_metrics, f, indent=2)
+    
+    def _read_file_safely(self, file_path: Path) -> Optional[str]:
+        """Safely read file content with encoding detection"""
+        try:
+            # Try UTF-8 first
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            try:
+                # Fallback to latin-1 for binary files
+                with open(file_path, 'r', encoding='latin-1') as f:
+                    return f.read()
+            except Exception:
+                return None
+        except Exception:
+            return None
+    
+    def _resolve_relative_path(self, current_file: str, relative_ref: str) -> Optional[str]:
+        """Resolve relative path reference"""
+        try:
+            current_dir = Path(current_file).parent
+            resolved = (current_dir / relative_ref).resolve()
+            return str(resolved.relative_to(self.workspace_path.resolve()))
+        except Exception:
+            return None
+    
+    def _resolve_python_relative_import(self, current_file: str, relative_import: str) -> Optional[str]:
+        """Resolve Python relative import to file path"""
+        try:
+            current_dir = Path(current_file).parent
+            
+            # Count leading dots to determine relative level
+            dot_count = len(relative_import) - len(relative_import.lstrip('.'))
+            module_name = relative_import.lstrip('.')
+            
+            # Navigate up the directory tree
+            target_dir = current_dir
+            for _ in range(dot_count - 1):
+                target_dir = target_dir.parent
+                
+            # Convert module path to file path
+            if module_name:
+                module_path = target_dir / module_name.replace('.', '/')
+                # Check for both .py file and __init__.py in directory
+                if (module_path.with_suffix('.py')).exists():
+                    return str(module_path.with_suffix('.py'))
+                elif (module_path / '__init__.py').exists():
+                    return str(module_path / '__init__.py')
+                    
+            return None
+        except Exception:
+            return None
+    
+    def _build_project_module_map(self) -> Dict[str, str]:
+        """Build map of available project modules"""
+        modules = {}
+        
+        for file_path, metadata in self.file_metadata.items():
+            if metadata.language == 'python' and file_path.endswith('.py'):
+                # Convert file path to module name
+                module_path = file_path.replace('/', '.').replace('\\', '.')
+                if module_path.startswith('src.'):
+                    module_path = module_path[4:]  # Remove 'src.' prefix
+                if module_path.endswith('.__init__.py'):
+                    module_path = module_path[:-12]  # Remove '.__init__.py'
+                elif module_path.endswith('.py'):
+                    module_path = module_path[:-3]  # Remove '.py'
+                    
+                modules[module_path] = file_path
+                
+        return modules
+    
+    def _is_import_resolvable(self, module_name: str, file_path: str) -> bool:
+        """Check if a Python import can be resolved"""
+        # Standard library modules (simplified check)
+        stdlib_modules = {
+            'os', 'sys', 'json', 'logging', 'datetime', 'pathlib', 'typing',
+            'collections', 'itertools', 'functools', 'asyncio', 'threading',
+            'multiprocessing', 're', 'hashlib', 'base64', 'urllib', 'http',
+            'socket', 'ssl', 'time', 'math', 'random', 'string', 'io',
+            'subprocess', 'tempfile', 'shutil', 'glob', 'fnmatch', 'csv',
+            'xml', 'html', 'email', 'zipfile', 'tarfile', 'gzip', 'bz2'
+        }
+        
+        if module_name.split('.')[0] in stdlib_modules:
+            return True
+            
+        # Check if it's a relative import within the project
+        if module_name.startswith('.'):
+            return True  # Assume relative imports are valid for now
+            
+        # Common third-party packages - assume they're available
+        common_packages = {
+            'numpy', 'pandas', 'matplotlib', 'seaborn', 'sklearn', 'scipy',
+            'requests', 'urllib3', 'flask', 'django', 'fastapi', 'pydantic',
+            'sqlalchemy', 'psycopg2', 'pymongo', 'redis', 'celery',
+            'pytest', 'unittest', 'mock', 'click', 'argparse',
+            'cryptography', 'jwt', 'passlib', 'bcrypt', 'hashlib',
+            'openai', 'anthropic', 'transformers', 'torch', 'tensorflow'
+        }
+        
+        if module_name.split('.')[0] in common_packages:
+            return True
+            
+        # Check if it's a project module
+        if not module_name.startswith(('src.', 'neuroca.')):
+            return True  # Assume external packages are available
+            
+        # Check if it's a project module
+        potential_paths = [
+            module_name.replace('.', '/') + '.py',
+            module_name.replace('.', '/') + '/__init__.py'
+        ]
+        
+        for path in potential_paths:
+            if (self.workspace_path / path).exists():
+                return True
+                
+        return False
+    
+    def _is_name_in_module(self, name: str, module_content: str) -> bool:
+        """Check if a name is defined in module content"""
+        try:
+            tree = ast.parse(module_content)
+            
+            for node in ast.walk(tree):
+                # Check for function definitions
+                if isinstance(node, ast.FunctionDef) and node.name == name:
+                    return True
+                # Check for class definitions
+                elif isinstance(node, ast.ClassDef) and node.name == name:
+                    return True
+                # Check for variable assignments
+                elif isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id == name:
+                            return True
+                            
+            return False
+        except Exception:
+            return False
             
     async def _check_missing_references(self) -> List[str]:
-        """Check for missing file references"""
-        # Placeholder - would implement reference checking        return []
+        """Check for missing file references and broken links"""
+        logger.info("Checking for missing references in codebase")
+        missing_refs = []
+        
+        try:
+            for file_path, metadata in self.file_metadata.items():
+                full_path = self.workspace_path / file_path
+                if not full_path.exists():
+                    continue
+                    
+                try:
+                    content = self._read_file_safely(full_path)
+                    if content is None:
+                        continue
+                        
+                    # Check for relative file references in content
+                    patterns = [
+                        r"['\"](\./[^'\"]+)['\"]",  # ./path/to/file
+                        r"['\"](\.\./[^'\"]+)['\"]",  # ../path/to/file
+                        r"['\"]([^'\"]*\.(?:py|js|ts|json|yaml|yml|md|txt|csv|xml))['\"]"  # file extensions
+                    ]
+                    
+                    for pattern in patterns:
+                        matches = re.findall(pattern, content)
+                        for ref in matches:
+                            if ref.startswith('./') or ref.startswith('../'):
+                                ref_path = self._resolve_relative_path(file_path, ref)
+                                if ref_path and not (self.workspace_path / ref_path).exists():
+                                    missing_refs.append(f"{file_path}: missing reference '{ref}'")
+                                    
+                    # Check for broken import paths in Python files
+                    if metadata.language == 'python':
+                        import_refs = re.findall(r'from\s+([^\s]+)\s+import', content)
+                        for ref in import_refs:
+                            if ref.startswith('.'):
+                                # Relative import - validate it exists
+                                module_path = self._resolve_python_relative_import(file_path, ref)
+                                if module_path and not (self.workspace_path / module_path).exists():
+                                    missing_refs.append(f"{file_path}: broken relative import '{ref}'")
+                                    
+                except Exception as e:
+                    logger.debug(f"Error checking references in {file_path}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error during reference checking: {e}")
+            
+        return list(set(missing_refs))  # Remove duplicates
         
     async def _check_unresolved_imports(self) -> List[str]:
-        """Check for unresolved imports"""
-        # Placeholder - would implement import resolution checking
-        return []
+        """Check for unresolved imports using AST analysis"""
+        logger.info("Checking for unresolved imports in Python files")
+        unresolved = []
+        
+        try:
+            # Build project module map for validation
+            project_modules = self._build_project_module_map()
+            
+            for file_path, metadata in self.file_metadata.items():
+                if metadata.language == 'python':
+                    full_path = self.workspace_path / file_path
+                    try:
+                        content = self._read_file_safely(full_path)
+                        if not content:
+                            continue
+                            
+                        # Parse AST to find import statements
+                        try:
+                            tree = ast.parse(content)
+                            
+                            for node in ast.walk(tree):
+                                if isinstance(node, ast.Import):
+                                    for alias in node.names:
+                                        if not self._is_import_resolvable(alias.name, file_path):
+                                            unresolved.append(f"{file_path}: unresolved import '{alias.name}'")
+                                            
+                                elif isinstance(node, ast.ImportFrom):
+                                    if node.module:
+                                        if not self._is_import_resolvable(node.module, file_path):
+                                            unresolved.append(f"{file_path}: unresolved from-import '{node.module}'")
+                                        
+                                        # Check specific imports from project modules
+                                        elif node.module in project_modules:
+                                            module_file = self.workspace_path / project_modules[node.module]
+                                            if module_file.exists():
+                                                module_content = self._read_file_safely(module_file)
+                                                if module_content:
+                                                    for imported_name in node.names:
+                                                        if imported_name.name != '*' and not self._is_name_in_module(imported_name.name, module_content):
+                                                            unresolved.append(f"{file_path}: '{imported_name.name}' not found in module '{node.module}'")
+                                            
+                        except SyntaxError:
+                            logger.debug(f"Syntax error in {file_path}, skipping import analysis")
+                        except Exception as e:
+                            logger.debug(f"Error parsing imports in {file_path}: {e}")
+                            
+                    except Exception as e:
+                        logger.debug(f"Error processing {file_path} for import analysis: {e}")
+                        
+        except Exception as e:
+            logger.error(f"Error during import resolution checking: {e}")
+            
+        return unresolved
         
     async def _check_token_ratios(self) -> List[str]:
-        """Check for unusual token count ratios"""
-        # Placeholder - would implement token ratio analysis
-        return []
+        """Check for unusual token count ratios and potential issues"""
+        logger.info("Analyzing token count ratios for outliers")
+        outliers = []
+        
+        try:
+            # Calculate token statistics for all files
+            token_stats = []
+            for file_path, metadata in self.file_metadata.items():
+                if metadata.size_bytes > 0 and metadata.lines_of_code > 0:
+                    # Estimate tokens using multiple methods
+                    estimated_tokens = max(
+                        metadata.size_bytes // 4,  # Rough character-to-token ratio
+                        len(re.findall(r'\b\w+\b', self._read_file_safely(self.workspace_path / file_path) or '')) if file_path.endswith(('.py', '.js', '.ts')) else metadata.size_bytes // 4
+                    )
+                    
+                    token_per_line = estimated_tokens / metadata.lines_of_code
+                    chars_per_token = metadata.size_bytes / max(1, estimated_tokens)
+                    
+                    token_stats.append({
+                        'file': file_path,
+                        'tokens': estimated_tokens,
+                        'token_per_line': token_per_line,
+                        'chars_per_token': chars_per_token,
+                        'size': metadata.size_bytes,
+                        'loc': metadata.lines_of_code
+                    })
+            
+            if not token_stats:
+                return outliers
+                
+            # Calculate averages and thresholds
+            avg_token_per_line = sum(s['token_per_line'] for s in token_stats) / len(token_stats)
+            avg_chars_per_token = sum(s['chars_per_token'] for s in token_stats) / len(token_stats)
+            
+            # Find outliers using statistical analysis
+            for stats in token_stats:
+                issues = []
+                
+                # Check token density anomalies
+                if stats['token_per_line'] > avg_token_per_line * 4:
+                    issues.append("extremely high token density (possible minified code)")
+                elif stats['token_per_line'] < avg_token_per_line * 0.1:
+                    issues.append("unusually low token density")
+                    
+                # Check character-to-token ratio anomalies
+                if stats['chars_per_token'] > avg_chars_per_token * 3:
+                    issues.append("unusually long tokens (possible generated/obfuscated code)")
+                elif stats['chars_per_token'] < avg_chars_per_token * 0.3:
+                    issues.append("unusually short tokens")
+                    
+                # Check for very large files that might impact processing
+                if stats['size'] > 1024 * 1024:  # 1MB
+                    issues.append("very large file size (>1MB)")
+                elif stats['size'] > 500 * 1024:  # 500KB
+                    issues.append("large file size (>500KB)")
+                    
+                # Check for files with extreme line counts
+                if stats['loc'] > 5000:
+                    issues.append("very high line count (>5000 LOC)")
+                elif stats['loc'] < 5 and stats['size'] > 1000:
+                    issues.append("very few lines for file size")
+                    
+                if issues:
+                    outliers.append(f"{stats['file']}: {', '.join(issues)}")
+                    
+        except Exception as e:
+            logger.error(f"Error during token ratio analysis: {e}")
+            
+        return outliers
         
     async def _perform_spot_check(self) -> Dict[str, Any]:
-        """Perform manual spot check on random 5% of summaries"""
-        # Placeholder for manual validation metrics
-        return {"files_checked": 0, "issues_found": 0}
+        """Perform random sampling validation of summaries"""
+        logger.info("Performing spot check validation on random file sample")
+        
+        try:
+            import random
+            
+            # Select random 5% of files (minimum 3, maximum 20)
+            total_files = len(self.file_metadata)
+            sample_size = max(3, min(20, int(total_files * 0.05)))
+            
+            if total_files == 0:
+                return {"files_checked": 0, "issues_found": 0, "details": []}
+                
+            sampled_files = random.sample(list(self.file_metadata.keys()), 
+                                        min(sample_size, total_files))
+            
+            issues_found = 0
+            check_details = []
+            
+            for file_path in sampled_files:
+                metadata = self.file_metadata[file_path]
+                full_path = self.workspace_path / file_path
+                issues = []
+                
+                # Basic validation checks
+                if not full_path.exists():
+                    issues.append("file does not exist")
+                    
+                if metadata.size_bytes == 0 and full_path.exists() and full_path.stat().st_size > 0:
+                    issues.append("metadata size mismatch")
+                    
+                if metadata.language == 'unknown' and file_path.endswith(('.py', '.js', '.ts', '.java')):
+                    issues.append("language detection failure")
+                    
+                if metadata.lines_of_code == 0 and metadata.size_bytes > 100:
+                    issues.append("zero LOC for non-empty file")
+                    
+                # Content validation for text files
+                if full_path.exists() and file_path.endswith(('.py', '.js', '.ts', '.md', '.json')):
+                    try:
+                        content = self._read_file_safely(full_path)
+                        if content:
+                            actual_lines = len(content.splitlines())
+                            if abs(actual_lines - metadata.lines_of_code) > 10:
+                                issues.append(f"LOC mismatch: metadata={metadata.lines_of_code}, actual≈{actual_lines}")
+                    except Exception as e:
+                        issues.append(f"content read error: {str(e)[:50]}")
+                
+                if issues:
+                    issues_found += 1
+                    check_details.append({
+                        "file": file_path,
+                        "issues": issues
+                    })
+                    
+            return {
+                "files_checked": len(sampled_files),
+                "issues_found": issues_found,
+                "sample_rate": f"{len(sampled_files)}/{total_files} ({100*len(sampled_files)/max(1,total_files):.1f}%)",
+                "details": check_details
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during spot check validation: {e}")
+            return {"files_checked": 0, "issues_found": 0, "error": str(e)}
         
     async def _prepare_secure_bundle(self, chunks: List[Dict[str, Any]]) -> SummaryBundle:
         """Step 8: Prepare secure transfer bundle"""
