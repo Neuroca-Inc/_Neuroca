@@ -1,17 +1,19 @@
 """Main API entry point for NeuroCognitive Architecture."""
 
-import logging
 import os
 
 import uvicorn
 from fastapi import FastAPI
 
-# Set up logging
-logging.basicConfig(
-    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO")),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+from neuroca.monitoring.logging import configure_logging, get_logger
+
+# Initialize NeuroCa logging system
+configure_logging(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="json" if os.environ.get("ENVIRONMENT", "development") == "production" else "detailed",
+    output="file" if os.environ.get("ENVIRONMENT", "development") == "production" else "console"
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Create FastAPI app
 app = FastAPI(

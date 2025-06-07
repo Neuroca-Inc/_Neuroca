@@ -17,14 +17,36 @@ class ProjectFileHandler(FileSystemEventHandler):
     def get_component_id(self, file_path):
         try:
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                "SELECT component_id FROM components WHERE ? LIKE '%' || LOWER(component_name) || '%' LIMIT 1", 
-                (file_path.lower(),)
-            )
-            result = cursor.fetchone()
+            
+            # Normalize the file path for comparison
+            file_path_normalized = file_path.replace('\\', '/').lower()
+            
+            # Try to find a component whose current_file_paths contains this file path
+            cursor = conn.execute("""
+                SELECT component_id, current_file_paths 
+                FROM component_usage_analysis 
+                WHERE is_active = TRUE
+            """)
+            
+            for row in cursor.fetchall():
+                component_id, file_paths = row
+                if file_paths:
+                    # Split file paths and check if any match
+                    paths = [p.strip().replace('\\', '/').lower() for p in file_paths.split(',')]
+                    for path in paths:
+                        if path.endswith('/'):  # Directory
+                            if file_path_normalized.startswith(path):
+                                conn.close()
+                                return component_id
+                        else:  # Specific file
+                            if file_path_normalized.endswith(path) or path in file_path_normalized:
+                                conn.close()
+                                return component_id
+            
             conn.close()
-            return result[0] if result else None
-        except:
+            return None
+        except Exception as e:
+            print(f"❌ Error mapping component: {e}")
             return None
         
     def update_database(self, file_path, event_type):
@@ -41,18 +63,9 @@ class ProjectFileHandler(FileSystemEventHandler):
                 (file_path, file_name, event_type, file_size, component_id, is_test)
             )
             
-            # Update current status
-            if os.path.exists(file_path):
-                conn.execute(
-                    "INSERT OR REPLACE INTO current_file_status (file_path, file_name, component_id, current_size_bytes, is_test_file, last_modified) VALUES (?, ?, ?, ?, ?, datetime('now'))",
-                    (file_path, file_name, component_id, file_size, is_test)
-                )
-            else:
-                conn.execute("DELETE FROM current_file_status WHERE file_path = ?", (file_path,))
-            
             conn.commit()
             conn.close()
-            print(f"📊 {datetime.now().strftime('%H:%M:%S')} - {event_type}: {file_path}")
+            print(f"📊 {datetime.now().strftime('%H:%M:%S')} - {event_type}: {file_path} (component_id: {component_id})")
         except Exception as e:
             print(f"❌ Database error: {e}")
     

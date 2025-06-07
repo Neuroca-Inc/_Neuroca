@@ -27,6 +27,7 @@ Dependencies:
 """
 
 import logging
+import os
 import time
 from typing import Callable
 
@@ -49,7 +50,7 @@ from neuroca.core.exceptions import (
 
 # Import health registration and component IDs
 from neuroca.core.health.dynamics import get_health_dynamics, register_component_for_health_tracking
-from neuroca.core.logging import configure_logging
+from neuroca.monitoring.logging import configure_logging, get_logger
 from neuroca.memory.manager import (
     EPISODIC_MEMORY_COMPONENT_ID,
     MEMORY_MANAGER_COMPONENT_ID,
@@ -58,8 +59,12 @@ from neuroca.memory.manager import (
 )
 
 # Configure logging
-logger = logging.getLogger(__name__)
-configure_logging()
+configure_logging(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="json" if os.environ.get("ENVIRONMENT", "development") == "production" else "detailed",
+    output="file" if os.environ.get("ENVIRONMENT", "development") == "production" else "console"
+)
+logger = get_logger(__name__)
 
 # Initialize Sentry for error tracking if configured
 if settings.SENTRY_DSN:

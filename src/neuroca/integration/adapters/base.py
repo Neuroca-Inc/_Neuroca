@@ -56,6 +56,10 @@ class ConfigurationError(AdapterError):
     pass
 
 
+# Backward compatibility alias
+AdapterConfigurationError = ConfigurationError
+
+
 class AuthenticationError(AdapterError):
     """Exception raised for authentication failures with the LLM provider."""
     pass

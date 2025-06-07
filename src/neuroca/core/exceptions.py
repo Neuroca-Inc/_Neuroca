@@ -2,6 +2,7 @@
 Custom exceptions for the NCA system.
 
 This module defines all custom exceptions used throughout the NCA system.
+# Test comment for file watcher component mapping
 """
 
 class NCAError(Exception):
@@ -120,3 +121,17 @@ class ContextLimitExceededError(ContextError):
     def __init__(self, limit_type: str = "general", limit: int = 0, current: int = 0):
         message = f"Context limit exceeded for {limit_type}. Limit: {limit}, Current: {current}"
         super().__init__(message)
+
+
+class BackupRestoreError(NCAError):
+    """Raised when backup or restore operations fail."""
+    
+    def __init__(self, operation: str = "backup/restore", message: str = "Operation failed"):
+        super().__init__(f"{operation.title()} error: {message}")
+
+
+class CLIError(NCAError):
+    """Base exception class for CLI-related errors."""
+    
+    def __init__(self, message: str = "CLI operation failed"):
+        super().__init__(f"CLI error: {message}")

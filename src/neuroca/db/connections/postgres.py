@@ -575,7 +575,7 @@ class AsyncPostgresConnection:
             self._pool = None
             raise ConnectionError(f"Failed to initialize asyncpg connection pool: {str(e)}") from e
     
-    async def _get_connection(self) -> asyncpg.Connection:
+    async def _get_connection(self) -> 'asyncpg.Connection':
         """
         Get a database connection, either from the pool or by creating a new one.
         
@@ -655,7 +655,7 @@ class AsyncPostgresConnection:
         
         raise ConnectionError(error_msg)
     
-    async def _release_connection(self, conn: asyncpg.Connection) -> None:
+    async def _release_connection(self, conn: 'asyncpg.Connection') -> None:
         """
         Release a connection back to the pool or close it if not using pooling.
         
