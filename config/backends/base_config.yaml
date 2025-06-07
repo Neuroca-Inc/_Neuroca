@@ -39,4 +39,4 @@ common:
     collect_detailed_stats: false
 
 # Default backend to use if not specified
-default_backend: "in_memory"
+default_backend: "memory"

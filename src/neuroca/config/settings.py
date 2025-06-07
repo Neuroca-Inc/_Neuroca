@@ -134,7 +134,7 @@ class MemorySettings(BaseSettings):
 
 class DatabaseSettings(BaseSettings):
     """Database connection and configuration settings."""
-    URL: Optional[PostgresDsn] = None
+    URL: Optional[str] = None
     POOL_SIZE: int = 5
     MAX_OVERFLOW: int = 10
     TIMEOUT: int = 30
@@ -151,6 +151,13 @@ class DatabaseSettings(BaseSettings):
         if not v:
             logger.warning("Database URL not configured. Using in-memory database.")
             return None
+        
+        # Basic validation for supported database schemes
+        if v and not any(v.startswith(scheme) for scheme in [
+            'sqlite:', 'postgresql:', 'postgres:', 'mysql:', 'oracle:', 'mssql:'
+        ]):
+            logger.warning(f"Unrecognized database URL scheme: {v}. Proceeding anyway.")
+        
         return v
     
     model_config = ConfigDict(

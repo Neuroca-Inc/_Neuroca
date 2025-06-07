@@ -72,7 +72,7 @@ class MemoryFactoryAdapter:
         
         # Map legacy backend types to new BackendType enum
         if backend_type == "in_memory":
-            backend_type_enum = BackendType.IN_MEMORY
+            backend_type_enum = BackendType.MEMORY
         else:
             raise ValueError(f"Unsupported backend type: {backend_type}")
         

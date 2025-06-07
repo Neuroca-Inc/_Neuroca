@@ -23,7 +23,7 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    logger.warning("Redis backend not available. Install aioredis for Redis support.")
+    logger.warning("Redis backend not available. Install redis for Redis support.")
 from neuroca.memory.backends.sql_backend import SQLBackend
 from neuroca.memory.backends.vector_backend import VectorBackend
 from neuroca.memory.exceptions import ConfigurationError
@@ -198,18 +198,28 @@ class StorageBackendFactory:
         Returns:
             The default backend type for the tier
         """
+        import os
+        env = os.environ.get("NEUROCA_ENV", "development")
+        
         if tier == MemoryTier.STM:
-            return BackendType.MEMORY  # In-memory for STM
-        elif tier == MemoryTier.MTM:
-            return BackendType.MEMORY  # In-memory for MTM (would be REDIS in production)
-        elif tier == MemoryTier.LTM:
-            # Use SQL backend for LTM in production
-            # For development or testing, this can be overridden with an explicit backend_type
-            import os
-            env = os.environ.get("NEUROCA_ENV", "development")
+            # STM: Fast access for working memory
             if env in ("production", "staging"):
-                return BackendType.SQL  # SQLite for LTM in production
+                return BackendType.REDIS if REDIS_AVAILABLE else BackendType.MEMORY
             else:
-                return BackendType.MEMORY  # In-memory for development/testing
+                return BackendType.MEMORY  # Development/testing
+                
+        elif tier == MemoryTier.MTM:
+            # MTM: Structured storage for medium-term memory
+            if env in ("production", "staging"):
+                return BackendType.SQLITE  # Persistent structured storage
+            else:
+                return BackendType.MEMORY  # Development/testing
+                
+        elif tier == MemoryTier.LTM:
+            # LTM: Long-term semantic storage
+            if env in ("production", "staging"):
+                return BackendType.SQL  # Full SQL backend for complex queries
+            else:
+                return BackendType.SQLITE  # SQLite for development
         else:
-            return BackendType.MEMORY  # Default to in-memory
+            return BackendType.MEMORY  # Default fallback

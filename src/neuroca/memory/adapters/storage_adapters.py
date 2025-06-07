@@ -45,7 +45,7 @@ class LegacyLTMStorageAdapter:
     
     def __init__(
         self,
-        backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+        backend_type: Union[str, BackendType] = BackendType.MEMORY,
         backend_config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -449,7 +449,7 @@ class LegacySTMStorageAdapter:
     
     def __init__(
         self,
-        backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+        backend_type: Union[str, BackendType] = BackendType.MEMORY,
         backend_config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -523,7 +523,7 @@ class LegacyMTMStorageAdapter:
     
     def __init__(
         self,
-        backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+        backend_type: Union[str, BackendType] = BackendType.MEMORY,
         backend_config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -589,7 +589,7 @@ class LegacyMTMStorageAdapter:
 
 async def store_memory(
     memory_item: Any,
-    backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+    backend_type: Union[str, BackendType] = BackendType.MEMORY,
     backend_config: Optional[Dict[str, Any]] = None
 ) -> str:
     """
@@ -612,7 +612,7 @@ async def store_memory(
 
 async def retrieve_memory(
     memory_id: str,
-    backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+    backend_type: Union[str, BackendType] = BackendType.MEMORY,
     backend_config: Optional[Dict[str, Any]] = None
 ) -> Optional[Any]:
     """
@@ -635,7 +635,7 @@ async def retrieve_memory(
 
 async def update_memory(
     memory_item: Any,
-    backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+    backend_type: Union[str, BackendType] = BackendType.MEMORY,
     backend_config: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
@@ -658,7 +658,7 @@ async def update_memory(
 
 async def delete_memory(
     memory_id: str,
-    backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+    backend_type: Union[str, BackendType] = BackendType.MEMORY,
     backend_config: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
@@ -684,7 +684,7 @@ async def search_memories(
     filters: Optional[Dict[str, Any]] = None,
     limit: int = 10,
     offset: int = 0,
-    backend_type: Union[str, BackendType] = BackendType.IN_MEMORY,
+    backend_type: Union[str, BackendType] = BackendType.MEMORY,
     backend_config: Optional[Dict[str, Any]] = None
 ) -> List[Any]:
     """

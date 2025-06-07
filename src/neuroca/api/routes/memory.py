@@ -23,23 +23,23 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
 
-from neuroca.api.auth.dependencies import get_current_user
-from neuroca.api.models.memory import (
-    MemoryCreate,
-    MemoryResponse,
-    MemorySearchParams,
+from neuroca.api.middleware.authentication import authenticate_request
+from neuroca.api.schemas.memory import (
+    BaseMemory,
+    MemoryQuery,
+    MemoryOperationResponse,
     MemoryTier,
-    MemoryUpdate,
+    MemoryUpdateRequest,
+    AnyMemory,
 )
-from neuroca.api.models.user import User
+from neuroca.memory.service import User, MemoryResponse, MemorySearchParams, MemoryService
 from neuroca.core.exceptions import (
     MemoryAccessDeniedError,
     MemoryNotFoundError,
     MemoryStorageError,
     MemoryTierFullError,
 )
-from neuroca.core.logging import get_logger
-from neuroca.memory.service import MemoryService
+import logging
 
 # Initialize router with prefix and tags for OpenAPI documentation
 router = APIRouter(
@@ -54,7 +54,7 @@ router = APIRouter(
 )
 
 # Initialize logger
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Dependency to get memory service
 async def get_memory_service() -> MemoryService:
@@ -69,8 +69,8 @@ async def get_memory_service() -> MemoryService:
     description="Creates a new memory in the specified memory tier."
 )
 async def create_memory(
-    memory: MemoryCreate = Body(..., description="Memory data to create"),
-    current_user: User = Depends(get_current_user),
+    memory: dict = Body(..., description="Memory data to create"),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> MemoryResponse:
     """
@@ -87,11 +87,11 @@ async def create_memory(
     Raises:
         HTTPException: If the memory creation fails or validation errors occur
     """
-    logger.debug(f"User {current_user.id} creating memory in {memory.tier} tier")
+    logger.debug(f"User {current_user.id} creating memory in {memory.get('tier', 'working')} tier")
     
     try:
         # Associate the memory with the current user
-        memory_with_user = memory.dict()
+        memory_with_user = memory.copy()
         memory_with_user["user_id"] = current_user.id
         
         # Create the memory using the service
@@ -127,7 +127,7 @@ async def create_memory(
 )
 async def get_memory(
     memory_id: UUID = Path(..., description="The ID of the memory to retrieve"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> MemoryResponse:
     """
@@ -188,7 +188,7 @@ async def list_memories(
     tags: Optional[list[str]] = Query(None, description="Filter by tags"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of memories to return"),
     offset: int = Query(0, ge=0, description="Number of memories to skip"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> list[MemoryResponse]:
     """
@@ -241,8 +241,8 @@ async def list_memories(
 )
 async def update_memory(
     memory_id: UUID = Path(..., description="The ID of the memory to update"),
-    memory_update: MemoryUpdate = Body(..., description="Updated memory data"),
-    current_user: User = Depends(get_current_user),
+    memory_update: dict = Body(..., description="Updated memory data"),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> MemoryResponse:
     """
@@ -271,7 +271,7 @@ async def update_memory(
             raise MemoryAccessDeniedError("You don't have permission to update this memory")
         
         # Update the memory
-        updated_memory = await memory_service.update_memory(memory_id, memory_update.dict(exclude_unset=True))
+        updated_memory = await memory_service.update_memory(memory_id, memory_update)
         
         logger.info(f"Memory {memory_id} updated successfully")
         return updated_memory
@@ -309,7 +309,7 @@ async def update_memory(
 )
 async def delete_memory(
     memory_id: UUID = Path(..., description="The ID of the memory to delete"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ):
     """
@@ -370,7 +370,7 @@ async def delete_memory(
 async def transfer_memory(
     memory_id: UUID = Body(..., description="The ID of the memory to transfer"),
     target_tier: MemoryTier = Body(..., description="The target memory tier"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> MemoryResponse:
     """
@@ -450,7 +450,7 @@ async def consolidate_memories(
     memory_ids: list[UUID] = Body(..., description="List of memory IDs to consolidate"),
     summary: str = Body(..., description="Summary of the consolidated memory"),
     tags: Optional[list[str]] = Body(None, description="Tags for the consolidated memory"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> list[MemoryResponse]:
     """
@@ -529,7 +529,7 @@ async def consolidate_memories(
     description="Retrieves statistics about the user's memory usage across tiers."
 )
 async def get_memory_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> dict[str, Any]:
     """
@@ -566,7 +566,7 @@ async def get_memory_stats(
     description="Performs a health check on the memory system."
 )
 async def memory_health_check(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service)
 ) -> JSONResponse:
     """
