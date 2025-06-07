@@ -325,6 +325,29 @@ class WorkingMemoryBuffer(BaseModel):
             for item in top_items
         ]
     
+    def get_most_relevant_items(self, max_items: int) -> List[WorkingMemoryItem]:
+        """
+        Get the most relevant items from the buffer.
+        
+        This is an alias for get_top_items() for compatibility with MemoryManager.
+        
+        Args:
+            max_items: Maximum number of items to return
+            
+        Returns:
+            List of the most relevant items
+        """
+        return self.get_top_items(max_items=max_items)
+    
+    def __len__(self) -> int:
+        """Return the number of items in the buffer."""
+        return len(self.items)
+    
+    @property
+    def capacity(self) -> int:
+        """Get the maximum capacity of the buffer."""
+        return self.max_size
+    
     def _remove_least_relevant(self) -> None:
         """Remove the least relevant item from the buffer."""
         if not self.items:

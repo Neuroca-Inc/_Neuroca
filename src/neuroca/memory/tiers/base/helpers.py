@@ -49,6 +49,7 @@ class MemoryItemCreator:
         memory_id: str,
         content: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        tier_name: Optional[str] = None,
         **kwargs
     ) -> MemoryItem:
         """
@@ -58,6 +59,7 @@ class MemoryItemCreator:
             memory_id: The ID for the memory
             content: Memory content
             metadata: Optional metadata
+            tier_name: Optional tier name (important for proper search filtering)
             **kwargs: Additional parameters for memory creation
             
         Returns:
@@ -68,22 +70,27 @@ class MemoryItemCreator:
         importance = kwargs.get("importance", 0.5)
         strength = kwargs.get("strength", 1.0)
         
+        # Build metadata with tier information
+        memory_metadata = {
+            "importance": importance,
+            "strength": strength,
+            "tags": metadata or {},
+            "status": MemoryStatus.ACTIVE,
+            "created_at": now,
+            "updated_at": now,
+            "access_count": 0,
+        }
+        
+        # Set tier if provided - this is crucial for search filters to work
+        if tier_name:
+            memory_metadata["tier"] = tier_name
+        
+        # Don't override content structure - use it as provided
+        # The content should already be properly structured by the caller
         item = MemoryItem(
             id=memory_id,
-            content={
-                "data": content,
-                "created_at": now,
-                "updated_at": now,
-            },
-            metadata={
-                "importance": importance,
-                "strength": strength,
-                "tags": metadata or {},
-                "status": MemoryStatus.ACTIVE,
-                "created_at": now,
-                "updated_at": now,
-                "access_count": 0,
-            },
+            content=content,
+            metadata=memory_metadata,
         )
         
         return item

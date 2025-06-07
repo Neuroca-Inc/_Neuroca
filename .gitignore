@@ -213,3 +213,7 @@ benchmark_sandbox/run_benchmarks.py
 reports/dependency-report.html
 reports/plutonium-icon.png
 reports/unified_analysis.html
+
+
+#Ignore vscode AI rules
+.github\copilot-instructions.md

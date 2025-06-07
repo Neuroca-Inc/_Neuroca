@@ -35,7 +35,8 @@ class TierSearcher:
         """
         combined_filters = {}
         
-        # Add tier-specific filters
+        # Add tier-specific filters to ensure data integrity
+        # Note: These filters are important for proper tier separation
         tier_filter = {"metadata.tier": tier_name}
         
         # Only include active memories by default

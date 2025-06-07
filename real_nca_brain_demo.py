@@ -30,7 +30,7 @@ async def demo_real_nca_brain():
         # Create and initialize the memory manager
         print("\n🔧 Initializing NCA Memory System...")
         memory_manager = MemoryManager(
-            backend_type=BackendType.IN_MEMORY,  # Use in-memory backend for demo
+            backend_type=BackendType.MEMORY,  # Use in-memory backend for demo
             config={
                 "stm": {"capacity": 100},
                 "mtm": {"capacity": 500}, 
@@ -195,7 +195,7 @@ async def demo_llm_integration():
         class NCAEnhancedLLM:
             def __init__(self):
                 self.memory_manager = MemoryManager(
-                    backend_type=BackendType.IN_MEMORY,
+                    backend_type=BackendType.MEMORY,
                     config={"maintenance_interval": 0}
                 )
                 self.conversation_history = []

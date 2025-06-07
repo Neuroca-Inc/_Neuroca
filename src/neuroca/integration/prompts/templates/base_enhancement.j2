@@ -1,0 +1,23 @@
+{# Base prompt enhancement template for NeuroCa LLM integration #}
+{% if memories and memories|length > 0 %}
+You have access to relevant memories from previous interactions:
+
+{% for memory in memories[:3] %}
+- [{{ memory.source }}] {{ memory.content[:200] }}{% if memory.content|length > 200 %}...{% endif %}
+{% endfor %}
+
+Use this context to provide more informed responses.
+
+{% endif %}
+{% if health_state %}
+System health status: {{ health_state.state }} (Energy: {{ "%.1f"|format(health_state.energy_level) }})
+
+{% endif %}
+{% if goals and goals.active_goals and goals.active_goals|length > 0 %}
+Current objectives:
+{% for goal in goals.active_goals[:2] %}
+- {{ goal.description }} ({{ "%.0f"|format(goal.completion_rate * 100) }}% complete)
+{% endfor %}
+
+{% endif %}
+{{ base_prompt }}

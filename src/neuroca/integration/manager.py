@@ -26,6 +26,7 @@ from .adapters import AnthropicAdapter, OpenAIAdapter, VertexAIAdapter
 from .adapters import (  # Import necessary adapter classes
     BaseAdapter as LLMAdapter,  # Assuming BaseAdapter is the intended type for LLMAdapter
 )
+from .adapters.base import ConfigurationError  # Fix the import error
 from .context.manager import ContextManager
 from .exceptions import LLMIntegrationError, ProviderNotFoundError
 from .models import LLMRequest, LLMResponse
@@ -64,7 +65,13 @@ class LLMIntegrationManager:
         self.health_manager = health_manager
         self.goal_manager = goal_manager
         self.context_manager = ContextManager()
-        self.template_manager = TemplateManager(template_dirs=config.get("prompt_template_dirs")) # Instantiate TemplateManager
+        # Get the templates directory relative to this file
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        templates_dir = os.path.join(current_dir, "prompts", "templates")
+        template_dirs = config.get("prompt_template_dirs", [templates_dir])
+        
+        self.template_manager = TemplateManager(template_dirs=template_dirs)
         
         # Initialize adapters for different providers
         self.adapters: dict[str, LLMAdapter] = {}
@@ -297,9 +304,9 @@ class LLMIntegrationManager:
                 "timestamp": time.time()
             }
             
-            await self.memory_manager.store(
+            await self.memory_manager.add_memory(
                 content=memory_entry,
-                memory_type="episodic",
+                importance=0.5,
                 tags=["llm_interaction"]
             )
             
@@ -330,55 +337,41 @@ class LLMIntegrationManager:
         if not self.memory_manager:
             return []
             
-        # First check working memory for most relevant context
-        working_results = await self.memory_manager.retrieve(
-            query=query,
-            memory_type="working",
-            limit=3
-        )
-        
-        # Then check episodic memory
-        episodic_results = await self.memory_manager.retrieve(
-            query=query,
-            memory_type="episodic",
-            limit=5
-        )
-        
-        # Finally check semantic memory for factual knowledge
-        semantic_results = await self.memory_manager.retrieve(
-            query=query,
-            memory_type="semantic",
-            limit=3
-        )
-        
-        # Combine and format results
-        all_results = []
-        
-        for result in working_results:
-            all_results.append({
-                "content": result.content,
-                "source": "working_memory",
-                "relevance": result.relevance if hasattr(result, "relevance") else 1.0
-            })
+        try:
+            # Use the correct MemoryManager API to search for relevant memories
+            search_results = await self.memory_manager.search_memories(
+                query=query,
+                limit=10,
+                min_relevance=0.3,
+                tiers=["stm", "mtm", "ltm"]  # Search all tiers
+            )
             
-        for result in episodic_results:
-            all_results.append({
-                "content": result.content,
-                "source": "episodic_memory",
-                "relevance": result.relevance if hasattr(result, "relevance") else 0.8
-            })
+            # Format results for prompt context
+            all_results = []
             
-        for result in semantic_results:
-            all_results.append({
-                "content": result.content,
-                "source": "semantic_memory",
-                "relevance": result.relevance if hasattr(result, "relevance") else 0.7
-            })
+            for result in search_results:
+                # Extract content from the search result
+                content_text = ""
+                content_data = result.get("content", {})
+                if isinstance(content_data, dict):
+                    content_text = content_data.get("text", "") or str(content_data.get("data", ""))
+                else:
+                    content_text = str(content_data)
+                
+                all_results.append({
+                    "content": content_text,
+                    "source": result.get("tier", "unknown") + "_memory",
+                    "relevance": result.get("_relevance", 0.5)
+                })
             
-        # Sort by relevance
-        all_results.sort(key=lambda x: x["relevance"], reverse=True)
-        
-        return all_results  # noqa: RET504 - Variable used for building list before return
+            # Sort by relevance (already sorted by search_memories, but ensuring)
+            all_results.sort(key=lambda x: x["relevance"], reverse=True)
+            
+            return all_results
+            
+        except Exception as e:
+            logger.warning(f"Failed to retrieve memories: {e}")
+            return []
         
     async def _get_health_context(self) -> dict[str, Any]:
         """

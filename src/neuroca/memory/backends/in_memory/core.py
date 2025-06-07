@@ -144,7 +144,7 @@ class InMemoryBackend(BaseStorageBackend):
         # Use the renamed component
         stats_obj = await self._in_memory_stats_component.get_stats()
         # Convert StorageStats to a dictionary
-        return stats_obj.model_dump() if hasattr(stats_obj, "model_dump") else {"items_count": self.storage.count()}
+        return stats_obj.model_dump() if hasattr(stats_obj, "model_dump") else {"items_count": self.storage.count_items()}
     
     # Additional required abstract methods
     async def _create_item(self, item_id: str, data: Dict[str, Any]) -> bool:
@@ -191,7 +191,7 @@ class InMemoryBackend(BaseStorageBackend):
         if query:
             return await self.search.count_items(filters=query)
         else:
-            return self.storage.count()
+            return self.storage.count_items()
     
     async def _clear_all_items(self) -> bool:
         """Clear all items from storage."""
@@ -375,7 +375,7 @@ class InMemoryBackend(BaseStorageBackend):
             if filters:
                 return await self.search.count_items(filters=filters)
             else:
-                return self.storage.count()
+                return self.storage.count_items()
         except Exception as e:
             error_msg = f"Failed to count items: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -409,7 +409,7 @@ class InMemoryBackend(BaseStorageBackend):
             if hasattr(stats_obj, "model_dump"):
                 return stats_obj.model_dump()
             return {
-                "items_count": self.storage.count(),
+                "items_count": self.storage.count_items(),
                 "backend_type": "InMemoryBackend",
                 "timestamp": datetime.now()
             }

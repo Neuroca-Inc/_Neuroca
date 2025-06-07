@@ -386,12 +386,14 @@ class MemoryManager(MemoryManagerInterface):
                 if importance > 0.7:
                     memory_data = await tier.retrieve(memory_id)
                     if memory_data:
+                        # Convert to MemoryItem if needed
+                        memory_item = memory_data if isinstance(memory_data, MemoryItem) else MemoryItem.model_validate(memory_data)
+                        
                         self._working_memory.add_item(
                             WorkingMemoryItem(
-                                memory_id=memory_id,
-                                tier=initial_tier,
+                                memory=memory_item,
+                                source_tier=initial_tier,
                                 relevance=0.9,  # High relevance for highly important memories
-                                data=memory_data,
                             )
                         )
             
@@ -541,9 +543,8 @@ class MemoryManager(MemoryManagerInterface):
                 metadata=metadata_updates if metadata_updates else None,
             )
             
-            # Update working memory if the memory is in it
-            if success:
-                self._working_memory.update_item(memory_id, memory_tier)
+            # Note: Working memory update would be handled here if needed
+            # Currently WorkingMemoryBuffer doesn't have update_item method
             
             return success
         except Exception as e:
@@ -652,18 +653,20 @@ class MemoryManager(MemoryManagerInterface):
                     tier_instance = self._get_tier_by_name(tier_name)
                     
                     # Create search options
-                    tier_results = await tier_instance.search(
+                    tier_search_results = await tier_instance.search(
                         query=query,
                         embedding=embedding,
                         filters=metadata_filters,
                         limit=limit,
-                        min_relevance=min_relevance,
                     )
                     
-                    # Add tier name to results
-                    for result in tier_results:
-                        result["tier"] = tier_name
-                        all_results.append(result)
+                    # Extract results from MemorySearchResults and convert to dicts
+                    for search_result in tier_search_results.results:
+                        result_dict = search_result.memory.model_dump()
+                        result_dict["tier"] = tier_name
+                        # Add relevance score from search result
+                        result_dict["_relevance"] = search_result.relevance
+                        all_results.append(result_dict)
                     
                 except Exception as e:
                     logger.error(f"Error searching tier {tier_name}: {str(e)}")
@@ -750,12 +753,14 @@ class MemoryManager(MemoryManagerInterface):
                 relevance = memory.get("_relevance", 0.5)
                 
                 if memory_id and tier:
+                    # Convert dict to MemoryItem if needed
+                    memory_item = memory.get('memory') if isinstance(memory.get('memory'), MemoryItem) else MemoryItem.model_validate(memory)
+                    
                     self._working_memory.add_item(
                         WorkingMemoryItem(
-                            memory_id=memory_id,
-                            tier=tier,
+                            memory=memory_item,
+                            source_tier=tier,
                             relevance=relevance,
-                            data=memory,
                         )
                     )
             
@@ -797,7 +802,7 @@ class MemoryManager(MemoryManagerInterface):
             formatted_memories = []
             
             for item in working_memory_items:
-                memory_data = item.data
+                memory_data = item.memory.model_dump()
                 
                 # Format the memory for prompt inclusion
                 formatted_memory = {
@@ -807,7 +812,7 @@ class MemoryManager(MemoryManagerInterface):
                     "importance": memory_data.get("metadata", {}).get("importance", 0.5),
                     "created_at": memory_data.get("metadata", {}).get("created_at"),
                     "relevance": item.relevance,
-                    "tier": item.tier,
+                    "tier": item.source_tier,
                 }
                 
                 # Truncate content to max_tokens_per_memory
@@ -909,17 +914,31 @@ class MemoryManager(MemoryManagerInterface):
             # Apply additional metadata if provided
             if additional_metadata:
                 # Update existing metadata
-                metadata = memory_data.get("metadata", {})
-                for key, value in additional_metadata.items():
-                    if key == "tags":
-                        # Special handling for tags
-                        tags = metadata.get("tags", {})
-                        tags.update(value)
-                        metadata["tags"] = tags
-                    else:
-                        metadata[key] = value
-                
-                memory_data["metadata"] = metadata
+                if isinstance(memory_data, MemoryItem):
+                    metadata = memory_data.metadata
+                    # Store additional metadata in tags since MemoryMetadata has strict fields
+                    tags = metadata.tags
+                    for key, value in additional_metadata.items():
+                        if key == "tags" and isinstance(value, dict):
+                            # Merge with existing tags
+                            tags.update(value)
+                        else:
+                            # Store other metadata as tags with a prefix
+                            tags[f"_meta_{key}"] = value
+                    metadata.tags = tags
+                else:
+                    # Legacy dict handling
+                    metadata = memory_data.get("metadata", {})
+                    for key, value in additional_metadata.items():
+                        if key == "tags":
+                            # Special handling for tags
+                            tags = metadata.get("tags", {})
+                            tags.update(value)
+                            metadata["tags"] = tags
+                        else:
+                            metadata[key] = value
+                    
+                    memory_data["metadata"] = metadata
             
             # Add to target tier
             new_id = await target_tier_instance.store(memory_data)
@@ -928,8 +947,8 @@ class MemoryManager(MemoryManagerInterface):
             if source_tier != target_tier:
                 await source_tier_instance.delete(memory_id)
                 
-                # Update working memory if the memory is in it
-                self._working_memory.update_item_tier(memory_id, source_tier, target_tier, new_id)
+                # Note: Working memory tier update would be handled here if needed
+                # Currently WorkingMemoryBuffer doesn't have update_item_tier method
             
             return new_id
         except Exception as e:

@@ -38,6 +38,7 @@ class TierStatsManager:
             "update_count": 0,
             "delete_count": 0,
             "search_count": 0,
+            "access_count": 0,
         }
     
     @staticmethod

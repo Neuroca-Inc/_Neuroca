@@ -194,13 +194,18 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
             if isinstance(content, MemoryItem):
                 memory_item = content
                 memory_id = memory_item.id
+            elif isinstance(content, dict) and "content" in content and "metadata" in content:
+                # Content is a serialized MemoryItem (from model_dump())
+                memory_item = MemoryItem.model_validate(content)
+                memory_id = memory_item.id
             else:
+                # Content is raw data - create new MemoryItem
                 # Generate memory ID if not provided
                 if memory_id is None:
                     memory_id = self._id_generator.generate(content)
                 
                 # Create memory item from content and metadata
-                memory_item = self._item_creator.create(memory_id, content, metadata)
+                memory_item = self._item_creator.create(memory_id, content, metadata, tier_name=self._tier_name)
             
             # Apply tier-specific behavior before storage
             await self._pre_store(memory_item)
@@ -270,7 +275,7 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
                         memory_ids[i] = self._id_generator.generate(memory)
                     
                     # Create memory item
-                    memory_item = self._item_creator.create(memory_ids[i], memory)
+                    memory_item = self._item_creator.create(memory_ids[i], memory, tier_name=self._tier_name)
                 else:
                     memory_item = memory
                     if memory_ids[i]:
@@ -375,7 +380,20 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
             
             # Update content if provided
             if content is not None:
-                memory_item.content.data = content
+                # Handle different content types
+                if isinstance(content, str):
+                    memory_item.content.text = content
+                elif isinstance(content, dict):
+                    # If content is a dict, update the relevant fields
+                    if 'text' in content:
+                        memory_item.content.text = content['text']
+                    if 'summary' in content:
+                        memory_item.content.summary = content['summary']
+                    if 'json_data' in content:
+                        memory_item.content.json_data = content['json_data']
+                else:
+                    # Convert other types to string
+                    memory_item.content.text = str(content)
             
             # Update metadata if provided
             if metadata is not None:
@@ -521,11 +539,23 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
             # Reconstruct MemorySearchOptions if needed, or pass None/defaults
             search_options = MemorySearchOptions(query=query, filters=filters, limit=limit, offset=offset)
 
+            # Create MemorySearchResult objects with proper structure
+            search_results = []
+            for i, memory_item in enumerate(memory_items):
+                from neuroca.memory.models.search import MemorySearchResult
+                search_result = MemorySearchResult(
+                    memory=memory_item,
+                    relevance=1.0,  # Default relevance, could be improved
+                    tier=self._tier_name,
+                    rank=i + 1
+                )
+                search_results.append(search_result)
+
             return MemorySearchResults(
-                items=memory_items,
+                results=search_results,
                 total_count=total_count,
                 options=search_options,
-                query=query # Keep original query string
+                query=query
             )
         except Exception as e:
             logger.exception(f"Failed to search memories in {self._tier_name} tier")
@@ -603,6 +633,40 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
     # Tier-Specific Operations
     #-----------------------------------------------------------------------
     
+    async def access(self, memory_id: str) -> Optional[MemoryItem]:
+        """
+        Access a memory, which retrieves it and marks it as accessed.
+        
+        Args:
+            memory_id: The ID of the memory to access
+            
+        Returns:
+            The MemoryItem object if found, None otherwise
+            
+        Raises:
+            TierOperationError: If the access operation fails
+        """
+        self._ensure_initialized()
+        TierStatsManager.update_operation_stats(self._stats, "access_count")
+        
+        try:
+            # Retrieve the memory
+            memory_item = await self.retrieve(memory_id)
+            if memory_item is None:
+                return None
+            
+            # Mark as accessed (this will update access count and timestamp)
+            await self.mark_accessed(memory_id)
+            
+            return memory_item
+        except Exception as e:
+            logger.exception(f"Failed to access memory {memory_id} in {self._tier_name} tier")
+            raise TierOperationError(
+                operation="access",
+                tier_name=self._tier_name,
+                message=f"Failed to access memory: {str(e)}"
+            ) from e
+
     async def mark_accessed(self, memory_id: str) -> bool:
         """
         Mark a memory as accessed, updating its access metrics.
