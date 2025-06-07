@@ -41,6 +41,16 @@ __version__ = "0.1.0"
 __author__ = "NeuroCognitive Architecture Team"
 __license__ = "MIT"
 
+# Define exception classes first
+class CLIError(Exception):
+    """Base exception class for CLI-related errors."""
+    pass
+
+
+class ConfigurationError(CLIError):
+    """Exception raised for configuration-related errors."""
+    pass
+
 # Import CLI components to make them available at the package level
 # F401 Fix: Removed unused imports that were only intended to expose submodules
 try:
@@ -48,7 +58,6 @@ try:
     # but avoid importing specific unused names here.
     from . import (
         commands,  # Example if commands module itself is needed
-        exceptions,  # Example if exceptions module itself is needed
         utils,  # Example if utils module itself is needed
     )
     pass # Keep try-except structure if needed for graceful handling
@@ -188,20 +197,12 @@ __all__ = [
     "__version__",
     "__author__",
     "__license__",
+    "CLIError",
+    "ConfigurationError",
     # Command modules that will be implemented
     "commands",
     "utils",
     "exceptions",
 ]
-
-# Define a custom exception class for CLI errors
-class CLIError(Exception):
-    """Base exception class for CLI-related errors."""
-    pass
-
-
-class ConfigurationError(CLIError):
-    """Exception raised for configuration-related errors."""
-    pass
 
 """CLI module for NeuroCognitive Architecture."""

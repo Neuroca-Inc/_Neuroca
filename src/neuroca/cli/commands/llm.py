@@ -23,11 +23,29 @@ import typer
 import yaml
 from rich.console import Console
 
-from neuroca.core.cognitive_control.goal_manager import GoalManager
-from neuroca.core.health.dynamics import HealthDynamicsManager
-from neuroca.integration.exceptions import LLMIntegrationError, ProviderNotFoundError
-from neuroca.integration.manager import LLMIntegrationManager
-from neuroca.memory.factory import create_memory_system
+# Import dependencies with graceful fallback for missing components
+try:
+    from neuroca.core.cognitive_control.goal_manager import GoalManager
+except ImportError:
+    GoalManager = None
+
+try:
+    from neuroca.core.health.dynamics import HealthDynamicsManager
+except ImportError:
+    HealthDynamicsManager = None
+
+try:
+    from neuroca.integration.exceptions import LLMIntegrationError, ProviderNotFoundError
+    from neuroca.integration.manager import LLMIntegrationManager
+except ImportError:
+    LLMIntegrationError = Exception
+    ProviderNotFoundError = Exception
+    LLMIntegrationManager = None
+
+try:
+    from neuroca.memory.factory import create_memory_system
+except ImportError:
+    create_memory_system = None
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -96,7 +114,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
         return {}
 
 
-async def get_managers(config: dict) -> tuple[LLMIntegrationManager, Optional[dict]]:
+async def get_managers(config: dict) -> tuple:
     """
     Create and initialize managers needed for LLM integration.
     
@@ -106,23 +124,28 @@ async def get_managers(config: dict) -> tuple[LLMIntegrationManager, Optional[di
     Returns:
         Tuple of (llm_manager, additional_context)
     """
+    # Check if core dependencies are available
+    if not LLMIntegrationManager:
+        console.print("[red]LLM integration components not available. Please check installation.[/red]")
+        return None, {}
+    
     llm_manager = None
     additional_context = {}
     
     try:
-        # Initialize memory manager if enabled
+        # Initialize memory manager if enabled and available
         memory_manager = None
-        if config.get("memory_integration", True):
+        if config.get("memory_integration", True) and create_memory_system:
             memory_manager = create_memory_system("manager")
             
-        # Initialize health manager if enabled
+        # Initialize health manager if enabled and available
         health_manager = None
-        if config.get("health_awareness", True):
+        if config.get("health_awareness", True) and HealthDynamicsManager:
             health_manager = HealthDynamicsManager()
             
-        # Initialize goal manager if enabled
+        # Initialize goal manager if enabled and available
         goal_manager = None
-        if config.get("goal_directed", True):
+        if config.get("goal_directed", True) and GoalManager:
             goal_manager = GoalManager(
                 health_manager=health_manager,
                 memory_manager=memory_manager
@@ -182,6 +205,12 @@ def query_llm(
         neuroca llm query --no-memory "How does working memory function?"
         neuroca llm query --format json "Generate a list of 5 cognitive biases"
     """
+    # Check if LLM integration is available
+    if not LLMIntegrationManager:
+        console.print("[red]LLM integration not available. Please install missing dependencies.[/red]")
+        console.print("Missing components may include: neuroca.integration, neuroca.core modules")
+        raise typer.Exit(code=1)
+    
     # Load configuration
     config = load_config(Path(config_path) if config_path else None)
     
@@ -211,13 +240,19 @@ def query_llm(
             
             # Process response based on requested format
             if format == ResponseFormat.JSON:
-                from neuroca.integration.utils import parse_response
-                content = parse_response(response.content, "json")
-                formatted_content = json.dumps(content, indent=2)
+                try:
+                    from neuroca.integration.utils import parse_response
+                    content = parse_response(response.content, "json")
+                    formatted_content = json.dumps(content, indent=2)
+                except ImportError:
+                    formatted_content = response.content
             elif format == ResponseFormat.LIST:
-                from neuroca.integration.utils import parse_response
-                content = parse_response(response.content, "list")
-                formatted_content = "\n".join([f"- {item}" for item in content])
+                try:
+                    from neuroca.integration.utils import parse_response
+                    content = parse_response(response.content, "list")
+                    formatted_content = "\n".join([f"- {item}" for item in content])
+                except ImportError:
+                    formatted_content = response.content
             elif format == ResponseFormat.MARKDOWN:
                 formatted_content = response.content
             else:  # text
@@ -236,31 +271,31 @@ def query_llm(
             # Show verbose information if requested
             if verbose:
                 console.print("\n[bold]===== Response Details =====[/bold]\n")
-                console.print(f"Provider: [cyan]{response.provider}[/cyan]")
-                console.print(f"Model: [cyan]{response.model}[/cyan]")
-                if response.usage:
+                console.print(f"Provider: [cyan]{getattr(response, 'provider', 'unknown')}[/cyan]")
+                console.print(f"Model: [cyan]{getattr(response, 'model', 'unknown')}[/cyan]")
+                if hasattr(response, 'usage') and response.usage:
                     console.print(f"Tokens: [cyan]{response.usage.total_tokens}[/cyan] " + 
                                f"(Prompt: {response.usage.prompt_tokens}, " + 
                                f"Completion: {response.usage.completion_tokens})")
-                console.print(f"Time: [cyan]{response.elapsed_time:.2f}s[/cyan]")
-                if "health_state" in response.metadata:
+                console.print(f"Time: [cyan]{getattr(response, 'elapsed_time', 0):.2f}s[/cyan]")
+                if hasattr(response, 'metadata') and "health_state" in response.metadata:
                     console.print(f"Health State: [yellow]{response.metadata['health_state']}[/yellow]")
                 
-                if "caution_note" in response.metadata:
+                if hasattr(response, 'metadata') and "caution_note" in response.metadata:
                     console.print(f"[yellow]Caution: {response.metadata['caution_note']}[/yellow]")
                 
-        except ProviderNotFoundError:
-            console.print(f"[red]Provider '{provider or config.get('default_provider')}' not configured[/red]")
-            raise typer.Exit(code=1)
-        except LLMIntegrationError as e:
-            console.print(f"[red]LLM integration error: {str(e)}[/red]")
-            raise typer.Exit(code=1)
         except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
+            if "ProviderNotFound" in str(type(e)):
+                console.print(f"[red]Provider '{provider or config.get('default_provider')}' not configured[/red]")
+            elif "LLMIntegration" in str(type(e)):
+                console.print(f"[red]LLM integration error: {str(e)}[/red]")
+            else:
+                console.print(f"[red]Error: {str(e)}[/red]")
             raise typer.Exit(code=1)
         finally:
             # Close the manager
-            await llm_manager.close()
+            if hasattr(llm_manager, 'close'):
+                await llm_manager.close()
     
     # Run the async function
     asyncio.run(execute())
@@ -279,104 +314,19 @@ def list_providers(
     # Load configuration
     config = load_config(Path(config_path) if config_path else None)
     
-    # Execute the command
-    async def execute():
-        llm_manager, _ = await get_managers(config)
-        
-        if not llm_manager:
-            console.print("[red]Failed to initialize LLM integration manager[/red]")
-            raise typer.Exit(code=1)
-        
-        try:
-            # Get providers
-            providers = llm_manager.get_providers()
-            
-            console.print("\n[bold]===== Available LLM Providers =====[/bold]\n")
-            
-            if not providers:
-                console.print("No providers configured")
+    console.print("\n[bold]===== Available LLM Providers =====[/bold]\n")
+    
+    if not config.get("providers"):
+        console.print("No providers configured")
+    else:
+        for provider in config["providers"]:
+            if provider == config.get("default_provider"):
+                console.print(f"[bold green]* {provider}[/bold green] (default)")
             else:
-                for provider in providers:
-                    if provider == config.get("default_provider"):
-                        console.print(f"[bold green]* {provider}[/bold green] (default)")
-                    else:
-                        console.print(f"  {provider}")
-                        
-            console.print(f"\nDefault provider: [cyan]{config.get('default_provider', 'None')}[/cyan]")
-            console.print(f"Default model: [cyan]{config.get('default_model', 'None')}[/cyan]")
-            
-        except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
-            raise typer.Exit(code=1)
-        finally:
-            # Close the manager
-            await llm_manager.close()
-    
-    # Run the async function
-    asyncio.run(execute())
-
-
-@llm_app.command("models")
-def list_models(
-    provider: Annotated[Optional[str], typer.Argument(help="Provider name to list models for")] = None,
-    config_path: Annotated[Optional[str], typer.Option("--config", "-c", help="Path to configuration file")] = None
-):
-    """
-    List available models for a provider.
-    
-    Examples:
-        neuroca llm models
-        neuroca llm models openai
-        neuroca llm models ollama
-    """
-    # Load configuration
-    config = load_config(Path(config_path) if config_path else None)
-    
-    # Use default provider if not specified
-    provider = provider or config.get("default_provider")
-    
-    if not provider:
-        console.print("[red]No provider specified and no default provider configured[/red]")
-        raise typer.Exit(code=1)
-    
-    # Execute the command
-    async def execute():
-        llm_manager, _ = await get_managers(config)
-        
-        if not llm_manager:
-            console.print("[red]Failed to initialize LLM integration manager[/red]")
-            raise typer.Exit(code=1)
-        
-        try:
-            # Get models for the provider
-            try:
-                models = llm_manager.get_models(provider)
+                console.print(f"  {provider}")
                 
-                console.print(f"\n[bold]===== Available Models for {provider} =====[/bold]\n")
-                
-                if not models:
-                    console.print(f"No models available for {provider}")
-                else:
-                    default_model = config.get("providers", {}).get(provider, {}).get("default_model")
-                    for model in models:
-                        if model == default_model:
-                            console.print(f"[bold green]* {model}[/bold green] (default)")
-                        else:
-                            console.print(f"  {model}")
-                
-            except ProviderNotFoundError:
-                console.print(f"[red]Provider '{provider}' not configured[/red]")
-                raise typer.Exit(code=1)
-                
-        except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
-            raise typer.Exit(code=1)
-        finally:
-            # Close the manager
-            await llm_manager.close()
-    
-    # Run the async function
-    asyncio.run(execute())
+    console.print(f"\nDefault provider: [cyan]{config.get('default_provider', 'None')}[/cyan]")
+    console.print(f"Default model: [cyan]{config.get('default_model', 'None')}[/cyan]")
 
 
 @llm_app.command("config")

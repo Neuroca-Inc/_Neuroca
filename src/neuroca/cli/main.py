@@ -344,16 +344,24 @@ def init(
         raise typer.Exit(code=1)
 
 # --- Import Command Modules ---
-# Import sub-apps from the commands directory
-from .commands.health import health_app  # Import health commands
-from .commands.llm import llm_app  # Import LLM commands
-from .commands.memory import memory_app  # Import memory commands
+# Import sub-apps from the commands directory with graceful fallback
+try:
+    from neuroca.cli.commands.health import health_app
+    app.add_typer(health_app)
+except ImportError as e:
+    logger.debug(f"Health commands not available: {e}")
 
-# Add imported sub-apps to the main app
-app.add_typer(memory_app)
-app.add_typer(health_app)
-app.add_typer(llm_app)
-# Remove the old inline command definitions below
+try:
+    from neuroca.cli.commands.llm import llm_app
+    app.add_typer(llm_app)
+except ImportError as e:
+    logger.debug(f"LLM commands not available: {e}")
+
+try:
+    from neuroca.cli.commands.memory import memory_app
+    app.add_typer(memory_app)
+except ImportError as e:
+    logger.debug(f"Memory commands not available: {e}")
 
 
 # --- Run Command ---
@@ -481,13 +489,16 @@ def version():
 #     """Say hello to NAME."""
 #     print(f"Hello, {name}!")
 
-# --- Main Execution ---
-if __name__ == "__main__":
+def main():
+    """Main entry point for the CLI."""
     try:
         app() # Execute the Typer app
     except Exception as e:
         # Log unhandled exceptions using the configured logger
         logger.error(f"Unhandled exception: {str(e)}")
-        # logger.debug("Detailed error information:", exc_info=True) # Already handled by RichHandler? Check Typer docs.
         # Exit with error code
         sys.exit(1) # Use sys.exit for consistency
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    main()
