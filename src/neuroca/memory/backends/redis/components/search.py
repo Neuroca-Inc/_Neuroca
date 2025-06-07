@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Set
 from neuroca.memory.backends.redis.components.connection import RedisConnection
 from neuroca.memory.backends.redis.components.utils import RedisUtils
 from neuroca.memory.exceptions import StorageOperationError
-from neuroca.memory.models.search import SearchFilter, SearchResult, SearchResults
+from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResult, MemorySearchResults
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class RedisSearch:
     async def search_and_filter(
         self,
         query: str,
-        filter: Optional[SearchFilter] = None,
+        filter: Optional[MemorySearchOptions] = None,
         limit: int = 10,
         offset: int = 0
     ) -> List[str]:
@@ -268,7 +268,7 @@ class RedisSearch:
             logger.error(error_msg, exc_info=True)
             raise StorageOperationError(error_msg) from e
     
-    async def count_items(self, filter: Optional[SearchFilter] = None) -> int:
+    async def count_items(self, filter: Optional[MemorySearchOptions] = None) -> int:
         """
         Count memory items matching the filter.
         
