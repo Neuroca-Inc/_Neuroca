@@ -1,1 +1,0 @@
-Testing file watcher - this should trigger a file creation event

@@ -79,10 +79,10 @@ class MemoryManager(MemoryManagerInterface):
         self._backend_config = backend_config or {}
         
         # Handle tier-specific storage types (NEW API)
-        self._stm_storage_type = stm_storage_type or backend_type or BackendType.IN_MEMORY
-        self._mtm_storage_type = mtm_storage_type or backend_type or BackendType.IN_MEMORY
-        self._ltm_storage_type = ltm_storage_type or backend_type or BackendType.IN_MEMORY
-        self._vector_storage_type = vector_storage_type or backend_type or BackendType.IN_MEMORY
+        self._stm_storage_type = stm_storage_type or backend_type or BackendType.MEMORY
+        self._mtm_storage_type = mtm_storage_type or backend_type or BackendType.MEMORY
+        self._ltm_storage_type = ltm_storage_type or backend_type or BackendType.MEMORY
+        self._vector_storage_type = vector_storage_type or backend_type or BackendType.MEMORY
         
         # Handle direct tier instances (TEST API)
         self._stm_instance = stm
