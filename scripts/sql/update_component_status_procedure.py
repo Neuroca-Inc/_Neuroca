@@ -52,29 +52,30 @@ class ComponentStatusUpdater:
         return True
     
     def get_component_info(self, conn: sqlite3.Connection, component_name: str) -> Optional[dict]:
-        """Get current component information."""
+        """Get current component information from component_usage_analysis (master source)."""
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT c.component_id, c.component_name, c.category_id, c.status_id, s.status_name,
-                   c.file_path, c.priority, c.effort_hours, c.notes, c.version
-            FROM components c
-            JOIN statuses s ON c.status_id = s.status_id
-            WHERE c.component_name = ?
+            SELECT cu.analysis_id, cu.component_id, c.component_name, cu.working_status,
+                   cu.priority_to_fix, cu.complexity_to_fix, cu.current_file_paths, 
+                   cu.integration_issues, cu.version, cu.updated_at
+            FROM component_usage_analysis cu
+            JOIN components c ON cu.component_id = c.component_id
+            WHERE c.component_name = ? AND cu.is_active = TRUE
         """, (component_name,))
         
         row = cursor.fetchone()
         if row:
             return {
-                "component_id": row[0],
-                "component_name": row[1],
-                "category_id": row[2],
-                "status_id": row[3],
-                "status_name": row[4],
-                "file_path": row[5],
-                "priority": row[6],
-                "effort_hours": row[7],
-                "notes": row[8],
-                "version": row[9],
+                "analysis_id": row[0],
+                "component_id": row[1],
+                "component_name": row[2],
+                "working_status": row[3],
+                "priority_to_fix": row[4],
+                "complexity_to_fix": row[5],
+                "current_file_paths": row[6],
+                "integration_issues": row[7],
+                "version": row[8],
+                "updated_at": row[9],
             }
         return None
     
@@ -116,53 +117,50 @@ class ComponentStatusUpdater:
                     return False
                 
                 # Print current status
-                print(f"Current status of '{component_name}': {current_info['status_name']}")
-                
-                new_status_id = self.valid_statuses[status]
+                print(f"Current status of '{component_name}': {current_info['working_status']}")
                 
                 # Check if this is actually a change
-                if current_info["status_id"] == new_status_id:
+                if current_info["working_status"] == status:
                     print(f"Component '{component_name}' is already '{status}'. No update needed.")
                     return True
                 
-                # Prepare update fields
+                # Prepare update fields for component_usage_analysis
                 update_fields = []
                 update_values = []
                 
-                update_fields.append("status_id = ?")
-                update_values.append(new_status_id)
+                # Always update working_status (this will trigger sync to components table)
+                update_fields.append("working_status = ?")
+                update_values.append(status)
                 
                 if priority:
-                    update_fields.append("priority = ?")
+                    update_fields.append("priority_to_fix = ?")
                     update_values.append(priority)
                 
-                if effort_hours is not None:
-                    update_fields.append("effort_hours = ?")
-                    update_values.append(effort_hours)
-                
-                # Handle notes - append to existing or replace
-                new_notes = current_info["notes"] or ""
+                # Handle notes in integration_issues field
+                current_issues = current_info["integration_issues"] or ""
                 if notes:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    if new_notes:
-                        new_notes += f" | Updated {timestamp}: {notes}"
+                    if current_issues:
+                        new_issues = f"{current_issues} | Updated {timestamp}: {notes}"
                     else:
-                        new_notes = f"Updated {timestamp}: {notes}"
-                
-                update_fields.append("notes = ?")
-                update_values.append(new_notes)
+                        new_issues = f"Updated {timestamp}: {notes}"
+                    
+                    update_fields.append("integration_issues = ?")
+                    update_values.append(new_issues)
                 
                 update_fields.append("updated_at = CURRENT_TIMESTAMP")
                 update_fields.append("version = version + 1")
+                update_fields.append("created_by = ?")
+                update_values.append(updated_by)
                 
-                # Add component_id for WHERE clause
-                update_values.append(current_info["component_id"])
+                # Add analysis_id for WHERE clause
+                update_values.append(current_info["analysis_id"])
                 
-                # Execute update
+                # Execute update on component_usage_analysis (triggers will sync to components)
                 update_sql = f"""
-                    UPDATE components 
+                    UPDATE component_usage_analysis 
                     SET {', '.join(update_fields)}
-                    WHERE component_id = ?
+                    WHERE analysis_id = ?
                 """
                 
                 cursor = conn.cursor()
@@ -174,8 +172,9 @@ class ComponentStatusUpdater:
                 
                 # Verify the update
                 updated_info = self.get_component_info(conn, component_name)
-                if updated_info and updated_info["status_id"] == new_status_id:
-                    print(f"✅ Successfully updated '{component_name}' from '{current_info['status_name']}' to '{status}'")
+                if updated_info and updated_info["working_status"] == status:
+                    print(f"✅ Successfully updated '{component_name}' from '{current_info['working_status']}' to '{status}'")
+                    print(f"   Triggers will automatically sync to components table")
                     if notes:
                         print(f"   Notes: {notes}")
                     return True
