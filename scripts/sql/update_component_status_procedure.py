@@ -119,9 +119,13 @@ class ComponentStatusUpdater:
                 # Print current status
                 print(f"Current status of '{component_name}': {current_info['working_status']}")
                 
-                # Check if this is actually a change
-                if current_info["working_status"] == status:
-                    print(f"Component '{component_name}' is already '{status}'. No update needed.")
+                # Check if this is actually a change (status or priority)
+                current_priority = current_info["priority_to_fix"]
+                status_unchanged = current_info["working_status"] == status
+                priority_unchanged = (not priority) or (current_priority == priority)
+                
+                if status_unchanged and priority_unchanged:
+                    print(f"Component '{component_name}' is already '{status}' with priority '{current_priority}'. No update needed.")
                     return True
                 
                 # Prepare update fields for component_usage_analysis
