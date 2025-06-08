@@ -38,7 +38,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from neuroca.api.routes import admin, cognitive, health, integration, memory
+from neuroca.api.routes import admin, auth, cognitive, health, integration, memory, monitoring
 from neuroca.config import settings
 from neuroca.core.exceptions import (
     NCAAuthenticationError,
@@ -206,10 +206,12 @@ async def health_check() -> dict[str, str]:
 
 # Include routers from route modules
 app.include_router(health.router, prefix="/api", tags=["Health"])
-app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
-app.include_router(cognitive.router, prefix="/api/cognitive", tags=["Cognitive"])
-app.include_router(integration.router, prefix="/api/integration", tags=["Integration"])
-app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(memory.router, prefix="/api", tags=["Memory"])
+app.include_router(cognitive.router, prefix="/api", tags=["Cognitive"])
+app.include_router(integration.router, prefix="/api", tags=["Integration"])
+app.include_router(admin.router, prefix="/api", tags=["Admin"])
+app.include_router(auth.router, prefix="/api", tags=["Authentication"])
+app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
 
 
 @app.middleware("http")
