@@ -106,30 +106,43 @@ async def list_providers() -> list[ProviderStatus]:
     """
     try:
         # Import here to avoid circular dependencies
-        from neuroca.integration.manager import IntegrationManager
+        from neuroca.integration.manager import LLMIntegrationManager
+        from neuroca.config.settings import get_settings
         
-        integration_manager = IntegrationManager()
+        settings = get_settings()
+        config = settings.get_integration_config()
         
-        # Get provider list
-        # This would call actual methods on the integration manager
-        logger.info("Retrieving LLM provider list")
+        integration_manager = LLMIntegrationManager(config)
         
-        return [
-            ProviderStatus(
-                name="openai",
-                type="llm",
-                status="active",
-                last_used="2024-01-01T00:00:00Z",
-                model="gpt-3.5-turbo",
-                response_time_ms=250.5,
-            ),
-            ProviderStatus(
-                name="anthropic",
-                type="llm", 
-                status="inactive",
-                model="claude-3-sonnet",
-            ),
-        ]
+        # Get actual provider list
+        provider_names = integration_manager.get_providers()
+        provider_statuses = []
+        
+        for provider_name in provider_names:
+            try:
+                # Get models for this provider to verify it's working
+                models = integration_manager.get_models(provider_name)
+                status = "active" if models else "inactive"
+                default_model = models[0] if models else None
+                
+                provider_statuses.append(ProviderStatus(
+                    name=provider_name,
+                    type="llm",
+                    status=status,
+                    model=default_model,
+                ))
+            except Exception as provider_error:
+                logger.warning(f"Provider {provider_name} error: {provider_error}")
+                provider_statuses.append(ProviderStatus(
+                    name=provider_name,
+                    type="llm",
+                    status="error",
+                    error_message=str(provider_error),
+                ))
+        
+        logger.info(f"Retrieved {len(provider_statuses)} LLM providers")
+        return provider_statuses
+        
     except Exception as e:
         logger.exception("Failed to list providers")
         raise HTTPException(
