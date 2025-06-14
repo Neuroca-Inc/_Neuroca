@@ -165,8 +165,9 @@ def temp_file_with_content(content: str) -> Generator[str, None, None]:
     """
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
         temp.write(content)
+        temp.flush()  # Ensure content is written to disk before accessing temp.name
         temp_path = temp.name
-    
+    # 'temp' is automatically closed here by the 'with' statement.
     try:
         yield temp_path
     finally:
