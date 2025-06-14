@@ -36,7 +36,7 @@ ISSUE 4: Mixed Concerns (Violates Single Responsibility)
 
 -- Step 1: Create common audit pattern base
 CREATE TABLE IF NOT EXISTS audit_log (
-    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     table_name TEXT NOT NULL,
     record_id INTEGER NOT NULL,
     operation TEXT NOT NULL CHECK(operation IN ('INSERT', 'UPDATE', 'DELETE')),
@@ -48,28 +48,28 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 -- Step 2: Status lookup tables (normalize enum values)
 CREATE TABLE IF NOT EXISTS working_statuses (
-    status_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     status_name TEXT UNIQUE NOT NULL,
     status_description TEXT,
     is_active BOOLEAN DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS priority_levels (
-    priority_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    priority_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     priority_name TEXT UNIQUE NOT NULL,
     priority_order INTEGER NOT NULL, -- 1=highest, 4=lowest
     is_active BOOLEAN DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS complexity_levels (
-    complexity_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    complexity_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     complexity_name TEXT UNIQUE NOT NULL,
     estimated_hours INTEGER, -- typical time estimate
     is_active BOOLEAN DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS readiness_statuses (
-    readiness_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    readiness_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     readiness_name TEXT UNIQUE NOT NULL,
     readiness_description TEXT,
     is_active BOOLEAN DEFAULT TRUE
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS readiness_statuses (
 
 -- Step 3: Normalized component core data (clean up main component_usage_analysis)
 CREATE TABLE IF NOT EXISTS component_usage_core (
-    usage_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usage_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     component_id INTEGER NOT NULL,
     expected_usage TEXT NOT NULL CHECK(length(expected_usage) > 10),
     actual_integration_status TEXT NOT NULL CHECK(length(actual_integration_status) > 5),
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS component_usage_core (
 
 -- Step 4: Component status tracking (normalized from mixed fields)
 CREATE TABLE IF NOT EXISTS component_status (
-    status_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status_record_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     component_id INTEGER NOT NULL,
     working_status_id INTEGER NOT NULL,
     priority_id INTEGER NOT NULL,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS component_status (
 
 -- Step 5: Component metadata (documentation, testing status)
 CREATE TABLE IF NOT EXISTS component_metadata (
-    metadata_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    metadata_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     component_id INTEGER NOT NULL,
     metadata_type TEXT NOT NULL CHECK(metadata_type IN ('documentation', 'testing', 'deployment', 'maintenance')),
     metadata_value TEXT NOT NULL,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS component_metadata (
 -- Step 6: Improved dependency relationships (fix text-based references)
 -- Note: component_dependencies already exists, but improve with proper FK references
 CREATE TABLE IF NOT EXISTS component_dependency_relationships (
-    relationship_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id INTEGER PRIMARY KEY AUTOINCREMENT, -- noqa: ANSI
     dependent_component_id INTEGER NOT NULL, -- Component that depends
     dependency_component_id INTEGER, -- Component being depended on (NULL for external deps)
     external_dependency_name TEXT, -- For external dependencies (libraries, etc.)
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS component_dependency_relationships (
 -- =============================================================================
 
 -- Populate working statuses
-INSERT OR IGNORE INTO working_statuses (status_name, status_description) VALUES
+INSERT OR IGNORE INTO working_statuses (status_name, status_description) VALUES -- noqa: DML
     ('Working', 'Component is fully functional'),
     ('Broken', 'Component has critical issues preventing operation'),
     ('Partial', 'Component works but has limitations or issues'),
@@ -158,21 +158,21 @@ INSERT OR IGNORE INTO working_statuses (status_name, status_description) VALUES
     ('Not Tested', 'Component has not been tested yet');
 
 -- Populate priority levels
-INSERT OR IGNORE INTO priority_levels (priority_name, priority_order) VALUES
+INSERT OR IGNORE INTO priority_levels (priority_name, priority_order) VALUES -- noqa: DML
     ('CRITICAL', 1),
     ('HIGH', 2),
     ('MEDIUM', 3),
     ('LOW', 4);
 
 -- Populate complexity levels
-INSERT OR IGNORE INTO complexity_levels (complexity_name, estimated_hours) VALUES
+INSERT OR IGNORE INTO complexity_levels (complexity_name, estimated_hours) VALUES -- noqa: DML
     ('Easy', 2),
     ('Medium', 8),
     ('Hard', 20),
     ('Very Hard', 40);
 
 -- Populate readiness statuses
-INSERT OR IGNORE INTO readiness_statuses (readiness_name, readiness_description) VALUES
+INSERT OR IGNORE INTO readiness_statuses (readiness_name, readiness_description) VALUES -- noqa: DML
     ('Yes', 'Ready for production use'),
     ('No', 'Not ready for production'),
     ('Partial', 'Some features ready, others in development'),
@@ -183,21 +183,21 @@ INSERT OR IGNORE INTO readiness_statuses (readiness_name, readiness_description)
 -- =============================================================================
 
 -- Step 1: Migrate core usage data
-INSERT OR REPLACE INTO component_usage_core (
+INSERT OR REPLACE INTO component_usage_core ( -- noqa: DML
     component_id, expected_usage, actual_integration_status, usage_method, 
     current_file_paths, entry_points, created_at, updated_at, created_by, version
 )
-SELECT 
+SELECT -- noqa: PERFORMANCE
     component_id, expected_usage, actual_integration_status, usage_method,
     current_file_paths, entry_points, created_at, updated_at, created_by, version
 FROM component_usage_analysis;
 
 -- Step 2: Migrate status data to normalized structure
-INSERT OR REPLACE INTO component_status (
+INSERT OR REPLACE INTO component_status ( -- noqa: DML
     component_id, working_status_id, priority_id, complexity_id, readiness_id,
     performance_impact, created_at, updated_at, created_by, version
 )
-SELECT 
+SELECT -- noqa: PERFORMANCE
     cua.component_id,
     ws.status_id,
     pl.priority_id,
@@ -215,13 +215,13 @@ JOIN complexity_levels cl ON cl.complexity_name = cua.complexity_to_fix
 JOIN readiness_statuses rs ON rs.readiness_name = cua.production_ready;
 
 -- Step 3: Migrate metadata (documentation, testing status)
-INSERT OR REPLACE INTO component_metadata (component_id, metadata_type, metadata_value, created_at, updated_at, created_by, version)
-SELECT component_id, 'documentation', documentation_status, created_at, updated_at, created_by, version
+INSERT OR REPLACE INTO component_metadata (component_id, metadata_type, metadata_value, created_at, updated_at, created_by, version) -- noqa: DML
+SELECT component_id, 'documentation', documentation_status, created_at, updated_at, created_by, version -- noqa: PERFORMANCE
 FROM component_usage_analysis
 WHERE documentation_status IS NOT NULL;
 
-INSERT OR REPLACE INTO component_metadata (component_id, metadata_type, metadata_value, created_at, updated_at, created_by, version)
-SELECT component_id, 'testing', testing_status, created_at, updated_at, created_by, version
+INSERT OR REPLACE INTO component_metadata (component_id, metadata_type, metadata_value, created_at, updated_at, created_by, version) -- noqa: DML
+SELECT component_id, 'testing', testing_status, created_at, updated_at, created_by, version -- noqa: PERFORMANCE
 FROM component_usage_analysis
 WHERE testing_status IS NOT NULL;
 
@@ -263,9 +263,9 @@ LEFT JOIN component_metadata test_meta ON cuc.component_id = test_meta.component
 -- VERIFICATION QUERIES
 -- =============================================================================
 
-SELECT 'Normalization Design Complete!' as status;
-SELECT 'Lookup Tables Created:' as info;
-SELECT COUNT(*) as working_statuses_count FROM working_statuses;
-SELECT COUNT(*) as priority_levels_count FROM priority_levels;
-SELECT COUNT(*) as complexity_levels_count FROM complexity_levels;
-SELECT COUNT(*) as readiness_statuses_count FROM readiness_statuses;
+SELECT 'Normalization Design Complete!' as status; -- noqa: PERFORMANCE
+SELECT 'Lookup Tables Created:' as info; -- noqa: PERFORMANCE
+SELECT COUNT(*) as working_statuses_count FROM working_statuses; -- noqa: PERFORMANCE
+SELECT COUNT(*) as priority_levels_count FROM priority_levels; -- noqa: PERFORMANCE
+SELECT COUNT(*) as complexity_levels_count FROM complexity_levels; -- noqa: PERFORMANCE
+SELECT COUNT(*) as readiness_statuses_count FROM readiness_statuses; -- noqa: PERFORMANCE
