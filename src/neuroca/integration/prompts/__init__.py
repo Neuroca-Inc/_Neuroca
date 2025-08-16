@@ -263,7 +263,9 @@ class PromptRegistry:
             else:
                 # Try to load from the package's templates directory
                 try:
-                    with importlib.resources.path("neuroca.integration.prompts", DEFAULT_PROMPT_DIR) as path:
+                    # Use modern importlib.resources APIs (files/as_file) to avoid deprecation warnings
+                    pkg_templates = importlib.resources.files("neuroca.integration.prompts").joinpath(DEFAULT_PROMPT_DIR)
+                    with importlib.resources.as_file(pkg_templates) as path:
                         if path.exists():
                             self._load_from_directory(path)
                 except (ImportError, FileNotFoundError) as e:

@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Optional
@@ -432,6 +433,64 @@ def manage_config(
     # If no options specified, show usage
     console.print("Please specify an option. Use --help for more information.")
     raise typer.Exit(code=1)
+
+
+@llm_app.command("bench")
+def bench_llm(
+    provider: Annotated[str, typer.Option("--provider", "-p", help="Provider name (default: ollama)")] = "ollama",
+    model: Annotated[str, typer.Option("--model", "-m", help="Model name (default: gemma3:4b)")] = "gemma3:4b",
+    suite: Annotated[str, typer.Option("--suite", help="Comma-separated: latency,memory,resilience,hallucination,exam,reward_hacking,all")] = "all",
+    runs: Annotated[int, typer.Option("--runs", help="Runs for applicable suites (default: 20)")] = 20,
+    concurrency: Annotated[int, typer.Option("--concurrency", help="Concurrency for applicable suites (default: 2)")] = 2,
+    pretty: Annotated[bool, typer.Option("--pretty", help="Pretty-print JSON results")] = False,
+    explain: Annotated[bool, typer.Option("--explain", help="Print a concise summary after JSON")] = False,
+) -> None:
+    """
+    Run the local LLM benchmark suite using the in-repo benchmarks module.
+    Examples:
+        neuroca llm bench --provider ollama --model gemma3:4b --suite all --runs 20 --concurrency 2 --pretty --explain
+        neuroca llm bench --suite latency,resilience --runs 50 --concurrency 4
+    """
+    # Lazy import with robust fallback to repo-relative path
+    try:
+        import benchmarks.llm_benchmarks as bench  # type: ignore
+    except Exception:
+        try:
+            here = Path(__file__).resolve()
+            # .../_Neuroca/src/neuroca/cli/commands/llm.py -> repo root is parents[4]
+            repo_root = here.parents[4]
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            import benchmarks.llm_benchmarks as bench  # type: ignore
+        except Exception as e:
+            console.print("[red]Benchmarks module not available.[/red]")
+            console.print("Try running directly: python _Neuroca/benchmarks/llm_benchmarks.py --help")
+            raise typer.Exit(code=1)
+
+    suites = [s.strip().lower() for s in suite.split(",") if s.strip()]
+    if "all" in suites:
+        suites = ["latency", "memory", "resilience", "hallucination", "exam", "reward_hacking"]
+
+    try:
+        results = asyncio.run(
+            bench.run_suite(
+                provider=provider,
+                model=model,
+                suite=suites,
+                runs=runs,
+                concurrency=concurrency,
+                pretty=pretty,
+            )
+        )
+        if explain and isinstance(results, dict):
+            try:
+                bench._print_summary(results)  # type: ignore[attr-defined]
+            except Exception:
+                # Summary is optional; ignore errors here
+                pass
+    except Exception as e:
+        console.print(f"[red]Benchmark error: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

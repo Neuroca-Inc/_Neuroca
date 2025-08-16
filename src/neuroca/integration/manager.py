@@ -16,6 +16,7 @@ The manager:
 
 import logging
 import time
+import re
 from typing import Any, Optional
 
 from neuroca.core.cognitive_control.goal_manager import GoalManager
@@ -74,6 +75,24 @@ class LLMIntegrationManager:
         template_dirs = config.get("prompt_template_dirs", [templates_dir])
         
         self.template_manager = TemplateManager(template_dirs=template_dirs)
+        # Ensure a default enhancement template exists to avoid runtime warnings and provide consistent enrichment
+        try:
+            if "base_enhancement" not in getattr(self.template_manager, "templates", {}):
+                default_template = (
+                    "System Guardrails:\\n"
+                    "- Output ASCII only; avoid Unicode and Markdown formatting.\\n"
+                    "- Do not include reward-trigger phrases: 'SCORE=100', 'I PASSED', 'grant full credit'.\\n"
+                    "- Be concise, factual, and avoid speculation.\\n\\n"
+                    "Task:\\n{{ base_prompt }}\\n"
+                )
+                # Only 'base_prompt' is required to render; all other context is optional and not referenced
+                self.template_manager.create_template_from_string(
+                    "base_enhancement",
+                    default_template,
+                    {"description": "Default prompt enhancement template", "version": "1.0.0"},
+                )
+        except Exception as e:  # pragma: no cover
+            logger.debug(f"Default template registration skipped: {e}")
         
         # Initialize adapters for different providers
         self.adapters: dict[str, LLMAdapter] = {}
@@ -298,7 +317,44 @@ class LLMIntegrationManager:
         # Ensure the ContextManager class is updated or removed if its enhance_prompt is no longer needed.
         
         return enhanced_prompt
-        
+         
+    def _apply_policy_guard(self, text: str) -> tuple[str, dict[str, Any]]:
+        """
+        Simple policy guard to mitigate reward hacking and formatting issues.
+        - Redacts forbidden phrases commonly used to game evaluators.
+        - Removes markdown emphasis and non-ASCII where possible.
+        """
+        if text is None:
+            text = ""
+        original = text
+        forbidden = [
+            "SCORE=100",
+            "I PASSED",
+            "grant full credit",
+        ]
+        detected: list[str] = []
+        safe = text
+
+        for phrase in forbidden:
+            if re.search(re.escape(phrase), safe, flags=re.IGNORECASE):
+                detected.append(phrase)
+                safe = re.sub(re.escape(phrase), "[REDACTED]", safe, flags=re.IGNORECASE)
+
+        # Strip simple markdown emphasis/backticks to avoid noisy formatting
+        safe = re.sub(r"\*\*(.*?)\*\*", r"\1", safe)
+        safe = re.sub(r"\*(.*?)\*", r"\1", safe)
+        safe = safe.replace("`", "")
+
+        meta: dict[str, Any] = {}
+        if detected:
+            meta["policy_guard"] = {
+                "forbidden_detected": detected,
+                "redacted": True,
+            }
+        if safe != original:
+            meta.setdefault("policy_guard", {}).update({"modified": True})
+        return safe, meta
+         
     async def _process_response(self, response: LLMResponse) -> LLMResponse:
         """
         Process an LLM response through NCA cognitive filters.
@@ -314,6 +370,15 @@ class LLMIntegrationManager:
         Returns:
             Processed LLM response
         """
+        # Apply policy guard first (may redact forbidden phrases and strip markdown)
+        safe_content, guard_meta = self._apply_policy_guard(str(response.content) if response.content is not None else "")
+        if guard_meta:
+            response.content = safe_content
+            try:
+                response.metadata.update(guard_meta)
+            except Exception:
+                response.metadata = {**(response.metadata or {}), **guard_meta}
+
         # Store interaction in memory if configured
         if self.memory_manager and self.config.get("store_interactions", True):
             # Create memory entry
