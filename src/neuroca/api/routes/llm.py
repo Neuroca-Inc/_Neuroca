@@ -21,6 +21,21 @@ from pydantic import BaseModel, Field
 # Import the canonical manager/types from the integration layer
 from neuroca.integration.manager import LLMIntegrationManager
 
+# Optional managers (created only when the user enables related features)
+try:
+    from neuroca.core.cognitive_control.goal_manager import GoalManager  # type: ignore
+except Exception:
+    GoalManager = None  # type: ignore
+try:
+    from neuroca.core.health.dynamics import HealthDynamicsManager  # type: ignore
+except Exception:
+    HealthDynamicsManager = None  # type: ignore
+try:
+    # Pragmatic factory hook; adjust to your actual memory system entrypoint
+    from neuroca.memory.factory import create_memory_system  # type: ignore
+except Exception:
+    create_memory_system = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -49,6 +64,15 @@ class LLMQueryRequest(BaseModel):
     # Optional arbitrary metadata/context to pass through
     additional_context: Optional[dict[str, Any]] = Field(
         None, description="Additional context to pass to the manager"
+    )
+    # Output shaping / verbosity controls
+    style: Optional[str] = Field(
+        default="detailed",
+        description="Response style hint (e.g., 'concise', 'detailed', 'step_by_step')"
+    )
+    verbosity: Optional[int] = Field(
+        default=3, ge=0, le=10,
+        description="Verbosity preference (0-10). Higher tends to produce longer answers"
     )
 
 
@@ -113,18 +137,59 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
     """
     cfg = _default_config(body.provider, body.model)
 
-    mgr = LLMIntegrationManager(cfg)
+    # Conditionally construct optional managers so toggles actually take effect
+    memory_manager = None
+    health_manager = None
+    goal_manager = None
+
+    if body.memory_context and create_memory_system:
+        try:
+            # Use a lightweight default memory system suitable for local runs
+            memory_manager = create_memory_system("manager")
+        except Exception:
+            memory_manager = None  # non-fatal
+
+    if body.health_aware and HealthDynamicsManager:
+        try:
+            health_manager = HealthDynamicsManager()
+        except Exception:
+            health_manager = None  # non-fatal
+
+    if body.goal_directed and GoalManager:
+        try:
+            goal_manager = GoalManager(
+                health_manager=health_manager,
+                memory_manager=memory_manager,
+            )
+        except Exception:
+            goal_manager = None  # non-fatal
+
+    # Enrich additional_context with style/verbosity hints so templates (or adapters) can use them
+    extra_ctx: dict[str, Any] = {}
+    if body.additional_context:
+        extra_ctx.update(body.additional_context)
+    extra_ctx.setdefault("response_style", body.style or "detailed")
+    extra_ctx.setdefault("verbosity", body.verbosity if body.verbosity is not None else 3)
+
+    mgr = LLMIntegrationManager(
+        config=cfg,
+        memory_manager=memory_manager,
+        health_manager=health_manager,
+        goal_manager=goal_manager,
+    )
     try:
+        # If the template system is active, style/verbosity will be consumed there.
+        # Otherwise they remain as hints for downstream adapters or post-processing.
         resp = await mgr.query(
             prompt=body.prompt,
             provider=body.provider,
             model=body.model,
             max_tokens=body.max_tokens,
             temperature=body.temperature,
-            memory_context=body.memory_context,
-            health_aware=body.health_aware,
-            goal_directed=body.goal_directed,
-            additional_context=body.additional_context or {},
+            memory_context=bool(memory_manager) and body.memory_context,
+            health_aware=bool(health_manager) and body.health_aware,
+            goal_directed=bool(goal_manager) and body.goal_directed,
+            additional_context=extra_ctx,
         )
 
         # Shape response into a stable JSON envelope
