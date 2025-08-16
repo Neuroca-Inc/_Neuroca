@@ -4,6 +4,7 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
+from neuroca.api.routes.llm import router as llm_router
 
 from neuroca.monitoring.logging import configure_logging, get_logger
 
@@ -21,6 +22,9 @@ app = FastAPI(
     description="API for the NeuroCognitive Architecture (NCA)",
     version="0.1.0",
 )
+
+# Expose a persistent LLM JSON endpoint at /api/llm/query
+app.include_router(llm_router, prefix="/api")
 
 
 @app.get("/")

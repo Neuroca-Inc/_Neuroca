@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Neuroca LLM Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #3b82f6;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --error: #ef4444;
+      --ok: #10b981;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      --sans: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 1200px at 10% -10%, #0f172a 0%, var(--bg) 60%);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .title {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+    }
+    .badge {
+      font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.0));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 20px 30px rgba(0,0,0,0.25);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+    .section-title { font-weight: 600; color: var(--muted); letter-spacing: .03em; margin: 6px 0 10px; }
+    label { font-size: 12px; color: var(--muted); }
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0b0f14;
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color .15s ease;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, .2);
+    }
+    textarea { min-height: 180px; resize: vertical; font-family: var(--sans); }
+    .row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .switch {
+      display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #0b0f14;
+    }
+    .switch input { display: none; }
+    .switch .dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #334155; box-shadow: inset 0 0 0 2px #1f2937;
+      transition: all .15s ease;
+    }
+    .switch input:checked + .dot { background: var(--ok); box-shadow: none; }
+    .btn-row { display: flex; gap: 10px; align-items: center; }
+    .btn {
+      border: 1px solid var(--border); background: #0b0f14; color: var(--text);
+      border-radius: 8px; padding: 10px 14px; cursor: pointer;
+      transition: border-color .15s ease, background .15s ease, transform .02s;
+    }
+    .btn.primary { border-color: #1f4d9a; background: linear-gradient(180deg, #1f2937, #0b1320); }
+    .btn:active { transform: translateY(1px); }
+    .btn[disabled] { opacity: .6; cursor: not-allowed; }
+    .status { font-size: 12px; color: var(--muted); }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--error); }
+    .output {
+      font-family: var(--mono); font-size: 13px; line-height: 1.5;
+      white-space: pre-wrap; background: #0b0f14; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+      min-height: 160px;
+    }
+    .kv { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .footer {
+      margin-top: 22px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px;
+    }
+    .link { color: var(--accent); text-decoration: none; }
+    .pill {
+      border: 1px solid var(--border); padding: 4px 8px; border-radius: 999px; font-size: 11px; color: var(--muted);
+    }
+    .hidden { display: none; }
+    .hr { height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title">
+      <h2 style="margin:0;">Neuroca LLM Console</h2>
+      <span class="badge">Service UI</span>
+      <span class="badge" id="statusBadge">checking...</span>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="section-title">Prompt</div>
+        <textarea id="prompt" placeholder="Type your prompt...">Say hello concisely.</textarea>
+
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label>Provider</label>
+            <select id="provider">
+              <option value="ollama" selected>ollama</option>
+            </select>
+          </div>
+          <div>
+            <label>Model</label>
+            <input id="model" type="text" value="gemma3:4b" />
+          </div>
+        </div>
+
+        <div class="row-3" style="margin-top:10px;">
+          <div>
+            <label>Max tokens</label>
+            <input id="max_tokens" type="number" min="1" max="4096" value="128" />
+          </div>
+          <div>
+            <label>Temperature</label>
+            <input id="temperature" type="number" step="0.1" min="0" max="2" value="0.2" />
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; justify-content:flex-start; padding-top:16px;">
+            <label class="switch">
+              <input id="memory_context" type="checkbox" />
+              <span class="dot"></span>
+              <span style="font-size:12px;">Memory</span>
+            </label>
+            <label class="switch">
+              <input id="health_aware" type="checkbox" />
+              <span class="dot"></span>
+              <span style="font-size:12px;">Health</span>
+            </label>
+            <label class="switch">
+              <input id="goal_directed" type="checkbox" />
+              <span class="dot"></span>
+              <span style="font-size:12px;">Goals</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-top:12px;">
+          <button id="sendBtn" class="btn primary">Send</button>
+          <button id="clearBtn" class="btn">Clear</button>
+          <span class="status" id="sendStatus"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Response</div>
+        <div id="output" class="output"></div>
+
+        <div class="hr"></div>
+        <div class="row">
+          <div class="kv" id="metaLeft">provider: -<br/>model: -</div>
+          <div class="kv" id="metaRight" style="text-align:right;">tokens: -<br/>elapsed: -</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>
+        <span class="pill">API: /api/llm/query</span>
+        <span class="pill">Daemon: http://127.0.0.1:11434 (ollama)</span>
+      </div>
+      <div>
+        <a class="link" href="/docs" target="_blank" rel="noreferrer">OpenAPI docs</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const els = {
+      prompt: document.getElementById('prompt'),
+      provider: document.getElementById('provider'),
+      model: document.getElementById('model'),
+      max_tokens: document.getElementById('max_tokens'),
+      temperature: document.getElementById('temperature'),
+      memory_context: document.getElementById('memory_context'),
+      health_aware: document.getElementById('health_aware'),
+      goal_directed: document.getElementById('goal_directed'),
+      sendBtn: document.getElementById('sendBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      sendStatus: document.getElementById('sendStatus'),
+      output: document.getElementById('output'),
+      metaLeft: document.getElementById('metaLeft'),
+      metaRight: document.getElementById('metaRight'),
+      statusBadge: document.getElementById('statusBadge'),
+    };
+
+    // Persist simple settings in localStorage
+    const SETTINGS_KEYS = ['provider','model','max_tokens','temperature','memory_context','health_aware','goal_directed'];
+    function loadSettings() {
+      try {
+        SETTINGS_KEYS.forEach(k => {
+          const v = localStorage.getItem('nca_ui_' + k);
+          if (v === null) return;
+          if (['memory_context','health_aware','goal_directed'].includes(k)) {
+            els[k].checked = v === 'true';
+          } else {
+            els[k].value = v;
+          }
+        });
+      } catch (_) {}
+    }
+    function saveSettings() {
+      try {
+        SETTINGS_KEYS.forEach(k => {
+          let v;
+          if (['memory_context','health_aware','goal_directed'].includes(k)) v = String(els[k].checked);
+          else v = els[k].value;
+          localStorage.setItem('nca_ui_' + k, v);
+        });
+      } catch (_) {}
+    }
+
+    async function healthCheck() {
+      try {
+        const r = await fetch('/health');
+        if (!r.ok) throw new Error('health ' + r.status);
+        const j = await r.json();
+        els.statusBadge.textContent = (j.status || 'healthy');
+        els.statusBadge.style.borderColor = 'rgba(16,185,129,.5)';
+        els.statusBadge.style.color = '#10b981';
+      } catch (e) {
+        els.statusBadge.textContent = 'api unreachable';
+        els.statusBadge.style.borderColor = 'rgba(239,68,68,.5)';
+        els.statusBadge.style.color = '#ef4444';
+      }
+    }
+
+    function setBusy(busy, msg='') {
+      els.sendBtn.disabled = busy;
+      els.sendStatus.textContent = msg;
+      els.sendStatus.className = 'status' + (busy ? '' : '');
+    }
+
+    function renderResponse(data) {
+      const content = (data && data.content) ? data.content : '';
+      els.output.textContent = content;
+
+      const provider = data && data.provider || '-';
+      const model = data && data.model || '-';
+      els.metaLeft.innerHTML = 'provider: ' + provider + '<br/>model: ' + model;
+
+      let tok = '-';
+      if (data && data.usage) {
+        const u = data.usage;
+        const pt = u.prompt_tokens ?? '-';
+        const ct = u.completion_tokens ?? '-';
+        const tt = u.total_tokens ?? '-';
+        tok = `${tt} (p:${pt} c:${ct})`;
+      }
+      const elapsed = (data && data.elapsed_time != null) ? (data.elapsed_time.toFixed ? data.elapsed_time.toFixed(2) : data.elapsed_time) : '-';
+      els.metaRight.innerHTML = 'tokens: ' + tok + '<br/>elapsed: ' + elapsed + 's';
+    }
+
+    function renderError(e) {
+      els.output.textContent = String(e?.message || e || 'error');
+      els.output.style.borderColor = 'rgba(239,68,68,.4)';
+      setTimeout(() => { els.output.style.borderColor = 'var(--border)'; }, 1600);
+    }
+
+    async function send() {
+      saveSettings();
+      setBusy(true, 'sending...');
+      try {
+        const body = {
+          prompt: els.prompt.value,
+          provider: els.provider.value,
+          model: els.model.value,
+          max_tokens: parseInt(els.max_tokens.value, 10),
+          temperature: parseFloat(els.temperature.value),
+          memory_context: els.memory_context.checked,
+          health_aware: els.health_aware.checked,
+          goal_directed: els.goal_directed.checked,
+        };
+
+        const r = await fetch('/api/llm/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!r.ok) {
+          let details = '';
+          try {
+            const j = await r.json();
+            details = j.detail || JSON.stringify(j);
+          } catch {
+            details = await r.text();
+          }
+          throw new Error(`HTTP ${r.status}: ${details}`);
+        }
+
+        const data = await r.json();
+        renderResponse(data);
+        setBusy(false, 'ok');
+        els.sendStatus.className = 'status ok';
+        setTimeout(() => els.sendStatus.textContent = '', 1200);
+      } catch (e) {
+        renderError(e);
+        setBusy(false, 'error');
+        els.sendStatus.className = 'status err';
+      }
+    }
+
+    function clearOut() {
+      els.output.textContent = '';
+      els.metaLeft.innerHTML = 'provider: -<br/>model: -';
+      els.metaRight.innerHTML = 'tokens: -<br/>elapsed: -';
+      els.sendStatus.textContent = '';
+    }
+
+    // Bindings
+    els.sendBtn.addEventListener('click', send);
+    els.clearBtn.addEventListener('click', clearOut);
+
+    // Init
+    loadSettings();
+    healthCheck();
+  </script>
+</body>
+</html>
