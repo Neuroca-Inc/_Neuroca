@@ -21,6 +21,12 @@ from pydantic import BaseModel, Field
 # Import the canonical manager/types from the integration layer
 from neuroca.integration.manager import LLMIntegrationManager
 
+# Lightweight in-process conversational memory (per session_id)
+from collections import deque
+from typing import Deque, Dict
+
+SESSIONS: Dict[str, Deque[str]] = {}
+
 # Optional managers (created only when the user enables related features)
 try:
     from neuroca.core.cognitive_control.goal_manager import GoalManager  # type: ignore
@@ -114,6 +120,51 @@ def _default_config(provider: str, model: str) -> dict[str, Any]:
     }
 
 
+def _compose_prompt(
+    raw_prompt: str,
+    *,
+    style: str = "detailed",
+    verbosity: int = 3,
+    system_directive: str = "",
+    history: Optional[Deque[str]] = None,
+) -> str:
+    """
+    Build an enriched prompt so UI controls actually affect generation
+    even when the template system is not active.
+
+    - style: 'concise' | 'detailed' | 'step_by_step'
+    - verbosity: 0..10 (soft hint for length/coverage)
+    - system_directive: freeform system instruction
+    - history: prior turns stored for the given session_id
+    """
+    style_map = {
+        "concise": "Respond succinctly with minimal words while preserving key facts.",
+        "detailed": "Respond comprehensively with clear structure, examples, and explanations.",
+        "step_by_step": "Reason step-by-step. Show intermediate steps, assumptions, constraints, and examples.",
+    }
+    style_text = style_map.get(style.lower(), style_map["detailed"])
+    vb = max(0, min(10, int(verbosity)))
+    verbosity_text = f"Verbosity preference: {vb}/10. Higher verbosity means more detail and thorough coverage."
+
+    lines: list[str] = []
+    lines.append("System: You are Neuroca's local assistant operating over a local LLM. Follow all instructions faithfully.")
+    if system_directive:
+        lines.append(f"System Directive: {system_directive}")
+    lines.append(f"Style: {style_text}")
+    lines.append(verbosity_text)
+
+    if history and len(history) > 0:
+        # Include only the latest few turns to bound context
+        recent = list(history)[-6:]
+        lines.append("\nPrevious context:")
+        for i, h in enumerate(recent, 1):
+            lines.append(f"{i:02d}. {h}")
+
+    lines.append("\nUser:")
+    lines.append(raw_prompt)
+    return "\n".join(lines)
+
+
 # ---------- Routes ----------
 
 @router.post(
@@ -151,7 +202,12 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
 
     if body.health_aware and HealthDynamicsManager:
         try:
-            health_manager = HealthDynamicsManager()
+            _hm = HealthDynamicsManager()
+            # Guard: only pass health manager if it exposes the interface the manager expects
+            if hasattr(_hm, "get_system_health"):
+                health_manager = _hm
+            else:
+                health_manager = None  # avoid AttributeError in integration manager
         except Exception:
             health_manager = None  # non-fatal
 
@@ -171,6 +227,22 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
     extra_ctx.setdefault("response_style", body.style or "detailed")
     extra_ctx.setdefault("verbosity", body.verbosity if body.verbosity is not None else 3)
 
+    # Session parameters for lightweight conversational memory (in-process)
+    session_id = str(extra_ctx.get("session_id", "local-session"))
+    system_directive = str(extra_ctx.get("system_directive", ""))
+    hist = SESSIONS.setdefault(session_id, deque(maxlen=20))
+
+    # Compose enriched prompt so style/verbosity/history actually affect outputs
+    enriched_prompt = _compose_prompt(
+        body.prompt,
+        style=(body.style or "detailed"),
+        verbosity=int(body.verbosity if body.verbosity is not None else 3),
+        system_directive=system_directive,
+        history=hist,
+    )
+
+    # (deduplicated) session setup and prompt composition already performed above
+
     mgr = LLMIntegrationManager(
         config=cfg,
         memory_manager=memory_manager,
@@ -181,7 +253,7 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
         # If the template system is active, style/verbosity will be consumed there.
         # Otherwise they remain as hints for downstream adapters or post-processing.
         resp = await mgr.query(
-            prompt=body.prompt,
+            prompt=enriched_prompt,
             provider=body.provider,
             model=body.model,
             max_tokens=body.max_tokens,
@@ -191,6 +263,13 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
             goal_directed=bool(goal_manager) and body.goal_directed,
             additional_context=extra_ctx,
         )
+
+        # Update ephemeral session memory with this turn
+        try:
+            hist.append(f"User: {body.prompt}")
+            hist.append(f"Assistant: {(resp.content or '')[:2000]}")
+        except Exception:
+            pass
 
         # Shape response into a stable JSON envelope
         usage = None
