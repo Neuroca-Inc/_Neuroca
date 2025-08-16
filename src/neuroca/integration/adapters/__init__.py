@@ -62,44 +62,42 @@ try:
     from .base import (
         AdapterConfigurationError,
         AdapterError,
-        AdapterExecutionError,
         AdapterNotFoundError,
         AdapterRegistry,
         BaseAdapter,
-        LLMResponse,  # Assuming LLMResponse is also defined in base or models
-        ModelCapability,
-        ResponseType,  # Assuming ResponseType is also defined in base or models
     )
+    from ..models import LLMResponse, ResponseType
 except ImportError as e:
-    logger.error(f"Failed to import base adapter components from .base: {e}. Adapters may not function correctly.")
-    # Define minimal placeholders if base import fails to avoid crashing later imports
+    logger.error(f"Failed to import adapter components: {e}. Adapters may not function correctly.")
+    # Minimal placeholders to avoid import-time failures
     class BaseAdapter: pass
     class AdapterRegistry:
         @classmethod
-        def register_adapter_class(cls, name, adapter_class): pass # No-op
+        def register(cls, name=None):
+            def decorator(adapter_cls):
+                return adapter_cls
+            return decorator
         @classmethod
         def get_adapter_class(cls, name): return None
         @classmethod
-        def list_adapter_classes(cls): return []
+        def list_adapters(cls): return []
     class AdapterError(Exception): pass
     class AdapterNotFoundError(AdapterError): pass
     class AdapterConfigurationError(AdapterError): pass
-    class AdapterExecutionError(AdapterError): pass
-    class ModelCapability(Enum): pass
     class LLMResponse: pass
     class ResponseType(Enum): pass
 
 # --- Automatically register available built-in adapters ---
 # Ensure AdapterRegistry was imported successfully before trying to use it
-if 'AdapterRegistry' in globals() and hasattr(AdapterRegistry, 'register_adapter_class'):
+if 'AdapterRegistry' in globals():
     if OpenAIAdapter:
-        AdapterRegistry.register_adapter_class("openai", OpenAIAdapter)
+        AdapterRegistry.register("openai")(OpenAIAdapter)
     if AnthropicAdapter:
-        AdapterRegistry.register_adapter_class("anthropic", AnthropicAdapter)
+        AdapterRegistry.register("anthropic")(AnthropicAdapter)
     if VertexAIAdapter:
-        AdapterRegistry.register_adapter_class("vertexai", VertexAIAdapter)
+        AdapterRegistry.register("vertexai")(VertexAIAdapter)
     if OllamaAdapter:
-        AdapterRegistry.register_adapter_class("ollama", OllamaAdapter)
+        AdapterRegistry.register("ollama")(OllamaAdapter)
 else:
     logger.error("AdapterRegistry not available for automatic registration.")
 
@@ -111,8 +109,6 @@ __all__ = [
     "AdapterError",
     "AdapterNotFoundError",
     "AdapterConfigurationError",
-    "AdapterExecutionError",
-    "ModelCapability",
     "LLMResponse",
     "ResponseType",
     # Export available adapter classes if they were imported successfully

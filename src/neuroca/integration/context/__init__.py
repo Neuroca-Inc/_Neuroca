@@ -41,8 +41,19 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional, Union
 
-from neuroca.core.exceptions import ContextError, ContextLimitExceededError
-from neuroca.memory.working_memory import WorkingMemory  # Corrected import path
+# Use safe fallbacks for exceptions to avoid hard dependency during import
+try:
+    from neuroca.core.exceptions import ContextError, ContextLimitExceededError
+except Exception:  # pragma: no cover - fallback for import-time flexibility
+    class ContextError(Exception): ...
+    class ContextLimitExceededError(Exception): ...
+
+# Avoid importing heavy memory modules at import time; only for typing
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from neuroca.memory.working_memory import WorkingMemory  # type: ignore
+else:
+    WorkingMemory = None  # type: ignore
 
 # Configure module logger
 logger = logging.getLogger(__name__)

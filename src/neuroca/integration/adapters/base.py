@@ -42,6 +42,7 @@ import logging
 import time
 import typing
 from typing import Any, ClassVar, Optional, Union
+from ..models import LLMRequest, LLMResponse, ResponseType, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -100,14 +101,7 @@ class AdapterNotFoundError(AdapterError):
     pass
 
 
-class ResponseType(enum.Enum):
-    """Enumeration of possible response types from LLMs."""
-    TEXT = "text"
-    JSON = "json"
-    CHAT = "chat"
-    EMBEDDING = "embedding"
-    FUNCTION_CALL = "function_call"
-    ERROR = "error"
+# ResponseType is imported from ..models (canonical)
 
 
 @dataclasses.dataclass
@@ -179,57 +173,7 @@ class AdapterConfig:
         return config_dict
 
 
-@dataclasses.dataclass
-class LLMResponse:
-    """
-    Structured response from LLM interactions.
-    
-    This dataclass encapsulates the response from an LLM, providing a standardized
-    format regardless of the underlying LLM provider.
-    
-    Attributes:
-        content (Any): The primary content of the response
-        response_type (ResponseType): Type of the response
-        model_name (str): Name of the model that generated the response
-        usage (Dict[str, int]): Token usage statistics
-        raw_response (Optional[Any]): The raw, unprocessed response from the LLM
-        metadata (Dict[str, Any]): Additional metadata about the response
-        finish_reason (Optional[str]): Reason why the LLM stopped generating
-        created_at (float): Timestamp when the response was created
-    """
-    content: Any
-    response_type: ResponseType
-    model_name: str
-    usage: dict[str, int]
-    raw_response: Optional[Any] = None
-    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
-    finish_reason: Optional[str] = None
-    created_at: float = dataclasses.field(default_factory=time.time)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert response to dictionary for serialization."""
-        result = dataclasses.asdict(self)
-        result['response_type'] = self.response_type.value
-        # Handle non-serializable objects in raw_response
-        if 'raw_response' in result and result['raw_response'] is not None:
-            try:
-                # Test if it's JSON serializable
-                json.dumps(result['raw_response'])
-            except (TypeError, OverflowError):
-                # If not serializable, convert to string representation
-                result['raw_response'] = str(result['raw_response'])
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'LLMResponse':
-        """Create an LLMResponse instance from a dictionary."""
-        if 'response_type' in data and isinstance(data['response_type'], str):
-            data['response_type'] = ResponseType(data['response_type'])
-        return cls(**data)
-
-    def is_error(self) -> bool:
-        """Check if the response represents an error."""
-        return self.response_type == ResponseType.ERROR
+# LLMResponse is imported from ..models (canonical)
 
 
 class BaseAdapter(abc.ABC):
@@ -439,6 +383,67 @@ class BaseAdapter(abc.ABC):
         params.update(kwargs)
         
         return params
+
+    async def execute(self, request: LLMRequest) -> LLMResponse:
+        """
+        Default standardized execution path for adapters.
+        Routes LLMRequest to generate() and coerces to canonical LLMResponse.
+        Subclasses may override for provider-specific execution.
+        """
+        if request.prompt is None:
+            raise InvalidRequestError("LLMRequest.prompt must be provided for text generation")
+        # Build parameter map from request
+        params: dict[str, Any] = {}
+        if request.model is not None:
+            params["model"] = request.model
+        if request.max_tokens is not None:
+            params["max_tokens"] = request.max_tokens
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        if request.stop_sequences is not None:
+            params["stop_sequences"] = request.stop_sequences
+        if request.additional_params:
+            params.update(request.additional_params)
+
+        resp = await self.generate(request.prompt, **params)
+
+        if isinstance(resp, LLMResponse):
+            if resp.request is None:
+                resp.request = request
+            return resp
+
+        # Legacy fallback: coerce simple content to canonical response
+        content = None
+        raw = None
+        if isinstance(resp, dict):
+            content = resp.get("content") or resp.get("response") or resp.get("text") or ""
+            raw = resp
+        else:
+            content = str(resp)
+
+        return LLMResponse(
+            provider=getattr(self, "name", "unknown"),
+            model=request.model or self.config.model_name,
+            content=content,
+            raw_response=raw,
+            request=request,
+        )
+
+    async def close(self) -> None:
+        """Optional hook for adapters to release resources."""
+        return None
+
+    def get_available_models(self) -> list[str]:
+        """
+        Default implementation returns an empty list.
+        Adapters may override to return a cached list of models.
+        """
+        try:
+            if getattr(self, "config", None) and getattr(self.config, "model_name", None):
+                return [self.config.model_name]
+        except Exception:
+            pass
+        return []
 
     def __str__(self) -> str:
         """String representation of the adapter."""

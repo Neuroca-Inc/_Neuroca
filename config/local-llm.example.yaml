@@ -1,0 +1,26 @@
+# Neuroca local LLM (Ollama) example configuration
+# Copy this file to your runtime config and adjust as needed.
+
+default_provider: ollama
+default_model: gemma3:4b
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+    default_model: gemma3:4b
+    request_timeout: 120
+    max_retries: 3
+    retry_delay: 1.0
+    # Optional generation defaults (can be overridden per call)
+    temperature: 0.7
+    max_tokens: 256
+    top_p: 1.0
+    # top_k is model-dependent; uncomment to use
+    # top_k: 40
+    # stop_sequences:
+    #   - "</s>"
+
+prompt_template_dirs:
+  - _Neuroca/src/neuroca/integration/prompts/templates
+
+store_interactions: true

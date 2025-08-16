@@ -89,7 +89,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
                 },
                 "ollama": {
                     "base_url": "http://localhost:11434",
-                    "default_model": "llama3"
+                    "default_model": "gemma3:4b"
                 }
             },
             "store_interactions": True,
@@ -201,7 +201,7 @@ def query_llm(
     
     Examples:
         neuroca llm query "What is neuroplasticity?"
-        neuroca llm query --provider ollama --model llama3 "Explain cognitive architecture"
+        neuroca llm query --provider ollama --model gemma3:4b "Explain cognitive architecture"
         neuroca llm query --no-memory "How does working memory function?"
         neuroca llm query --format json "Generate a list of 5 cognitive biases"
     """

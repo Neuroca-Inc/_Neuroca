@@ -13,7 +13,7 @@ Usage:
     # Register the adapter
     config = {
         "base_url": "http://localhost:11434",
-        "default_model": "llama3"
+        "default_model": "gemma3:4b"
     }
     adapter = OllamaAdapter(config)
     AdapterRegistry.register_adapter("ollama", adapter)
@@ -25,12 +25,29 @@ Usage:
 import json
 import logging
 import time
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, ClassVar
 
-import aiohttp
+# aiohttp is optional for testing; provide a stub when not installed so tests can monkeypatch
+try:
+    import aiohttp  # type: ignore
+except Exception:  # pragma: no cover - allow tests without aiohttp installed
+    class _AiohttpStub:
+        class ClientTimeout:
+            def __init__(self, total: float | None = None):
+                self.total = total
+        class ClientSession:
+            def __init__(self, *args, **kwargs):
+                self.closed = True
+            async def close(self):
+                self.closed = True
+            def get(self, *args, **kwargs):
+                raise RuntimeError("aiohttp is not installed")
+            def post(self, *args, **kwargs):
+                raise RuntimeError("aiohttp is not installed")
+    aiohttp = _AiohttpStub()  # type: ignore
 
 from ..models import LLMRequest, LLMResponse, ResponseType, TokenUsage
-from .base import AdapterError, BaseAdapter, ConfigurationError  # Import AdapterRegistry
+from .base import AdapterError, BaseAdapter, ConfigurationError, AdapterConfig  # Import AdapterConfig
 
 # NOTE: ModelCapability was removed from the import above as it's not defined in base.py.
 # The capabilities property below might need adjustment if ModelCapability is defined elsewhere.
@@ -43,6 +60,8 @@ class OllamaError(AdapterError):
 
 
 class OllamaAdapter(BaseAdapter): # Corrected inheritance
+    # Use BaseAdapter's naming convention for registry/identification
+    name: ClassVar[str] = "ollama"
     """
     Adapter for Ollama local LLM deployments.
     
@@ -50,27 +69,58 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
     the Ollama API, providing access to a variety of open-source models.
     """
     
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: Union[dict[str, Any], AdapterConfig]):
         """
-        Initialize the Ollama adapter.
-        
-        Args:
-            config: Configuration dictionary with Ollama-specific settings
-                - base_url: Ollama API base URL (default: http://localhost:11434)
-                - default_model: Default model to use
-                - request_timeout: Request timeout in seconds
-                - max_retries: Max number of retries for failed requests
-                - other parameters that will be passed to Ollama API
+        Initialize the Ollama adapter. Supports either a raw dict config or AdapterConfig.
         """
         self._name = "ollama"
-        self._base_url = config.get("base_url", "http://localhost:11434")
-        self._default_model = config.get("default_model", "llama3")
-        self._request_timeout = config.get("request_timeout", 120)
-        self._max_retries = config.get("max_retries", 3)
-        self._config = config
-        self._available_models = set()
         self._session = None
-        
+        self._available_models = set()
+
+        if isinstance(config, AdapterConfig):
+            # Use provided AdapterConfig directly
+            super().__init__(config)
+            self._base_url = config.api_base or "http://localhost:11434"
+            self._default_model = config.model_name
+            self._request_timeout = int(config.timeout)
+            self._max_retries = int(config.max_retries)
+            # Keep a simple dict mirror for backward compatibility
+            self._config = {
+                "base_url": self._base_url,
+                "default_model": self._default_model,
+                "request_timeout": self._request_timeout,
+                "max_retries": self._max_retries,
+                **config.extra_params,
+            }
+        else:
+            # Dict configuration path (manager passes dicts today)
+            self._base_url = config.get("base_url", "http://localhost:11434")
+            self._default_model = config.get("default_model", "gemma3:4b")
+            self._request_timeout = int(config.get("request_timeout", 120))
+            self._max_retries = int(config.get("max_retries", 3))
+            self._config = config
+
+            # Build AdapterConfig for BaseAdapter
+            adapter_cfg = AdapterConfig(
+                model_name=self._default_model,
+                api_base=self._base_url,
+                timeout=float(self._request_timeout),
+                max_retries=self._max_retries,
+                retry_delay=float(config.get("retry_delay", 1.0)),
+                temperature=float(config.get("temperature", 0.7)) if config.get("temperature") is not None else 0.7,
+                max_tokens=config.get("max_tokens"),
+                top_p=float(config.get("top_p", 1.0)) if config.get("top_p") is not None else 1.0,
+                top_k=config.get("top_k"),
+                presence_penalty=float(config.get("presence_penalty", 0.0)) if config.get("presence_penalty") is not None else 0.0,
+                frequency_penalty=float(config.get("frequency_penalty", 0.0)) if config.get("frequency_penalty") is not None else 0.0,
+                stop_sequences=config.get("stop_sequences"),
+                extra_params={k: v for k, v in config.items() if k not in {
+                    "base_url","default_model","request_timeout","max_retries","retry_delay",
+                    "temperature","max_tokens","top_p","top_k","presence_penalty","frequency_penalty","stop_sequences"
+                }},
+            )
+            super().__init__(adapter_cfg)
+
         # Initialize HTTP session
         self._initialize_session()
         logger.info(f"Initialized Ollama adapter with base URL: {self._base_url}")
@@ -102,24 +152,15 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
             await self._session.close()
             logger.debug("Closed Ollama adapter HTTP session")
     
-    def validate_configuration(self) -> bool:
+    def validate_config(self):
         """
-        Validate adapter configuration.
-        
-        Returns:
-            bool: True if configuration is valid
-            
-        Raises:
-            ConfigurationError: If configuration is invalid
+        Validate adapter configuration (overrides BaseAdapter.validate_config).
         """
-        # Check required configuration
         if not self._base_url:
-            raise ConfigurationError("base_url must be specified in configuration") # Corrected exception type
-        
-        # Validate URL format
+            raise ConfigurationError("base_url must be specified in configuration")
         if not self._base_url.startswith(("http://", "https://")):
-            raise ConfigurationError(f"Invalid base_url format: {self._base_url}") # Corrected exception type
-        
+            raise ConfigurationError(f"Invalid base_url format: {self._base_url}")
+        # Additional validations could be added here (timeouts, retries ranges, etc.)
         return True
     
     async def _fetch_available_models(self) -> list[str]:
@@ -153,15 +194,10 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
         except Exception as e:
             raise OllamaError(f"Unexpected error: {str(e)}")
     
-    async def get_available_models(self) -> list[str]:
+    def get_available_models(self) -> list[str]:
         """
-        Get a list of available Ollama models.
-        
-        Returns:
-            List[str]: List of available model names
+        Return cached available models. Use internal fetch to refresh as needed.
         """
-        if not self._available_models:
-            await self._fetch_available_models()
         return list(self._available_models)
     
     async def execute(self, request: LLMRequest) -> LLMResponse:
@@ -377,30 +413,30 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
             **kwargs: Additional parameters to override configuration
 
         Returns:
-            LLMResponse containing the embeddings
+            models.LLMResponse containing the embeddings
 
         Raises:
             AdapterError: If an error occurs during embedding generation
         """
         if not self._session or self._session.closed:
             self._initialize_session()
-            
+
         model = kwargs.get("model", self._default_model)
-        
+
         # Handle both single text and list of texts
         is_batch = isinstance(text, list)
         texts = text if is_batch else [text]
-        
+
         embeddings = []
         total_tokens = 0
-        
+
         try:
             for single_text in texts:
                 payload = {
                     "model": model,
                     "prompt": single_text
                 }
-                
+
                 async with self._session.post(
                     f"{self._base_url}/api/embeddings",
                     json=payload
@@ -408,34 +444,40 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
                     if response.status != 200:
                         error_text = await response.text()
                         raise OllamaError(f"Ollama API error ({response.status}): {error_text}")
-                    
+
                     response_data = await response.json()
                     embedding = response_data.get("embedding", [])
                     embeddings.append(embedding)
-                    
+
                     # Track token usage (estimated)
-                    total_tokens += len(single_text.split()) # Simple token estimation
+                    total_tokens += len(str(single_text).split())  # Simple token estimation
 
             embedding_content = embeddings[0] if not is_batch else embeddings
             embedding_size = len(embeddings[0]) if embeddings else 0
 
-            # Construct LLMResponse for embeddings
+            usage = TokenUsage(
+                prompt_tokens=total_tokens,
+                completion_tokens=0,
+                total_tokens=total_tokens
+            )
+
             return LLMResponse(
+                provider=self.name,
+                model=model,
                 content=embedding_content,
-                response_type=ResponseType.EMBEDDING,
-                model_name=model,
-                usage={
-                    "prompt_tokens": total_tokens, # Note: Ollama doesn't provide exact tokens for embeddings
-                    "total_tokens": total_tokens
-                },
+                raw_response=None,
                 metadata={
                     "batch_size": len(texts),
                     "embedding_size": embedding_size,
                     "adapter": self.name
                 },
-                # raw_response could be the list of individual responses if needed
+                usage=usage,
+                cost=0.0,
+                request=None,
+                elapsed_time=None,
+                response_type=ResponseType.EMBEDDING
             )
-            
+
         except aiohttp.ClientError as e:
             raise OllamaError(f"Connection error with Ollama API: {str(e)}")
         except json.JSONDecodeError as e:

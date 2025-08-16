@@ -18,14 +18,17 @@ from neuroca.core.cognitive_control.goal_manager import GoalManager
 from neuroca.core.health.dynamics import HealthState
 
 # Corrected import: Use BaseAdapter instead of LLMAdapter
-from neuroca.integration.adapters.base import LLMResponse
+from neuroca.integration.models import LLMResponse
 from neuroca.integration.exceptions import ProviderNotFoundError
 from neuroca.integration.manager import LLMIntegrationManager
 from neuroca.integration.models import (
     LLMRequest,  # LLMResponse is imported above now
     TokenUsage,
 )
-from neuroca.memory.manager import MemoryManager
+# Avoid importing heavy MemoryManager and DB deps during unit tests; provide a minimal stub instead
+class _MemoryManagerStub:
+    async def retrieve(self, *args, **kwargs): ...
+    async def store(self, *args, **kwargs): ...
 
 
 class TestLLMIntegrationManager:
@@ -34,7 +37,7 @@ class TestLLMIntegrationManager:
     @pytest.fixture()
     def mock_memory_manager(self):
         """Create a mock memory manager for testing."""
-        manager = MagicMock(spec=MemoryManager)
+        manager = MagicMock(spec=_MemoryManagerStub)
         manager.store = AsyncMock()
         manager.retrieve = AsyncMock(return_value=[])
         return manager
