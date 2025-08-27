@@ -304,3 +304,239 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
             await mgr.close()
         except Exception:
             pass
+
+# --- Streaming SSE endpoint (Ollama-first, with memory visibility) ---
+
+@router.get(
+    "/stream",
+    summary="Stream LLM output via SSE",
+)
+async def stream_llm(
+    prompt: str,
+    provider: str = "ollama",
+    model: str = "gemma3:4b",
+    max_tokens: int = 128,
+    temperature: float = 0.2,
+    memory_context: bool = False,
+    health_aware: bool = False,
+    goal_directed: bool = False,
+    style: str = "detailed",
+    verbosity: int = 3,
+    session_id: Optional[str] = None,
+    system_directive: str = "",
+):
+    """
+    Server-Sent Events (SSE) streaming endpoint.
+
+    Behavior:
+    - If provider is 'ollama' and local daemon is reachable, stream tokens directly from Ollama.
+    - Otherwise, fall back to a single-shot manager.query and pseudo-stream the final content.
+    - Emits a 'meta' event first with memory hits so you can verify memory integration live.
+
+    SSE event format (text/event-stream):
+        data: {"type":"meta","memory_hits":...,"memories":[...],...}
+
+        data: {"type":"token","content":"..."}
+
+        data: {"type":"end","elapsed":...}
+    """
+    # Local imports to avoid changing module header imports
+    from fastapi.responses import StreamingResponse
+    import aiohttp
+    import asyncio
+    import json
+    import time
+
+    # Build a minimal config just like the JSON route
+    cfg = _default_config(provider, model)
+
+    # Optional managers
+    _memory_manager = None
+    _health_manager = None
+    _goal_manager = None
+
+    if memory_context and create_memory_system:
+        try:
+            _memory_manager = create_memory_system("manager")
+        except Exception:
+            _memory_manager = None  # non-fatal
+
+    if health_aware and HealthDynamicsManager:
+        try:
+            _hm = HealthDynamicsManager()
+            if hasattr(_hm, "get_system_health"):
+                _health_manager = _hm
+        except Exception:
+            _health_manager = None  # non-fatal
+
+    if goal_directed and GoalManager:
+        try:
+            _goal_manager = GoalManager(
+                health_manager=_health_manager,
+                memory_manager=_memory_manager,
+            )
+        except Exception:
+            _goal_manager = None  # non-fatal
+
+    # Additional context and lightweight session memory
+    extra_ctx: dict[str, Any] = {}
+    extra_ctx.setdefault("response_style", style or "detailed")
+    extra_ctx.setdefault("verbosity", verbosity if verbosity is not None else 3)
+    if session_id:
+        extra_ctx["session_id"] = session_id
+    if system_directive:
+        extra_ctx["system_directive"] = system_directive
+
+    sid = str(extra_ctx.get("session_id", "local-session"))
+    hist = SESSIONS.setdefault(sid, deque(maxlen=20))
+
+    enriched_prompt = _compose_prompt(
+        prompt,
+        style=(style or "detailed"),
+        verbosity=int(verbosity if verbosity is not None else 3),
+        system_directive=(system_directive or ""),
+        history=hist,
+    )
+
+    # Create a manager instance for memory retrieval and standardization
+    mgr = LLMIntegrationManager(
+        config=cfg,
+        memory_manager=_memory_manager,
+        health_manager=_health_manager,
+        goal_manager=_goal_manager,
+    )
+
+    def _sse_line(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+    async def _gen():
+        t0 = time.perf_counter()
+        full_text: list[str] = []
+        try:
+            # Emit metadata first with memory hits so UI can display verification
+            mem_hits = 0
+            mem_previews: list[str] = []
+            if memory_context and mgr.memory_manager:
+                try:
+                    # Reuse manager's retrieval method for consistent behavior across tiers
+                    mems = await mgr._retrieve_relevant_memories(prompt)  # type: ignore[attr-defined]
+                    mem_hits = len(mems or [])
+                    if mem_hits:
+                        for m in (mems or [])[:3]:
+                            mem_previews.append(str(m.get("content", ""))[:200])
+                except Exception:
+                    pass
+
+            yield _sse_line({
+                "type": "meta",
+                "provider": provider,
+                "model": model,
+                "memory_hits": mem_hits,
+                "memories": mem_previews,
+                "session_id": sid,
+            })
+
+            # Streaming path for Ollama if available; otherwise pseudo-stream
+            if provider.lower() == "ollama":
+                base_url = (
+                    cfg.get("providers", {})
+                      .get(provider, {})
+                      .get("base_url", "http://127.0.0.1:11434")
+                )
+                timeout_sec = (
+                    cfg.get("providers", {})
+                      .get(provider, {})
+                      .get("request_timeout", 60)
+                )
+
+                # Ollama generate payload with streaming
+                payload = {
+                    "model": model,
+                    "prompt": enriched_prompt,
+                    "stream": True,
+                    "options": {
+                        "temperature": float(temperature),
+                        # Ollama uses num_predict as max tokens
+                        "num_predict": int(max_tokens),
+                    },
+                }
+
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_sec)) as session:
+                        async with session.post(f"{base_url}/api/generate", json=payload) as resp:
+                            resp.raise_for_status()
+                            # Read newline-delimited JSON records
+                            async for raw in resp.content:
+                                if not raw:
+                                    continue
+                                try:
+                                    for line in raw.decode("utf-8", "ignore").splitlines():
+                                        s = line.strip()
+                                        if not s:
+                                            continue
+                                        d = json.loads(s)
+                                        tok = d.get("response")
+                                        if tok:
+                                            full_text.append(tok)
+                                            yield _sse_line({"type": "token", "content": tok})
+                                        if d.get("done"):
+                                            # End of stream
+                                            elapsed = time.perf_counter() - t0
+                                            yield _sse_line({"type": "end", "elapsed": elapsed})
+                                            # Update ephemeral session memory
+                                            try:
+                                                hist.append(f"User: {prompt}")
+                                                hist.append(f"Assistant: {(''.join(full_text))[:2000]}")
+                                            except Exception:
+                                                pass
+                                            return
+                                except Exception:
+                                    # Malformed line; continue
+                                    continue
+                except Exception as e:
+                    # On streaming failure, fall back to a single result via manager
+                    pass  # Fall through to single-shot path below
+
+            # Fallback: single-shot via manager, pseudo-stream once
+            try:
+                resp = await mgr.query(
+                    prompt=enriched_prompt,
+                    provider=provider,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    memory_context=bool(_memory_manager) and memory_context,
+                    health_aware=bool(_health_manager) and health_aware,
+                    goal_directed=bool(_goal_manager) and goal_directed,
+                    additional_context=extra_ctx,
+                )
+                text = resp.content or ""
+                if text:
+                    full_text.append(text)
+                    yield _sse_line({"type": "token", "content": text})
+                elapsed = time.perf_counter() - t0
+                yield _sse_line({"type": "end", "elapsed": elapsed})
+                # Update ephemeral session memory
+                try:
+                    hist.append(f"User: {prompt}")
+                    hist.append(f"Assistant: {(text)[:2000]}")
+                except Exception:
+                    pass
+                return
+            except Exception as e:
+                # Emit an error then end
+                yield _sse_line({"type": "error", "message": str(e)})
+                elapsed = time.perf_counter() - t0
+                yield _sse_line({"type": "end", "elapsed": elapsed})
+                return
+        finally:
+            try:
+                await mgr.close()
+            except Exception:
+                pass
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # Disable nginx buffering if present
+    }
+    return StreamingResponse(_gen(), media_type="text/event-stream", headers=headers)

@@ -72,6 +72,40 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+2a) CLI usage (Typer)
+
+If the Neuroca CLI entrypoint is available, you can use the llm commands directly. Otherwise, use the Python module fallback.
+
+- Query (preferred, if entrypoint is installed):
+  - neuroca llm query "Say hello concisely." --provider ollama --model gemma3:4b --no-memory --no-health --no-goals
+- Query (fallback if entrypoint missing):
+  - PYTHONPATH=_Neuroca/src python -m neuroca.cli.commands.llm query "Say hello concisely." --provider ollama --model gemma3:4b --no-memory --no-health --no-goals
+
+- Bench latency (preferred):
+  - neuroca llm bench --provider ollama --model gemma3:4b --suite latency --runs 20 --concurrency 2 --pretty --explain
+- Bench latency (fallback):
+  - PYTHONPATH=_Neuroca/src python -m neuroca.cli.commands.llm bench --provider ollama --model gemma3:4b --suite latency --runs 20 --concurrency 2 --pretty --explain
+
+Notes
+- Command sources: ['python.function query_llm()'](_Neuroca/src/neuroca/cli/commands/llm.py:185), ['python.function bench_llm()'](_Neuroca/src/neuroca/cli/commands/llm.py:438)
+- Bench implementation uses: ['python.function latency.run()'](_Neuroca/benchmarks/llm_bench/latency.py:43), unified config builder: ['python.function util.build_manager_config()'](_Neuroca/benchmarks/llm_bench/util.py:104)
+- "all" currently maps to "latency" only in the CLI while other suites are modularized.
+
+Configuration
+- On first use, the CLI creates a default config at ~/.config/neuroca/llm_config.yaml with ollama as the default provider and gemma3:4b as the default model.
+- View current configuration:
+  - neuroca llm config --view
+- Set defaults:
+  - neuroca llm config --provider ollama --model gemma3:4b
+- Show config path or edit:
+  - neuroca llm config --path
+  - neuroca llm config --edit
+
+Troubleshooting (CLI)
+- If "neuroca" is not found, use the Python module form with PYTHONPATH set to _Neuroca/src (examples above).
+- If Ollama connection is refused, ensure the daemon is running and base_url is correct (default http://127.0.0.1:11434).
+- If imports fail, ensure the repo is installed in editable mode:
+  - pip install -e .
 Notes
 - The manager will call the Ollama adapter’s execute(request) path:
   - ['python.method OllamaAdapter.execute()'](_Neuroca/src/neuroca/integration/adapters/ollama.py:167)
@@ -112,3 +146,9 @@ Roadmap (next steps)
 - Keep cloud adapters out of the critical path until refactor is complete (imports are guarded already).
 - Optional: convert remaining adapters to the same execution interface and canonical models.
 - Optional: add CLI command for local-LLM smoke run under ['_Neuroca/src/neuroca/cli/commands'](_Neuroca/src/neuroca/cli/commands)
+
+
+Legacy script note
+- The legacy helper script is retained for ad‑hoc debugging but the CLI now supersedes it for normal use:
+  - ['_Neuroca/run_local_ollama.py'](_Neuroca/run_local_ollama.py)
+- Recommendation: Prefer the CLI flows documented above; use the script only when you need a minimal Python entrypoint without Typer.

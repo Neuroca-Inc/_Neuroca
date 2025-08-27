@@ -18,7 +18,7 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Any
 
 import typer
 import yaml
@@ -77,8 +77,8 @@ def load_config(config_path: Optional[Path] = None) -> dict:
     if not config_path.exists():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         default_config = {
-            "default_provider": "openai",
-            "default_model": "gpt-4",
+            "default_provider": "ollama",
+            "default_model": "gemma3:4b",
             "providers": {
                 "openai": {
                     "api_key": os.environ.get("OPENAI_API_KEY", ""),
@@ -89,7 +89,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
                     "default_model": "claude-3-opus-20240229"
                 },
                 "ollama": {
-                    "base_url": "http://localhost:11434",
+                    "base_url": "http://127.0.0.1:11434",
                     "default_model": "gemma3:4b"
                 }
             },
@@ -439,7 +439,7 @@ def manage_config(
 def bench_llm(
     provider: Annotated[str, typer.Option("--provider", "-p", help="Provider name (default: ollama)")] = "ollama",
     model: Annotated[str, typer.Option("--model", "-m", help="Model name (default: gemma3:4b)")] = "gemma3:4b",
-    suite: Annotated[str, typer.Option("--suite", help="Comma-separated: latency,memory,resilience,hallucination,exam,reward_hacking,all")] = "all",
+    suite: Annotated[str, typer.Option("--suite", help="Comma-separated: latency; 'all' currently maps to 'latency'")] = "all",
     runs: Annotated[int, typer.Option("--runs", help="Runs for applicable suites (default: 20)")] = 20,
     concurrency: Annotated[int, typer.Option("--concurrency", help="Concurrency for applicable suites (default: 2)")] = 2,
     pretty: Annotated[bool, typer.Option("--pretty", help="Pretty-print JSON results")] = False,
@@ -451,9 +451,10 @@ def bench_llm(
         neuroca llm bench --provider ollama --model gemma3:4b --suite all --runs 20 --concurrency 2 --pretty --explain
         neuroca llm bench --suite latency,resilience --runs 50 --concurrency 4
     """
-    # Lazy import with robust fallback to repo-relative path
+    # Import modular latency bench from repo; add repo root to sys.path if needed
     try:
-        import benchmarks.llm_benchmarks as bench  # type: ignore
+        import benchmarks.llm_bench.latency as bench_latency  # type: ignore
+        import benchmarks.llm_bench.util as bench_util  # type: ignore
     except Exception:
         try:
             here = Path(__file__).resolve()
@@ -461,33 +462,49 @@ def bench_llm(
             repo_root = here.parents[4]
             if str(repo_root) not in sys.path:
                 sys.path.insert(0, str(repo_root))
-            import benchmarks.llm_benchmarks as bench  # type: ignore
+            import benchmarks.llm_bench.latency as bench_latency  # type: ignore
+            import benchmarks.llm_bench.util as bench_util  # type: ignore
         except Exception as e:
-            console.print("[red]Benchmarks module not available.[/red]")
-            console.print("Try running directly: python _Neuroca/benchmarks/llm_benchmarks.py --help")
+            console.print("[red]Benchmarks package not available.[/red]")
+            console.print("Expected package: benchmarks/llm_bench with latency.py and util.py")
             raise typer.Exit(code=1)
 
     suites = [s.strip().lower() for s in suite.split(",") if s.strip()]
     if "all" in suites:
-        suites = ["latency", "memory", "resilience", "hallucination", "exam", "reward_hacking"]
+        suites = ["latency"]
+
+    async def _execute_bench():
+        # Minimal manager config for stable benchmarking (no templates, no memory/health/goals)
+        cfg = bench_util.build_manager_config(provider=provider, model=model, template_dirs=[])
+        mgr = LLMIntegrationManager(config=cfg)
+        try:
+            results: dict[str, Any] = {}
+            if "latency" in suites:
+                results["latency"] = await bench_latency.run(
+                    mgr,
+                    provider=provider,
+                    model=model,
+                    runs=runs,
+                    concurrency=concurrency,
+                )
+
+            # Print JSON results
+            payload = results["latency"] if len(suites) == 1 else results
+            text = json.dumps(payload, indent=2) if pretty else json.dumps(payload)
+            console.print(text)
+
+            if explain:
+                try:
+                    err = payload.get("errors", 0) if isinstance(payload, dict) else 0
+                    console.print(f"[bold]Summary:[/bold] suite={','.join(suites)} errors={err}")
+                except Exception:
+                    pass
+        finally:
+            if hasattr(mgr, "close"):
+                await mgr.close()
 
     try:
-        results = asyncio.run(
-            bench.run_suite(
-                provider=provider,
-                model=model,
-                suite=suites,
-                runs=runs,
-                concurrency=concurrency,
-                pretty=pretty,
-            )
-        )
-        if explain and isinstance(results, dict):
-            try:
-                bench._print_summary(results)  # type: ignore[attr-defined]
-            except Exception:
-                # Summary is optional; ignore errors here
-                pass
+        asyncio.run(_execute_bench())
     except Exception as e:
         console.print(f"[red]Benchmark error: {e}[/red]")
         raise typer.Exit(code=1)
