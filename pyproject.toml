@@ -10,22 +10,27 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "neuroca"
-version = "0.1.0"
-description = "NeuroCognitive Architecture (NCA) for Large Language Models"
+version = "0.1.0-beta"
+description = "NeuroCognitive Architecture (NCA) for Large Language Models - Beta Release"
 authors = [
     {name = "Justin Lietz", email = "jlietz93@gmail.com"},
 ]
 readme = "README.md"
 license = {text = "MIT"}
+keywords = ["ai", "llm", "memory", "cognitive-architecture", "neuroca", "artificial-intelligence"]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 requires-python = ">=3.9,<3.13"
 dependencies = [

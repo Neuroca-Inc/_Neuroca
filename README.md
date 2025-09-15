@@ -3,12 +3,13 @@
   <img src="src/neuroca/assets/images/Neuroca-logo.png" alt="Neuroca Logo" width="400"/>
 </p>
 
-<h3 align="center"><i>Persistent Memory System for LLMs (NCA)</i></h3>
+<h3 align="center"><i>Persistent Memory System for LLMs (NCA) - Beta Release</i></h3>
 <p align="center"><span style="color:green"><strong>NEW:</strong> Neuroca vs Agno benchmarks results: <a href="https://github.com/justinlietz93/Neuroca-Benchmarks">here</a></span></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version: 3.9+"/></a>
+  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python Version: 3.9+"/></a>
+  &nbsp; <a href="BETA_RELEASE.md"><img src="https://img.shields.io/badge/version-0.1.0--beta-orange.svg" alt="Beta Release"/></a>
 </p>
 
 <br/>
@@ -389,8 +390,21 @@ For questions, feedback, or collaboration opportunities, please open an issue on
 
 ---
 
-**Note**: NeuroCognitive Architecture is currently in **ALPHA**. Features and interfaces may change significantly as the project develops. We warmly welcome **ANY and ALL feedback, bug reports, and feature requests** via GitHub Issues. Your input is invaluable as we work towards integrating NCA into the [Apex-CodeGenesis VSCode Extension](https://github.com/justinlietz93/Apex-CodeGenesis) and replacing the existing Agno memory system within the [Cogito platform](https://github.com/justinlietz93/Cogito).
+**Note**: NeuroCognitive Architecture is currently in **BETA (v0.1.0-beta)**. This release represents a fully functional baseline implementation ready for evaluation and production use in appropriate scenarios. Core features including the three-tiered memory system, health dynamics, API endpoints, and CLI tools are stable and tested. We warmly welcome **ANY and ALL feedback, bug reports, and feature requests** via GitHub Issues. 
+
+**🎯 Beta Status Summary:**
+- ✅ **Core memory system functionality** - Production ready
+- ✅ **API endpoints and CLI tools** - Production ready  
+- ✅ **Basic LLM integration** - Production ready
+- ✅ **Docker deployment** - Production ready
+- ⚠️ **Advanced cognitive control features** - In development
+- ⚠️ **Performance optimizations for large-scale** - Ongoing
+- ⚠️ **Additional LLM provider integrations** - Planned
+
+See [BETA_RELEASE.md](BETA_RELEASE.md) for complete beta documentation and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
+
+Your input is invaluable as we work towards integrating NCA into the [Apex-CodeGenesis VSCode Extension](https://github.com/justinlietz93/Apex-CodeGenesis) and replacing the existing Agno memory system within the [Cogito platform](https://github.com/justinlietz93/Cogito).
 
 ---
 
-<p align="center"><em>Updated as of 4/15/2025</em></p>
+<p align="center"><em>Updated as of September 15, 2025 - Beta Release</em></p>
