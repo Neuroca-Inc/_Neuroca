@@ -490,3 +490,82 @@ class ReadOnlyModel(BaseModel):
             ReadOnlyModelError: Always raised when called
         """
         raise ReadOnlyModelError(f"Cannot delete read-only model {self.__class__.__name__}")
+
+
+class ModelRegistry:
+    """
+    Registry for managing and tracking all model classes in the system.
+    
+    Provides centralized model registration, lookup, and validation capabilities.
+    """
+    
+    def __init__(self):
+        """Initialize an empty model registry."""
+        self._models: Dict[str, Type[BaseModel]] = {}
+        logger.debug("Initialized ModelRegistry")
+    
+    def register(self, model_class: Type[BaseModel]) -> None:
+        """
+        Register a model class in the registry.
+        
+        Args:
+            model_class: The model class to register
+            
+        Raises:
+            ValueError: If the class is not a valid model
+        """
+        if not issubclass(model_class, BaseModel):
+            raise ValueError(f"{model_class.__name__} is not a valid BaseModel subclass")
+        
+        class_name = model_class.__name__
+        if class_name in self._models:
+            logger.warning(f"Model {class_name} already registered, overwriting")
+        
+        self._models[class_name] = model_class
+        logger.debug(f"Registered model: {class_name}")
+    
+    def get(self, class_name: str) -> Optional[Type[BaseModel]]:
+        """
+        Get a model class by name.
+        
+        Args:
+            class_name: Name of the model class
+            
+        Returns:
+            Type[BaseModel]: The model class if found, None otherwise
+        """
+        return self._models.get(class_name)
+    
+    def get_all(self) -> Dict[str, Type[BaseModel]]:
+        """
+        Get all registered model classes.
+        
+        Returns:
+            Dict[str, Type[BaseModel]]: Dictionary of class names to model classes
+        """
+        return self._models.copy()
+    
+    def __len__(self) -> int:
+        """Get the number of registered models."""
+        return len(self._models)
+    
+    def __contains__(self, class_name: str) -> bool:
+        """Check if a model class is registered."""
+        return class_name in self._models
+
+
+# Type alias for model IDs
+ModelID = str
+
+# Interface for serializable objects
+class Serializable:
+    """Interface for objects that can be serialized to/from dictionaries."""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the object to a dictionary representation."""
+        raise NotImplementedError("Subclasses must implement to_dict()")
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Serializable':
+        """Create an instance from a dictionary representation."""
+        raise NotImplementedError("Subclasses must implement from_dict()")

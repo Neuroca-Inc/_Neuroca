@@ -8,5 +8,6 @@ management across all memory tiers (STM, MTM, LTM).
 
 from neuroca.memory.manager.core import MemoryManager
 from neuroca.memory.manager.models import RankedMemory
+from neuroca.memory.models.memory_item import MemoryItem
 
-__all__ = ["MemoryManager", "RankedMemory"]
+__all__ = ["MemoryManager", "RankedMemory", "MemoryItem"]
