@@ -15,8 +15,8 @@ from neuroca.monitoring.logging import configure_logging, get_logger
 configure_logging(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="json" if os.environ.get("ENVIRONMENT", "development") == "production" else "detailed",
-    # Pass list to avoid iterating characters of a string inside configure_logging
-    output=["file"] if os.environ.get("ENVIRONMENT", "development") == "production" else ["console"],
+    # Pass output as a string to match configure_logging's expected type
+    output="file" if os.environ.get("ENVIRONMENT", "development") == "production" else "console",
 )
 logger = get_logger(__name__)
 
