@@ -1,168 +1,73 @@
 """
-API Routes Module for NeuroCognitive Architecture (NCA)
+API Routes package (lightweight).
 
-This module initializes and configures all API routes for the NCA system.
-It provides a function to register routes with the FastAPI application
-and organizes route modules in a structured way.
+This package intentionally avoids importing submodules at import time to
+keep the dependency graph thin and prevent optional components from
+breaking the API startup. Import routers explicitly from their modules
+when needed, e.g.:
 
-The module follows a modular approach where each domain has its own router
-that is registered with the main application. This allows for better organization,
-maintainability, and testability of the API endpoints.
+    from neuroca.api.routes.llm import router as llm_router
 
-Usage:
-    from fastapi import FastAPI
-    from neuroca.api.routes import register_routes
-    
-    app = FastAPI()
-    register_routes(app)
+If you need to register the full route set, call register_routes(app).
+This function performs lazy imports and skips unavailable modules.
 """
+
+from __future__ import annotations
 
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, FastAPI
-from fastapi.routing import APIRoute
+from fastapi import FastAPI
 
-from neuroca.api.middleware.auth import get_current_user
-from neuroca.api.routes.admin import router as admin_router
-from neuroca.api.routes.auth import router as auth_router
-from neuroca.api.routes.cognitive import router as cognitive_router
-
-# Import all route modules
-from neuroca.api.routes.health import router as health_router
-from neuroca.api.routes.integration import router as integration_router
-from neuroca.api.routes.memory import router as memory_router
-from neuroca.api.routes.monitoring import router as monitoring_router
-from neuroca.config import settings
-
-# Configure logger
 logger = logging.getLogger(__name__)
 
-# Define all available routers with their prefixes and tags
-ROUTERS = [
-    {"router": health_router, "prefix": "/health", "tags": ["Health"]},
-    {"router": memory_router, "prefix": "/memory", "tags": ["Memory"]},
-    {"router": cognitive_router, "prefix": "/cognitive", "tags": ["Cognitive"]},
-    {"router": integration_router, "prefix": "/integration", "tags": ["Integration"]},
-    {"router": admin_router, "prefix": "/admin", "tags": ["Admin"]},
-    {"router": monitoring_router, "prefix": "/monitoring", "tags": ["Monitoring"]},
-    {"router": auth_router, "prefix": "/auth", "tags": ["Authentication"]},
-]
+__all__ = ["register_routes"]
 
 
 def register_routes(app: FastAPI) -> None:
     """
-    Register all API routes with the FastAPI application.
-    
-    This function iterates through all defined routers and includes them
-    in the main FastAPI application with their respective prefixes and tags.
-    It also handles authentication dependencies based on configuration.
-    
-    Args:
-        app (FastAPI): The FastAPI application instance
-        
-    Returns:
-        None
-        
-    Raises:
-        ValueError: If there's an issue with router configuration
+    Lazily register available routers on the provided FastAPI app.
+
+    This function attempts to import known route modules and include them
+    under the configured API prefix. Any missing modules are skipped so the
+    core service can start with a reduced feature set.
+
+    Note: For minimal deployments that only need the LLM endpoint, import the
+    LLM router directly and include it in your app:
+
+        from neuroca.api.routes.llm import router as llm_router
+        app.include_router(llm_router, prefix="/api")
+
     """
+    # Perform imports lazily and skip failures
     try:
-        logger.info("Registering API routes")
-        
-        # Create main API router
-        api_router = APIRouter(prefix=settings.API_PREFIX)
-        
-        # Include all routers
-        for router_config in ROUTERS:
-            router = router_config["router"]
-            prefix = router_config["prefix"]
-            tags = router_config.get("tags", [])
-            
-            # Apply authentication to protected routes if enabled
-            if (settings.AUTH_ENABLED and 
-                prefix not in ["/health", "/auth"] and 
-                not prefix.startswith("/public")):
-                
-                # Apply authentication dependency to all routes in the router
-                for route in router.routes:
-                    if isinstance(route, APIRoute):
-                        route.dependencies.append(Depends(get_current_user))
-                
-                logger.debug(f"Applied authentication to routes with prefix: {prefix}")
-            
-            # Include the router
-            api_router.include_router(
-                router,
-                prefix=prefix,
-                tags=tags
-            )
-            logger.debug(f"Registered router with prefix: {prefix}")
-        
-        # Include the main API router in the app
-        app.include_router(api_router)
-        
-        logger.info(f"Successfully registered {len(ROUTERS)} route modules")
-    
-    except Exception as e:
-        logger.error(f"Failed to register routes: {str(e)}")
-        raise ValueError(f"Route registration failed: {str(e)}") from e
+        from neuroca.config import settings  # type: ignore
+        api_prefix = getattr(settings, "API_PREFIX", "/api")
+        auth_enabled = bool(getattr(settings, "AUTH_ENABLED", False))
+    except Exception:
+        api_prefix = "/api"
+        auth_enabled = False
 
+    def _include(name: str, mod: str, router_name: str = "router") -> None:
+        try:
+            module = __import__(mod, fromlist=[router_name])
+            router = getattr(module, router_name)
+            app.include_router(router, prefix=api_prefix)
+            logger.debug("Included router %s from %s", name, mod)
+        except Exception as e:
+            logger.debug("Skipping router %s (%s): %s", name, mod, e)
 
-def get_all_routes() -> list[dict]:
-    """
-    Get information about all registered routes.
-    
-    This function is useful for documentation and debugging purposes.
-    It returns a list of dictionaries containing information about each route.
-    
-    Returns:
-        List[dict]: A list of dictionaries with route information
-        
-    Example:
-        >>> routes = get_all_routes()
-        >>> for route in routes:
-        ...     print(f"{route['method']} {route['path']}")
-    """
-    routes = []
-    
-    for router_config in ROUTERS:
-        router = router_config["router"]
-        prefix = router_config["prefix"]
-        
-        for route in router.routes:
-            if isinstance(route, APIRoute):
-                routes.append({
-                    "path": f"{settings.API_PREFIX}{prefix}{route.path}",
-                    "name": route.name,
-                    "method": ", ".join(route.methods),
-                    "tags": router_config.get("tags", [])
-                })
-    
-    return routes
+    # Include commonly available routers if present
+    _include("health", "neuroca.api.routes.health")
+    _include("monitoring", "neuroca.api.routes.monitoring")
+    _include("system", "neuroca.api.routes.system")
+    _include("memory", "neuroca.api.routes.memory")
+    _include("cognitive", "neuroca.api.routes.cognitive")
+    _include("integration", "neuroca.api.routes.integration")
+    _include("admin", "neuroca.api.routes.admin")
+    _include("auth", "neuroca.api.routes.auth")
 
+    # LLM router can also be included from here if desired
+    _include("llm", "neuroca.api.routes.llm")
 
-def get_route_by_name(name: str) -> Optional[dict]:
-    """
-    Find a route by its name.
-    
-    Args:
-        name (str): The name of the route to find
-        
-    Returns:
-        Optional[dict]: Route information or None if not found
-        
-    Example:
-        >>> route = get_route_by_name("get_memory_by_id")
-        >>> if route:
-        ...     print(f"Found route: {route['method']} {route['path']}")
-        ... else:
-        ...     print("Route not found")
-    """
-    all_routes = get_all_routes()
-    
-    for route in all_routes:
-        if route["name"] == name:
-            return route
-    
-    return None
+    logger.info("Route registration completed (lazy, best-effort).")

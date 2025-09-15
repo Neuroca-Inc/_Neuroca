@@ -4,6 +4,10 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from neuroca.api.routes.llm import router as llm_router
 
 from neuroca.monitoring.logging import configure_logging, get_logger
 
@@ -11,7 +15,8 @@ from neuroca.monitoring.logging import configure_logging, get_logger
 configure_logging(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="json" if os.environ.get("ENVIRONMENT", "development") == "production" else "detailed",
-    output="file" if os.environ.get("ENVIRONMENT", "development") == "production" else "console"
+    # Pass output as a string to match configure_logging's expected type
+    output="file" if os.environ.get("ENVIRONMENT", "development") == "production" else "console",
 )
 logger = get_logger(__name__)
 
@@ -22,10 +27,28 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Mount static frontend UI (served at /ui) if present
+UI_AVAILABLE = False
+try:
+    # main.py is at: _Neuroca/src/neuroca/api/main.py
+    # parents[1] => _Neuroca/src/neuroca; mount frontend at _Neuroca/src/neuroca/frontend
+    FE_DIR = Path(__file__).resolve().parents[1] / "frontend"
+    if FE_DIR.exists():
+        app.mount("/ui", StaticFiles(directory=str(FE_DIR), html=True), name="ui")
+        UI_AVAILABLE = True
+except Exception:
+    # Non-fatal; API still functions without UI mount
+    UI_AVAILABLE = False
+
+# Expose a persistent LLM JSON endpoint at /api/llm/query
+app.include_router(llm_router, prefix="/api")
+
 
 @app.get("/")
 async def root():
     """Root endpoint."""
+    if UI_AVAILABLE:
+        return RedirectResponse(url="/ui")
     return {"message": "Welcome to the NeuroCognitive Architecture API"}
 
 

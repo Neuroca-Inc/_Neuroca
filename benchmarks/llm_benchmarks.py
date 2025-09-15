@@ -38,10 +38,45 @@ import random
 import statistics
 import time
 import tracemalloc
+import warnings
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# Suppress noisy deprecation warnings from third-party libs (e.g., transformers)
+warnings.filterwarnings("ignore", category=FutureWarning)
+# Quiet verbose warnings from integration package during benchmarking runs
+logging.getLogger("neuroca.integration").setLevel(logging.ERROR)
+logging.getLogger("neuroca.integration.prompts").setLevel(logging.ERROR)
+
+# Canonicalization utilities (robust comparisons)
+try:
+    # When run as a script from repo root, this import is available
+    from benchmarks.llm_bench.util import canonicalize_text as _canon  # type: ignore
+except Exception:
+    # Fallback: minimal canonicalization (strip markdown/backticks, NFKD, whitespace, lowercase)
+    import re as _re
+    import unicodedata as _unicodedata
+    def _canon(text: str, lowercase: bool = True, strip_markdown: bool = True) -> str:
+        if text is None:
+            return ""
+        norm = _unicodedata.normalize("NFKD", text)
+        if strip_markdown:
+            norm = _re.sub(r"\*\*(.*?)\*\*", r"\1", norm)
+            norm = _re.sub(r"\*(.*?)\*", r"\1", norm)
+            norm = norm.replace("`", "")
+        norm = _re.sub(r"\s+", " ", norm).strip()
+        return norm.lower() if lowercase else norm
+
 # Neuroca integration manager (provider-agnostic LLM orchestrator)
+# Enable running from repository root without setting PYTHONPATH
+import sys as _sys
+from pathlib import Path as _Path
+_repo_root = _Path(__file__).resolve().parents[1]
+_src_dir = _repo_root / "src"
+if str(_src_dir) not in _sys.path:
+    _sys.path.insert(0, str(_src_dir))
+
 from neuroca.integration.manager import LLMIntegrationManager
 from neuroca.integration.models import LLMResponse, ResponseType
 
@@ -303,7 +338,10 @@ async def bench_hallucination(
         try:
             resp = await call_llm(mgr, f"Answer factually: {q}", provider, model, max_tokens=64, temperature=0.0)
             ans = (resp.content or "")
-            is_ok = expected.lower() in ans.lower()
+            # Normalize both answer and expected to handle unicode variants (e.g., H₂O vs H2O), markdown, etc.
+            ans_norm = _canon(ans)
+            exp_norm = _canon(expected)
+            is_ok = exp_norm in ans_norm
             correct += 1 if is_ok else 0
             details.append({"q": q, "expected_substring": expected, "got": ans[:200], "match": is_ok})
         except Exception as e:
@@ -463,8 +501,47 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--runs", type=int, default=20, help="Runs for applicable suites (default: 20)")
     p.add_argument("--concurrency", type=int, default=2, help="Concurrency for applicable suites (default: 2)")
     p.add_argument("--pretty", action="store_true", help="Pretty-print JSON results")
+    p.add_argument("--explain", action="store_true", help="Print a concise human-readable summary after JSON")
     return p.parse_args()
 
+
+def _print_summary(results: Dict[str, Any]) -> None:
+    """
+    Emit a concise human-readable summary of key metrics.
+    """
+    def _kb(n: int) -> str:
+        try:
+            return f"{n/1024:.1f} KB"
+        except Exception:
+            return str(n)
+
+    lines: List[str] = []
+    mem = results.get("memory") or results.get("memory_growth")
+    if mem:
+        lines.append(f"[memory] heap Δ: {_kb(mem.get('heap_delta_bytes', 0))} (start {_kb(mem.get('heap_bytes_start', 0))} → end {_kb(mem.get('heap_bytes_end', 0))})")
+
+    res = results.get("resilience")
+    if res:
+        lines.append(f"[resilience] success: {res.get('success_rate', 0)}%  errors: {res.get('errors', 0)}  latency mean/p95: {res.get('latency_ms', {}).get('mean', 0)} / {res.get('latency_ms', {}).get('p95', 0)} ms")
+
+    hal = results.get("hallucination")
+    if hal:
+        lines.append(f"[hallucination] correct: {hal.get('correct', 0)}/{hal.get('total', 0)}  rate: {hal.get('hallucination_rate_percent', 0)}%")
+
+    exam = results.get("exam")
+    if not exam:
+        exam = results.get("exam_accuracy")
+    if exam:
+        lines.append(f"[exam] accuracy: {exam.get('accuracy_percent', 0)}%  ({exam.get('correct', 0)}/{exam.get('total', 0)})")
+
+    rh = results.get("reward_hacking")
+    if rh:
+        lines.append(f"[reward_hacking] violations: {rh.get('violations', 0)}/{rh.get('total', 0)}  rate: {rh.get('violation_rate_percent', 0)}%")
+
+    if lines:
+        print("\n=== Benchmark Summary ===")
+        for ln in lines:
+            print(ln)
 
 def main():
     args = parse_args()
@@ -475,7 +552,7 @@ def main():
     # Seed non-deterministic behavior slightly for repeatability in small runs
     random.seed(42)
 
-    asyncio.run(
+    results = asyncio.run(
         run_suite(
             provider=args.provider,
             model=args.model,
@@ -485,6 +562,8 @@ def main():
             pretty=args.pretty,
         )
     )
+    if args.explain and isinstance(results, dict):
+        _print_summary(results)
 
 
 if __name__ == "__main__":
