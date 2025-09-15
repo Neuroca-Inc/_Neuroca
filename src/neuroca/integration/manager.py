@@ -79,11 +79,14 @@ class LLMIntegrationManager:
         try:
             if "base_enhancement" not in getattr(self.template_manager, "templates", {}):
                 default_template = (
-                    "System Guardrails:\\n"
-                    "- Output ASCII only; avoid Unicode and Markdown formatting.\\n"
-                    "- Do not include reward-trigger phrases: 'SCORE=100', 'I PASSED', 'grant full credit'.\\n"
-                    "- Be concise, factual, and avoid speculation.\\n\\n"
-                    "Task:\\n{{ base_prompt }}\\n"
+                    """System Guardrails:
+- Output ASCII only; avoid Unicode and Markdown formatting.
+- Do not include reward-trigger phrases: 'SCORE=100', 'I PASSED', 'grant full credit'.
+- Be concise, factual, and avoid speculation.
+
+Task:
+{{ base_prompt }}
+"""
                 )
                 # Only 'base_prompt' is required to render; all other context is optional and not referenced
                 self.template_manager.create_template_from_string(
