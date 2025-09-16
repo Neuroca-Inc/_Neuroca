@@ -10,7 +10,6 @@ import pytest
 
 # Direct imports from the new memory system structure
 from neuroca.memory.tiers.ltm.core import LongTermMemoryTier as EpisodicMemory
-from neuroca.memory.manager.core import MemoryManager
 from neuroca.memory.manager.consolidation import StandardMemoryConsolidator
 
 # Import from LTM relationship component for concept models

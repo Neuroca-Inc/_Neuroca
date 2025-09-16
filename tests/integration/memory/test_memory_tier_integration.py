@@ -19,7 +19,7 @@ from neuroca.memory.backends.factory.storage_factory import StorageBackendFactor
 from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
 from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
 from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
-from neuroca.memory.manager.core import MemoryManager
+from neuroca.memory.manager import MemoryManager
 
 
 @pytest_asyncio.fixture
@@ -57,20 +57,18 @@ async def memory_tiers() -> Dict[str, MemoryTierInterface]:
 
 
 @pytest_asyncio.fixture
-async def memory_manager(memory_tiers) -> MemoryManager:
-    """Setup memory manager with test tiers."""
+async def memory_manager() -> MemoryManager:
+    """Setup memory manager backed by in-memory tiers."""
+
     manager = MemoryManager(
-        stm_storage=memory_tiers["stm"],
-        # Use the existing storage instances instead of creating new ones
+        stm_storage_type=BackendType.MEMORY,
         mtm_storage_type=BackendType.MEMORY,
-        ltm_storage_type=BackendType.MEMORY
+        ltm_storage_type=BackendType.MEMORY,
     )
     await manager.initialize()
-    
-    # Yield once and cleanup after
+
     yield manager
-    
-    # Cleanup
+
     await manager.shutdown()
 
 
@@ -103,6 +101,36 @@ def sample_memories() -> List[MemoryItem]:
                 )
         )
     ]
+
+
+async def store_memory_item(
+    manager: MemoryManager,
+    memory: MemoryItem,
+    tier: str = MemoryManager.STM_TIER,
+) -> str:
+    """Persist a sample ``MemoryItem`` through the manager API."""
+
+    content_value = ""
+    if hasattr(memory, "content") and hasattr(memory.content, "primary_text"):
+        content_value = memory.content.primary_text
+    elif isinstance(memory.content, dict):
+        content_value = memory.content.get("text") or str(memory.content)
+    else:
+        content_value = str(memory.content)
+
+    metadata_dict = memory.metadata.model_dump(exclude_none=True)
+    importance = metadata_dict.pop("importance", 0.5)
+    tags_dict = metadata_dict.pop("tags", {})
+    tags = [tag for tag, enabled in tags_dict.items() if enabled]
+
+    return await manager.add_memory(
+        content=content_value,
+        summary=memory.summary,
+        importance=importance,
+        metadata=metadata_dict,
+        tags=tags,
+        initial_tier=tier,
+    )
 
 
 class TestTierIntegration:
@@ -213,7 +241,7 @@ class TestMemoryManagerIntegration:
         """Test basic memory transfer between tiers."""
         # Store a memory in STM
         memory = sample_memories[0]
-        memory_id = await memory_manager.add_memory(memory)
+        memory_id = await store_memory_item(memory_manager, memory)
         
         # Verify memory was stored in STM
         assert await memory_manager.stm_storage.exists(memory_id)
@@ -281,7 +309,7 @@ class TestMemoryManagerIntegration:
         """Test retrieving context-relevant memories."""
         # Store memories
         for memory in sample_memories:
-            await memory_manager.add_memory(memory)
+            await store_memory_item(memory_manager, memory)
         
         # Get memory context
         context_memories = await memory_manager.get_prompt_context_memories(max_memories=2)

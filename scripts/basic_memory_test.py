@@ -8,7 +8,7 @@ This script demonstrates the minimum viable use of the memory system.
 import asyncio
 import logging
 from neuroca.memory.backends import BackendType
-from neuroca.memory.manager.core import MemoryManager
+from neuroca.memory.manager import MemoryManager
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

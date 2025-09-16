@@ -1,12 +1,17 @@
-"""
-Memory Manager Package
+"""Neuroca memory manager public interface."""
 
-This package provides the central memory management system for the NeuroCognitive Agent.
-It handles background retrieval, context monitoring, relevance scoring, and memory lifecycle
-management across all memory tiers (STM, MTM, LTM).
-"""
-
-from neuroca.memory.manager.core import MemoryManager
+from neuroca.memory.manager.memory_manager import MemoryManager as AsyncMemoryManager
+from neuroca.memory.manager.core import MemoryManager as LegacyMemoryManager
 from neuroca.memory.manager.models import RankedMemory
 
-__all__ = ["MemoryManager", "RankedMemory"]
+# Export the async, interface-driven manager as the primary entry point while
+# retaining an alias to the legacy implementation for any remaining
+# compatibility shims during the stabilization effort.
+MemoryManager = AsyncMemoryManager
+
+__all__ = [
+    "MemoryManager",
+    "AsyncMemoryManager",
+    "LegacyMemoryManager",
+    "RankedMemory",
+]

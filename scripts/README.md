@@ -84,7 +84,7 @@ The `ConversationalAgent` class in `test_memory_with_llm.py` provides a template
 1.  **Import necessary components**:
     ```python
     import asyncio
-    from neuroca.memory.manager.core import MemoryManager
+    from neuroca.memory.manager import MemoryManager
     from neuroca.memory.backends import BackendType
     # Import other necessary models like MemoryItem, MemorySearchOptions if needed
     ```
