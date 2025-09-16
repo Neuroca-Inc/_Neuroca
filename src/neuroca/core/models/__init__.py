@@ -38,6 +38,7 @@ from neuroca.core.models.base import (  # noqa: E402
     Serializable,
     ValidationError,
     ModelID,
+    ModelNotFoundError,
 )
 
 # Import and re-export cognitive models
@@ -123,6 +124,7 @@ __all__ = [
     'Serializable',
     'ValidationError',
     'ModelID',
+    'ModelNotFoundError',
     
     # Cognitive models
     'CognitiveState',
