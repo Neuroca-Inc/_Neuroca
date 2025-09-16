@@ -26,16 +26,20 @@ Usage:
 import abc
 import copy
 import datetime
+import inspect
 import json
 import logging
 import uuid
+from collections.abc import Iterable, Iterator
+from threading import RLock
 from typing import Any, Dict, List, Optional, Set, Type, TypeVar, Union, cast
 
 # Setup module logger
 logger = logging.getLogger(__name__)
 
-# Type variable for self-referencing return types
+# Type variables for self-referencing return types
 T = TypeVar('T', bound='BaseModel')
+S = TypeVar('S', bound='Serializable')
 
 
 class ModelError(Exception):
@@ -61,6 +65,80 @@ class PersistenceError(ModelError):
 class ModelNotFoundError(ModelError):
     """Exception raised when a model cannot be found by its identifier."""
     pass
+
+
+class ModelID(str):
+    """Strongly-typed identifier for registered domain models."""
+
+    __slots__ = ()
+
+    def __new__(cls, value: Union['ModelID', str]) -> 'ModelID':
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, str):
+            raise TypeError(f"ModelID value must be a string, received {type(value).__name__}")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ModelID value cannot be empty or whitespace")
+        return super().__new__(cls, normalized)
+
+    @property
+    def canonical(self) -> str:
+        """Return the canonical (case-insensitive) representation of the identifier."""
+
+        return str(self).casefold()
+
+    def __repr__(self) -> str:  # pragma: no cover - representational helper
+        return f"ModelID({str(self)!r})"
+
+
+class Serializable(abc.ABC):
+    """Interface describing serialization behaviour for domain models."""
+
+    __slots__ = ()
+
+    @abc.abstractmethod
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the object into a JSON-serialisable dictionary."""
+
+    @classmethod
+    @abc.abstractmethod
+    def from_dict(cls: Type[S], data: Dict[str, Any]) -> S:
+        """Create an object instance from a dictionary payload."""
+
+    def to_json(self, **kwargs: Any) -> str:
+        """Serialise the object into a JSON string."""
+
+        try:
+            return json.dumps(self.to_dict(), **kwargs)
+        except (TypeError, ValueError, OverflowError) as error:
+            logger.error(
+                "JSON serialization error for %s: %s",
+                self.__class__.__name__,
+                error,
+            )
+            raise SerializationError(
+                f"Failed to serialize {self.__class__.__name__} to JSON"
+            ) from error
+
+    @classmethod
+    def from_json(cls: Type[S], json_str: str) -> S:
+        """Deserialise an object instance from a JSON payload."""
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as error:
+            logger.error("JSON parsing error for %s: %s", cls.__name__, error)
+            raise SerializationError(
+                f"Invalid JSON format for {cls.__name__}"
+            ) from error
+
+        if not isinstance(data, dict):
+            raise SerializationError(
+                f"Expected JSON object when decoding {cls.__name__}, received {type(data).__name__}"
+            )
+
+        return cls.from_dict(data)
 
 
 class TimestampMixin:
@@ -138,7 +216,7 @@ class VersionedMixin:
         return self.version == expected_version
 
 
-class BaseModel(abc.ABC):
+class BaseModel(Serializable, abc.ABC):
     """
     Abstract base class for all domain models in the NCA system.
     
@@ -164,24 +242,36 @@ class BaseModel(abc.ABC):
         if id_value is None:
             id_value = str(uuid.uuid4())
         
-        setattr(self, self._id_field, id_value)
+        self.__dict__[self._id_field] = id_value
         
         # Initialize any additional fields from kwargs
         for key, value in kwargs.items():
             if key != self._id_field and not key.startswith('_'):
                 setattr(self, key, value)
         
-        logger.debug(f"Initialized {self.__class__.__name__} with ID: {getattr(self, self._id_field)}")
+        logger.debug(
+            "Initialized %s with ID: %s",
+            self.__class__.__name__,
+            self.__dict__.get(self._id_field),
+        )
     
     @property
     def id(self) -> str:
         """
         Get the model's unique identifier.
-        
+
         Returns:
             str: The model's ID
         """
-        return cast(str, getattr(self, self._id_field))
+        return cast(str, self.__dict__.get(self._id_field))
+
+    @id.setter
+    def id(self, value: str) -> None:
+        """Update the model's identifier."""
+
+        if not isinstance(value, str) or not value:
+            raise ValidationError("Model identifier must be a non-empty string")
+        self.__dict__[self._id_field] = value
     
     def validate(self) -> None:
         """
@@ -191,7 +281,7 @@ class BaseModel(abc.ABC):
             ValidationError: If validation fails
         """
         # Base validation ensures ID is present
-        if not getattr(self, self._id_field):
+        if not self.__dict__.get(self._id_field):
             raise ValidationError(f"Model {self.__class__.__name__} must have a valid {self._id_field}")
     
     def pre_save(self) -> None:
@@ -252,25 +342,6 @@ class BaseModel(abc.ABC):
         
         return result
     
-    def to_json(self, **kwargs) -> str:
-        """
-        Convert the model to a JSON string.
-        
-        Args:
-            **kwargs: Additional arguments to pass to json.dumps()
-            
-        Returns:
-            str: JSON string representation of the model
-            
-        Raises:
-            SerializationError: If serialization fails
-        """
-        try:
-            return json.dumps(self.to_dict(), **kwargs)
-        except (TypeError, ValueError, OverflowError) as e:
-            logger.error(f"JSON serialization error for {self.__class__.__name__}: {e}")
-            raise SerializationError(f"Failed to serialize {self.__class__.__name__} to JSON") from e
-    
     @classmethod
     def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
         """
@@ -302,27 +373,6 @@ class BaseModel(abc.ABC):
         except Exception as e:
             logger.error(f"Error deserializing {cls.__name__} from dict: {e}")
             raise SerializationError(f"Failed to deserialize {cls.__name__} from dictionary") from e
-    
-    @classmethod
-    def from_json(cls: Type[T], json_str: str) -> T:
-        """
-        Create a model instance from a JSON string.
-        
-        Args:
-            json_str: JSON string containing model data
-            
-        Returns:
-            T: New model instance
-            
-        Raises:
-            SerializationError: If deserialization fails
-        """
-        try:
-            data = json.loads(json_str)
-            return cls.from_dict(data)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing error: {e}")
-            raise SerializationError(f"Invalid JSON format for {cls.__name__}") from e
     
     def __eq__(self, other: Any) -> bool:
         """
@@ -490,3 +540,193 @@ class ReadOnlyModel(BaseModel):
             ReadOnlyModelError: Always raised when called
         """
         raise ReadOnlyModelError(f"Cannot delete read-only model {self.__class__.__name__}")
+
+
+class ModelRegistry:
+    """Thread-safe registry tracking concrete ``BaseModel`` implementations."""
+
+    def __init__(self) -> None:
+        self._models: Dict[str, Type[BaseModel]] = {}
+        self._aliases: Dict[str, Set[ModelID]] = {}
+        self._alias_to_canonical: Dict[str, str] = {}
+        self._lock = RLock()
+
+    def register(
+        self,
+        model: Type[T],
+        *,
+        name: Optional[Union[str, ModelID]] = None,
+        aliases: Optional[Iterable[Union[str, ModelID]]] = None,
+        overwrite: bool = False,
+    ) -> Type[T]:
+        """Register a model type with optional aliases."""
+
+        if not inspect.isclass(model) or not issubclass(model, BaseModel):
+            raise TypeError("Only BaseModel subclasses can be registered")
+
+        canonical_id = ModelID(name or model.__name__)
+        alias_ids: Set[ModelID] = set()
+        if aliases:
+            for alias in aliases:
+                alias_ids.add(ModelID(alias))
+
+        with self._lock:
+            existing = self._models.get(canonical_id.canonical)
+            if existing is not None and existing is not model and not overwrite:
+                raise ValueError(
+                    f"Model '{canonical_id}' is already registered to {existing.__name__}"
+                )
+
+            if existing is not None and existing is not model:
+                self._remove_alias_mappings_locked(canonical_id.canonical)
+
+            self._models[canonical_id.canonical] = model
+            alias_bucket = self._aliases.setdefault(canonical_id.canonical, set())
+            if overwrite and existing is not model:
+                alias_bucket.clear()
+
+            self._alias_to_canonical[canonical_id.canonical] = canonical_id.canonical
+            alias_bucket.add(canonical_id)
+
+            for alias_id in alias_ids:
+                alias_key = alias_id.canonical
+                mapped = self._alias_to_canonical.get(alias_key)
+                if mapped and mapped != canonical_id.canonical:
+                    if not overwrite:
+                        raise ValueError(
+                            f"Alias '{alias_id}' is already registered to {self._models[mapped].__name__}"
+                        )
+                    self._remove_alias_reference_locked(alias_key, mapped)
+
+                alias_bucket.add(alias_id)
+                self._alias_to_canonical[alias_key] = canonical_id.canonical
+
+            return model
+
+    def unregister(self, identifier: Union[str, ModelID, Type[BaseModel]]) -> Optional[Type[BaseModel]]:
+        """Remove a registered model and associated aliases."""
+
+        with self._lock:
+            canonical_key = self._resolve_locked(identifier, allow_missing=True)
+            if canonical_key is None:
+                return None
+
+            model = self._models.pop(canonical_key, None)
+            self._remove_alias_mappings_locked(canonical_key)
+            self._aliases.pop(canonical_key, None)
+            return model
+
+    def get(
+        self,
+        identifier: Union[str, ModelID, Type[BaseModel]],
+        default: Optional[Type[BaseModel]] = None,
+    ) -> Optional[Type[BaseModel]]:
+        """Retrieve a registered model by name, alias, or type."""
+
+        with self._lock:
+            canonical_key = self._resolve_locked(identifier, allow_missing=True)
+            if canonical_key is None:
+                return default
+            return self._models.get(canonical_key, default)
+
+    def require(self, identifier: Union[str, ModelID, Type[BaseModel]]) -> Type[BaseModel]:
+        """Retrieve a registered model, raising if it is absent."""
+
+        with self._lock:
+            canonical_key = self._resolve_locked(identifier, allow_missing=False)
+            return self._models[canonical_key]
+
+    def aliases_for(self, identifier: Union[str, ModelID, Type[BaseModel]]) -> Set[str]:
+        """Return the set of aliases registered for the given model."""
+
+        with self._lock:
+            canonical_key = self._resolve_locked(identifier, allow_missing=False)
+            return {str(alias) for alias in self._aliases.get(canonical_key, set())}
+
+    def canonical_name(self, identifier: Union[str, ModelID, Type[BaseModel]]) -> str:
+        """Resolve and return the canonical registry key for the identifier."""
+
+        with self._lock:
+            return self._resolve_locked(identifier, allow_missing=False)
+
+    def __contains__(self, identifier: Union[str, ModelID, Type[BaseModel]]) -> bool:
+        with self._lock:
+            canonical_key = self._resolve_locked(identifier, allow_missing=True)
+            return canonical_key in self._models if canonical_key is not None else False
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._models)
+
+    def __iter__(self) -> Iterator[Type[BaseModel]]:
+        with self._lock:
+            models = list(self._models.values())
+        return iter(models)
+
+    def items(self) -> Iterator[tuple[str, Type[BaseModel]]]:
+        with self._lock:
+            snapshot = list(self._models.items())
+        return iter(snapshot)
+
+    def keys(self) -> Iterator[str]:
+        with self._lock:
+            snapshot = list(self._models.keys())
+        return iter(snapshot)
+
+    def values(self) -> Iterator[Type[BaseModel]]:
+        with self._lock:
+            snapshot = list(self._models.values())
+        return iter(snapshot)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._models.clear()
+            self._alias_to_canonical.clear()
+            self._aliases.clear()
+
+    def _resolve_locked(
+        self,
+        identifier: Union[str, ModelID, Type[BaseModel]],
+        *,
+        allow_missing: bool,
+    ) -> Optional[str]:
+        if inspect.isclass(identifier) and issubclass(identifier, BaseModel):
+            for canonical_key, model in self._models.items():
+                if model is identifier:
+                    return canonical_key
+            if allow_missing:
+                return None
+            raise ModelNotFoundError(
+                f"Model {identifier.__name__} is not registered"
+            )
+
+        model_id = identifier if isinstance(identifier, ModelID) else ModelID(identifier)
+        canonical_key = self._alias_to_canonical.get(model_id.canonical)
+        if canonical_key is not None:
+            return canonical_key
+
+        if model_id.canonical in self._models:
+            return model_id.canonical
+
+        if allow_missing:
+            return None
+        raise ModelNotFoundError(f"Model '{identifier}' is not registered")
+
+    def _remove_alias_mappings_locked(self, canonical_key: str) -> None:
+        alias_bucket = self._aliases.get(canonical_key, set())
+        for alias_id in list(alias_bucket):
+            self._alias_to_canonical.pop(alias_id.canonical, None)
+        alias_bucket.clear()
+
+    def _remove_alias_reference_locked(self, alias_key: str, canonical_key: str) -> None:
+        alias_bucket = self._aliases.get(canonical_key)
+        if alias_bucket:
+            for alias_id in list(alias_bucket):
+                if alias_id.canonical == alias_key:
+                    alias_bucket.discard(alias_id)
+        self._alias_to_canonical.pop(alias_key, None)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        with self._lock:
+            entries = ', '.join(f"{key}: {model.__name__}" for key, model in self._models.items())
+        return f"ModelRegistry({{{entries}}})"

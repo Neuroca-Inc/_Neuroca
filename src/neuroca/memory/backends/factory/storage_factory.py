@@ -6,6 +6,7 @@ The factory is responsible for creating the appropriate backend based on
 configuration settings and ensures only one instance of each backend is created.
 """
 
+import inspect
 import logging
 from typing import Any, Dict, Optional, Type
 
@@ -43,7 +44,7 @@ class StorageBackendFactory:
         BackendType.MEMORY: InMemoryBackend,
         BackendType.SQL: SQLBackend,
         BackendType.SQLITE: SQLiteBackend,
-        # BackendType.VECTOR: VectorBackend # Temporarily commented out - Incomplete implementation
+        BackendType.VECTOR: VectorBackend,
     }
     
     # Add Redis backend only if it's available
@@ -117,13 +118,51 @@ class StorageBackendFactory:
             logger.debug(f"Reusing existing backend instance: {instance_name}")
             return cls._instances[instance_name]
         
-        # Create and initialize the backend instance
+        # Prepare keyword arguments for backend initialization
         logger.info(f"Creating new {backend_type.value} storage backend for {tier.value if tier else 'custom'} tier")
-        backend = backend_class(config)
-        
+
+        init_signature = inspect.signature(backend_class)
+        parameters = init_signature.parameters
+        accepts_var_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
+
+        provided_config = config.copy() if isinstance(config, dict) else {}
+        init_kwargs: Dict[str, Any] = {}
+        residual_config: Dict[str, Any] = {}
+
+        for key, value in provided_config.items():
+            if key in parameters or accepts_var_kwargs:
+                init_kwargs[key] = value
+            else:
+                residual_config[key] = value
+
+        if "config" in parameters and residual_config:
+            existing_config = init_kwargs.get("config")
+            if isinstance(existing_config, dict):
+                merged_config = existing_config.copy()
+                merged_config.update(residual_config)
+                init_kwargs["config"] = merged_config
+            elif existing_config is None:
+                init_kwargs["config"] = residual_config
+        elif residual_config:
+            if accepts_var_kwargs:
+                init_kwargs.update(residual_config)
+            else:
+                init_kwargs["config"] = residual_config
+
+        try:
+            backend = backend_class(**init_kwargs)
+        except TypeError as error:
+            logger.error(
+                "Failed to initialize backend %s with kwargs %s: %s",
+                backend_class.__name__,
+                init_kwargs,
+                error,
+            )
+            raise
+
         # Store the instance for reuse
         cls._instances[instance_name] = backend
-        
+
         return backend
     
     @classmethod
