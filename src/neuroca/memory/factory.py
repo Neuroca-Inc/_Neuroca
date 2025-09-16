@@ -22,12 +22,33 @@ Usage:
 import logging
 from typing import Any, Dict, Optional
 
-from neuroca.memory.manager import MemoryManager
-from neuroca.memory.backends.factory import StorageBackendFactory
-from neuroca.memory.backends.base import BackendType
 from neuroca.config.settings import get_settings
-
+from neuroca.memory.backends.factory import StorageBackendFactory
+from neuroca.memory.backends.factory.backend_type import BackendType
+from neuroca.memory.backends.factory.memory_tier import MemoryTier
+from neuroca.memory.manager.memory_manager import MemoryManager
+from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
+from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
+from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
 logger = logging.getLogger(__name__)
+
+
+def _deep_merge_dicts(target: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge two dictionaries with list concatenation support."""
+
+    result = dict(target)
+    for key, value in updates.items():
+        if key in result:
+            current = result[key]
+            if isinstance(current, dict) and isinstance(value, dict):
+                result[key] = _deep_merge_dicts(current, value)
+            elif isinstance(current, list) and isinstance(value, list):
+                result[key] = current + value
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
 
 
 def create_memory_system(
@@ -43,7 +64,7 @@ def create_memory_system(
     memory managers, and all associated components.
     
     Args:
-        backend_type: Type of storage backend to use (in_memory, sqlite, redis, etc.)
+        backend_type: Type of storage backend to use (memory, sqlite, redis, etc.)
         config: Configuration dictionary for the memory system
         **kwargs: Additional keyword arguments passed to the memory manager
     
@@ -57,34 +78,130 @@ def create_memory_system(
     logger.info("Creating memory system with backend: %s", backend_type or "default")
     
     try:
-        # Load default configuration from settings
-        settings = get_settings()
-        default_config = {
-            "backend_type": backend_type or settings.get("MEMORY_BACKEND_TYPE", "in_memory"),
-            "max_memory_size": int(settings.get("MEMORY_MAX_SIZE", 1000)),
-            "consolidation_interval": int(settings.get("MEMORY_CONSOLIDATION_INTERVAL", 3600)),
-            "decay_rate": float(settings.get("MEMORY_DECAY_RATE", 0.1)),
+        settings_config: Dict[str, Any] = {}
+        try:
+            settings = get_settings()
+            memory_settings = getattr(settings, "MEMORY_SYSTEM", None)
+            if memory_settings is not None:
+                if hasattr(memory_settings, "model_dump"):
+                    settings_config = memory_settings.model_dump()
+                elif hasattr(memory_settings, "dict"):
+                    settings_config = memory_settings.dict()
+        except Exception as settings_error:  # pragma: no cover - defensive logging
+            logger.debug("Unable to load memory settings: %s", settings_error)
+
+        base_config: Dict[str, Any] = {
+            "maintenance_interval": settings_config.get("CONSOLIDATION_INTERVAL", 3600),
+            "stm": {},
+            "mtm": {},
+            "ltm": {},
         }
-        
-        # Merge with provided configuration
-        if config:
-            default_config.update(config)
-        
-        # Create storage backend
-        backend_type_enum = BackendType(default_config["backend_type"])
-        storage_backend = StorageBackendFactory.create_backend(
-            backend_type_enum,
-            default_config
-        )
-        
-        # Create memory manager
+
+        merged_config = _deep_merge_dicts(base_config, config or {})
+
+        def _normalize_backend(value: Optional[str | BackendType]) -> Optional[BackendType]:
+            if value is None:
+                return None
+            if isinstance(value, BackendType):
+                return value
+            normalized = value.lower()
+            backend_type_map = {
+                "in_memory": BackendType.MEMORY.value,
+                "memory": BackendType.MEMORY.value,
+                "sqlite": BackendType.SQLITE.value,
+                "redis": BackendType.REDIS.value,
+                "vector": BackendType.VECTOR.value,
+                "sql": BackendType.SQL.value,
+            }
+            normalized = backend_type_map.get(normalized, normalized)
+            try:
+                return BackendType(normalized)
+            except ValueError:
+                logger.warning(
+                    "Unknown backend type '%s' requested; ignoring override and using tier defaults",
+                    value,
+                )
+                return None
+
+        fallback_backend = _normalize_backend(backend_type)
+        backend_overrides = merged_config.get("backend_types", {}) if isinstance(merged_config.get("backend_types"), dict) else {}
+        shared_storage_config = merged_config.get("storage", {}) if isinstance(merged_config.get("storage"), dict) else {}
+
+        def _prepare_tier(
+            tier_name: str,
+            tier_enum: MemoryTier,
+        ) -> tuple[
+            ShortTermMemoryTier | MediumTermMemoryTier | LongTermMemoryTier,
+            Dict[str, Any],
+            Optional[BackendType],
+        ]:
+            tier_settings_raw = merged_config.get(tier_name, {})
+            tier_settings = dict(tier_settings_raw) if isinstance(tier_settings_raw, dict) else {}
+
+            backend_value = tier_settings.get("backend_type")
+            if backend_value is None and isinstance(backend_overrides, dict):
+                backend_value = backend_overrides.get(tier_name)
+            if backend_value is None:
+                backend_value = merged_config.get(f"{tier_name}_backend_type")
+
+            backend_enum = _normalize_backend(backend_value) or fallback_backend
+
+            storage_specific = tier_settings.get("storage", {})
+            storage_config = dict(shared_storage_config)
+            if isinstance(storage_specific, dict):
+                storage_config.update(storage_specific)
+
+            tier_config = {k: v for k, v in tier_settings.items() if k not in {"backend_type", "storage"}}
+
+            storage_backend = StorageBackendFactory.create_storage(
+                tier=tier_enum,
+                backend_type=backend_enum,
+                config=storage_config or None,
+            )
+
+            tier_kwargs = {
+                "storage_backend": storage_backend,
+                "backend_type": backend_enum,
+                "backend_config": storage_config or None,
+                "config": tier_config or None,
+            }
+
+            if tier_enum == MemoryTier.STM:
+                tier_instance = ShortTermMemoryTier(**tier_kwargs)
+            elif tier_enum == MemoryTier.MTM:
+                tier_instance = MediumTermMemoryTier(**tier_kwargs)
+            else:
+                tier_instance = LongTermMemoryTier(**tier_kwargs)
+
+            return tier_instance, tier_config, backend_enum
+
+        stm_tier, stm_config, stm_backend_type = _prepare_tier("stm", MemoryTier.STM)
+        mtm_tier, mtm_config, mtm_backend_type = _prepare_tier("mtm", MemoryTier.MTM)
+        ltm_tier, ltm_config, ltm_backend_type = _prepare_tier("ltm", MemoryTier.LTM)
+
+        manager_config = {
+            "stm": stm_config,
+            "mtm": mtm_config,
+            "ltm": ltm_config,
+            "maintenance_interval": merged_config.get("maintenance_interval", 3600),
+        }
+
         memory_manager = MemoryManager(
-            storage_backend=storage_backend,
-            config=default_config,
-            **kwargs
+            config=manager_config,
+            backend_config=shared_storage_config,
+            stm=stm_tier,
+            mtm=mtm_tier,
+            ltm=ltm_tier,
+            stm_storage_type=stm_backend_type,
+            mtm_storage_type=mtm_backend_type,
+            ltm_storage_type=ltm_backend_type,
+            **kwargs,
         )
-        
-        logger.info("Successfully created memory system with %s backend", backend_type_enum.value)
+
+        logger.info("Successfully created memory system with tier backends: stm=%s mtm=%s ltm=%s",
+                    stm_backend_type.value if stm_backend_type else "default",
+                    mtm_backend_type.value if mtm_backend_type else "default",
+                    ltm_backend_type.value if ltm_backend_type else "default")
         return memory_manager
         
     except Exception as e:
@@ -93,7 +210,7 @@ def create_memory_system(
 
 
 def create_test_memory_system(
-    backend_type: str = "in_memory",
+    backend_type: str = BackendType.MEMORY.value,
     config: Optional[Dict[str, Any]] = None
 ) -> MemoryManager:
     """
@@ -103,7 +220,7 @@ def create_test_memory_system(
     sensible defaults and minimal external dependencies.
     
     Args:
-        backend_type: Type of storage backend to use (defaults to in_memory)
+        backend_type: Type of storage backend to use (defaults to in-memory backend)
         config: Configuration dictionary for the memory system
     
     Returns:
@@ -111,18 +228,38 @@ def create_test_memory_system(
     """
     logger.debug("Creating test memory system with backend: %s", backend_type)
     
-    test_config = {
-        "backend_type": backend_type,
-        "max_memory_size": 100,  # Smaller for testing
-        "consolidation_interval": 60,  # More frequent for testing
-        "decay_rate": 0.05,  # Slower decay for testing
-        "enable_persistence": False,  # Disable persistence for tests
+    test_config: Dict[str, Any] = {
+        "maintenance_interval": 60,
+        "backend_types": {
+            "stm": backend_type,
+            "mtm": backend_type,
+            "ltm": backend_type,
+        },
+        "stm": {
+            "ttl_seconds": 300,
+            "decay_rate": 0.05,
+        },
+        "mtm": {
+            "max_capacity": 100,
+        },
+        "ltm": {
+            "pruning_interval": 600,
+        },
     }
-    
+
     if config:
-        test_config.update(config)
-    
-    return create_memory_system(backend_type=backend_type, config=test_config)
+        def _deep_merge(target: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+            result = dict(target)
+            for key, value in updates.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = _deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
+
+        test_config = _deep_merge_dicts(test_config, config)
+
+    return create_memory_system(config=test_config)
 
 
 def get_available_backends() -> list[str]:

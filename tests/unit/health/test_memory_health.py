@@ -28,7 +28,7 @@ from neuroca.core.memory.health import (
 from neuroca.core.memory.working_memory import WorkingMemory
 
 # Import the concrete implementation from the correct location
-from neuroca.memory.semantic_memory import SemanticMemory
+from neuroca.memory.semantic_memory import Concept, SemanticMemory
 
 
 @pytest.fixture()

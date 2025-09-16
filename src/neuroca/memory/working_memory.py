@@ -1,45 +1,68 @@
-"""
-Working Memory Implementation (Stub)
+"""Public async-friendly façade for the legacy working-memory implementation."""
 
-This module provides a stub implementation of WorkingMemory to satisfy imports
-while the main memory system uses the tier-based architecture.
-"""
+from __future__ import annotations
 
-import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-logger = logging.getLogger(__name__)
+from neuroca.core.memory.working_memory import (
+    WorkingMemory as SyncWorkingMemory,
+    WorkingMemoryChunk,
+)
 
 
-class WorkingMemory:
-    """
-    Stub implementation of WorkingMemory.
-    
-    This is a placeholder implementation to satisfy imports while the main
-    memory system uses the more comprehensive tier-based architecture.
-    """
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the working memory stub."""
-        self.config = config or {}
-        logger.debug("WorkingMemory stub initialized")
-    
-    def store(self, key: str, content: Any, **kwargs) -> str:
-        """Store content in working memory."""
-        logger.warning("WorkingMemory.store called on stub implementation")
-        return key
-    
-    def retrieve(self, key: str, **kwargs) -> Optional[Any]:
-        """Retrieve content from working memory."""
-        logger.warning("WorkingMemory.retrieve called on stub implementation")
-        return None
-    
-    def clear(self, **kwargs) -> None:
-        """Clear working memory."""
-        logger.warning("WorkingMemory.clear called on stub implementation")
-        pass
-    
-    async def get_item(self, item_id: str) -> Optional[Any]:
-        """Get a specific item."""
-        logger.warning("WorkingMemory.get_item called on stub implementation")
-        return None
+class WorkingMemory(SyncWorkingMemory):
+    """Extend the synchronous working memory with async helper methods."""
+
+    async def search_by_similarity(
+        self,
+        query: str,
+        limit: int = 10,
+        threshold: float = 0.0,
+    ) -> List[WorkingMemoryChunk]:
+        """Perform a simple substring search respecting the provided limit."""
+
+        results = self.retrieve(query, limit=limit)
+        if threshold > 0:
+            results = [chunk for chunk in results if chunk.activation >= threshold]
+        return results
+
+    async def get_recent_items(self, limit: int = 10) -> List[WorkingMemoryChunk]:
+        """Return the most recently accessed working-memory chunks."""
+
+        chunks = sorted(
+            self.retrieve_all(),
+            key=lambda chunk: chunk.last_accessed,
+            reverse=True,
+        )
+        return chunks[:limit]
+
+    async def get_important_items(self, limit: int = 10) -> List[WorkingMemoryChunk]:
+        """Return the highest-activation working-memory chunks."""
+
+        chunks = sorted(
+            self.retrieve_all(),
+            key=lambda chunk: chunk.activation,
+            reverse=True,
+        )
+        return chunks[:limit]
+
+    async def get_item(self, item_id: str) -> Optional[WorkingMemoryChunk]:
+        """Retrieve an individual working-memory chunk by identifier."""
+
+        return self.retrieve_by_id(item_id)
+
+    def add(self, content: Any, **metadata: Any) -> str:
+        """Compatibility alias for :meth:`store`."""
+
+        return self.store(content, **metadata)
+
+    def delete(self, item_id: str) -> bool:
+        """Compatibility alias for :meth:`forget`."""
+
+        return self.forget(item_id)
+
+
+# Backwards compatible alias used by some API wiring.
+WorkingMemoryManager = WorkingMemory
+
+__all__ = ["WorkingMemory", "WorkingMemoryChunk", "WorkingMemoryManager"]

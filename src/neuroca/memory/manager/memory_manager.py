@@ -239,7 +239,7 @@ class MemoryManager(MemoryManagerInterface):
     def _ensure_initialized(self) -> None:
         """
         Ensure that the Memory Manager is initialized.
-        
+
         Raises:
             MemoryManagerOperationError: If not initialized
         """
@@ -247,6 +247,45 @@ class MemoryManager(MemoryManagerInterface):
             raise MemoryManagerOperationError(
                 "Memory Manager not initialized. Call initialize() first."
             )
+
+    # ------------------------------------------------------------------
+    # Tier accessors
+    # ------------------------------------------------------------------
+
+    @property
+    def stm_storage(self) -> ShortTermMemoryTier:
+        """Return the initialized STM tier instance."""
+
+        self._ensure_initialized()
+        if self._stm is None:
+            raise MemoryManagerOperationError("STM storage tier not available")
+        return self._stm
+
+    @property
+    def mtm_storage(self) -> MediumTermMemoryTier:
+        """Return the initialized MTM tier instance."""
+
+        self._ensure_initialized()
+        if self._mtm is None:
+            raise MemoryManagerOperationError("MTM storage tier not available")
+        return self._mtm
+
+    @property
+    def ltm_storage(self) -> LongTermMemoryTier:
+        """Return the initialized LTM tier instance."""
+
+        self._ensure_initialized()
+        if self._ltm is None:
+            raise MemoryManagerOperationError("LTM storage tier not available")
+        return self._ltm
+
+    def get_tier(
+        self, tier_name: str
+    ) -> ShortTermMemoryTier | MediumTermMemoryTier | LongTermMemoryTier:
+        """Public accessor for tier instances using canonical string names."""
+
+        self._ensure_initialized()
+        return self._get_tier_by_name(tier_name)
     
     def _start_maintenance_task(self) -> None:
         """
@@ -409,7 +448,7 @@ class MemoryManager(MemoryManagerInterface):
         self,
         memory_id: str,
         tier: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[MemoryItem]:
         """
         Retrieve a specific memory by ID.
         
@@ -418,7 +457,7 @@ class MemoryManager(MemoryManagerInterface):
             tier: Optional tier to search in (searches all tiers if not specified)
             
         Returns:
-            Memory data as a dictionary, or None if not found
+            MemoryItem if found, otherwise None
             
         Raises:
             MemoryManagerOperationError: If the retrieve operation fails

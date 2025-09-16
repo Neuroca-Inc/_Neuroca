@@ -25,7 +25,7 @@ from typing import Dict, List, Any, Optional
 import json
 
 # Core NCA Imports
-from neuroca.memory.manager.core import MemoryManager
+from neuroca.memory.manager import MemoryManager
 from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
 from neuroca.config.settings import Settings
 
