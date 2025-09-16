@@ -26,8 +26,34 @@ except ImportError:
     REDIS_AVAILABLE = False
     logger.warning("Redis backend not available. Install redis for Redis support.")
 from neuroca.memory.backends.sql_backend import SQLBackend
-from neuroca.memory.backends.vector_backend import VectorBackend
+# Vector backend is optional depending on feature completeness
+try:
+    from neuroca.memory.backends.vector_backend import VectorBackend
+
+    _VECTOR_METHODS = ("store", "retrieve", "update", "delete", "search")
+    VECTOR_AVAILABLE = all(hasattr(VectorBackend, method) for method in _VECTOR_METHODS)
+    if not VECTOR_AVAILABLE:
+        logger.warning(
+            "Vector backend missing required methods %s; skipping registration until implementation is complete",
+            [method for method in _VECTOR_METHODS if not hasattr(VectorBackend, method)],
+        )
+except ImportError:
+    VECTOR_AVAILABLE = False
+    logger.warning("Vector backend not available. Install vector extras for support.")
+
 from neuroca.memory.exceptions import ConfigurationError
+
+
+_SENSITIVE_KEYS = {"password", "secret", "token", "key", "api_key", "access_token"}
+
+
+def _redact_sensitive(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of *values* with potentially secret fields redacted."""
+
+    redacted: Dict[str, Any] = {}
+    for key, value in values.items():
+        redacted[key] = "***REDACTED***" if key.lower() in _SENSITIVE_KEYS else value
+    return redacted
 
 
 class StorageBackendFactory:
@@ -44,12 +70,13 @@ class StorageBackendFactory:
         BackendType.MEMORY: InMemoryBackend,
         BackendType.SQL: SQLBackend,
         BackendType.SQLITE: SQLiteBackend,
-        BackendType.VECTOR: VectorBackend,
     }
-    
+
     # Add Redis backend only if it's available
     if REDIS_AVAILABLE:
         _backend_registry[BackendType.REDIS] = RedisBackend
+    if VECTOR_AVAILABLE:
+        _backend_registry[BackendType.VECTOR] = VectorBackend
     
     # Instances of created backends (for reuse)
     _instances: Dict[str, BaseStorageBackend] = {}
@@ -124,6 +151,17 @@ class StorageBackendFactory:
         init_signature = inspect.signature(backend_class)
         parameters = init_signature.parameters
         accepts_var_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
+        positional_only_params = [
+            name
+            for name, param in parameters.items()
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY
+        ]
+        if positional_only_params:
+            raise TypeError(
+                "Backend class '%s' has positional-only parameters %s. "
+                "Only keyword arguments are supported for backend initialization."
+                % (backend_class.__name__, positional_only_params)
+            )
 
         provided_config = config.copy() if isinstance(config, dict) else {}
         init_kwargs: Dict[str, Any] = {}
@@ -155,7 +193,7 @@ class StorageBackendFactory:
             logger.error(
                 "Failed to initialize backend %s with kwargs %s: %s",
                 backend_class.__name__,
-                init_kwargs,
+                _redact_sensitive(init_kwargs),
                 error,
             )
             raise

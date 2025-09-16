@@ -77,8 +77,7 @@ class ModelID(str):
             return value
         if not isinstance(value, str):
             raise TypeError(f"ModelID value must be a string, received {type(value).__name__}")
-        normalized = value.strip()
-        if not normalized:
+        if not (normalized := value.strip()):
             raise ValueError("ModelID value cannot be empty or whitespace")
         return super().__new__(cls, normalized)
 
@@ -551,6 +550,36 @@ class ModelRegistry:
         self._alias_to_canonical: Dict[str, str] = {}
         self._lock = RLock()
 
+    @staticmethod
+    def _normalize_aliases(aliases: Optional[Iterable[Union[str, ModelID]]]) -> Set[ModelID]:
+        alias_ids: Set[ModelID] = set()
+        if not aliases:
+            return alias_ids
+        for alias in aliases:
+            alias_ids.add(ModelID(alias))
+        return alias_ids
+
+    def _apply_aliases_locked(
+        self,
+        canonical_id: ModelID,
+        alias_bucket: Set[ModelID],
+        alias_ids: Set[ModelID],
+        *,
+        overwrite: bool,
+    ) -> None:
+        for alias_id in alias_ids:
+            alias_key = alias_id.canonical
+            mapped = self._alias_to_canonical.get(alias_key)
+            if mapped and mapped != canonical_id.canonical:
+                if not overwrite:
+                    raise ValueError(
+                        f"Alias '{alias_id}' is already registered to {self._models[mapped].__name__}"
+                    )
+                self._remove_alias_reference_locked(alias_key, mapped)
+
+            alias_bucket.add(alias_id)
+            self._alias_to_canonical[alias_key] = canonical_id.canonical
+
     def register(
         self,
         model: Type[T],
@@ -565,10 +594,7 @@ class ModelRegistry:
             raise TypeError("Only BaseModel subclasses can be registered")
 
         canonical_id = ModelID(name or model.__name__)
-        alias_ids: Set[ModelID] = set()
-        if aliases:
-            for alias in aliases:
-                alias_ids.add(ModelID(alias))
+        alias_ids = self._normalize_aliases(aliases)
 
         with self._lock:
             existing = self._models.get(canonical_id.canonical)
@@ -588,18 +614,7 @@ class ModelRegistry:
             self._alias_to_canonical[canonical_id.canonical] = canonical_id.canonical
             alias_bucket.add(canonical_id)
 
-            for alias_id in alias_ids:
-                alias_key = alias_id.canonical
-                mapped = self._alias_to_canonical.get(alias_key)
-                if mapped and mapped != canonical_id.canonical:
-                    if not overwrite:
-                        raise ValueError(
-                            f"Alias '{alias_id}' is already registered to {self._models[mapped].__name__}"
-                        )
-                    self._remove_alias_reference_locked(alias_key, mapped)
-
-                alias_bucket.add(alias_id)
-                self._alias_to_canonical[alias_key] = canonical_id.canonical
+            self._apply_aliases_locked(canonical_id, alias_bucket, alias_ids, overwrite=overwrite)
 
             return model
 
@@ -705,9 +720,6 @@ class ModelRegistry:
         if canonical_key is not None:
             return canonical_key
 
-        if model_id.canonical in self._models:
-            return model_id.canonical
-
         if allow_missing:
             return None
         raise ModelNotFoundError(f"Model '{identifier}' is not registered")
@@ -719,8 +731,7 @@ class ModelRegistry:
         alias_bucket.clear()
 
     def _remove_alias_reference_locked(self, alias_key: str, canonical_key: str) -> None:
-        alias_bucket = self._aliases.get(canonical_key)
-        if alias_bucket:
+        if alias_bucket := self._aliases.get(canonical_key):
             for alias_id in list(alias_bucket):
                 if alias_id.canonical == alias_key:
                     alias_bucket.discard(alias_id)

@@ -85,10 +85,19 @@ class SemanticMemory:
             id=concept_id,
             name=value.get("name", concept_id),
             description=value.get("description", ""),
-            properties=value.get("properties")
-            or value.get("attributes")
-            or value.get("metadata", {}),
+            properties=self._resolve_properties(value),
         )
+
+    def _resolve_properties(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Resolve property payload precedence for concept construction."""
+
+        if value.get("properties") is not None:
+            return value["properties"]
+        if value.get("attributes") is not None:
+            return value["attributes"]
+        if value.get("metadata") is not None:
+            return value["metadata"]
+        return {}
 
     def _ensure_relationship(self, value: dict[str, Any] | Relationship) -> Relationship:
         if isinstance(value, Relationship):
@@ -96,11 +105,20 @@ class SemanticMemory:
         return Relationship(
             source_id=value["source_id"],
             target_id=value["target_id"],
-            relationship_type=value.get("relationship_type") or value.get("type", RelationshipType.RELATED_TO.value),
+            relationship_type=self._resolve_relationship_type(value),
             strength=float(value.get("strength", 1.0)),
             metadata=value.get("metadata", {}),
             id=value.get("id", str(uuid.uuid4())),
         )
+
+    def _resolve_relationship_type(self, value: dict[str, Any]) -> str:
+        """Return the relationship type respecting explicit precedence rules."""
+
+        if "relationship_type" in value:
+            return value["relationship_type"]
+        if "type" in value:
+            return value["type"]
+        return RelationshipType.RELATED_TO.value
 
     # ------------------------------------------------------------------
     # Public factory helpers
@@ -135,23 +153,38 @@ class SemanticMemory:
     # ------------------------------------------------------------------
     # Core operations
     # ------------------------------------------------------------------
+    def _is_concept_data(self, item: Any) -> bool:
+        if isinstance(item, Concept):
+            return True
+        if isinstance(item, dict):
+            return not ("source_id" in item and "target_id" in item)
+        return False
+
+    def _is_relationship_data(self, item: Any) -> bool:
+        if isinstance(item, Relationship):
+            return True
+        if isinstance(item, dict):
+            return "source_id" in item and "target_id" in item
+        return False
+
     def store(self, item: Concept | Relationship | dict[str, Any]) -> str:
-        if isinstance(item, (Concept, dict)) and (
-            isinstance(item, Concept) or "source_id" not in item or "target_id" not in item
-        ):
-            concept = self._ensure_concept(item)
+        if self._is_concept_data(item):
+            concept = self._ensure_concept(item)  # type: ignore[arg-type]
             self._concepts[concept.id] = concept
             self._concept_relationships.setdefault(concept.id, set())
             return concept.id
 
-        relationship = self._ensure_relationship(item)  # type: ignore[arg-type]
-        if relationship.source_id not in self._concepts or relationship.target_id not in self._concepts:
-            raise ValueError("Relationships must reference existing concepts")
+        if self._is_relationship_data(item):
+            relationship = self._ensure_relationship(item)  # type: ignore[arg-type]
+            if relationship.source_id not in self._concepts or relationship.target_id not in self._concepts:
+                raise ValueError("Relationships must reference existing concepts")
 
-        self._relationships[relationship.id] = relationship
-        self._concept_relationships.setdefault(relationship.source_id, set()).add(relationship.id)
-        self._concept_relationships.setdefault(relationship.target_id, set()).add(relationship.id)
-        return relationship.id
+            self._relationships[relationship.id] = relationship
+            self._concept_relationships.setdefault(relationship.source_id, set()).add(relationship.id)
+            self._concept_relationships.setdefault(relationship.target_id, set()).add(relationship.id)
+            return relationship.id
+
+        raise ValueError("Item is neither a valid Concept nor Relationship data")
 
     def get_concept(self, concept_id: str) -> Optional[Concept]:
         return self._concepts.get(concept_id)
@@ -198,7 +231,7 @@ class SemanticMemory:
     def get_metrics(self) -> dict[str, Any]:
         total_concepts = len(self._concepts)
         total_relationships = len(self._relationships)
-        connected_concepts = sum(1 for rels in self._concept_relationships.values() if rels)
+        connected_concepts = sum(bool(rels) for rels in self._concept_relationships.values())
         connectivity_ratio = connected_concepts / total_concepts if total_concepts else 0.0
         return {
             "total_concepts": total_concepts,

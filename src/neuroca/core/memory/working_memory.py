@@ -106,7 +106,7 @@ class WorkingMemory(MemorySystem):
         total_items = len(chunks)
         average_activation = sum(chunk.activation for chunk in chunks) / total_items if chunks else 0.0
         low_activation_ratio = (
-            sum(1 for chunk in chunks if chunk.activation < 0.3) / total_items if chunks else 0.0
+            sum(chunk.activation < 0.3 for chunk in chunks) / total_items if chunks else 0.0
         )
         capacity_ratio = total_items / self._capacity if self._capacity else 0.0
 

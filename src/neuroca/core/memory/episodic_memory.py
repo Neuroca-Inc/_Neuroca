@@ -145,7 +145,7 @@ class EpisodicMemory(MemorySystem):
         timestamp_ratio = len(timestamps) / total_items if total_items else 0.0
         emotional_values = [chunk.metadata.get("emotional_salience", 0.0) for chunk in chunks]
         average_emotion = sum(emotional_values) / total_items if total_items else 0.0
-        high_emotion_count = sum(1 for value in emotional_values if value >= 0.7)
+        high_emotion_count = sum(value >= 0.7 for value in emotional_values)
         sequence_item_ratio = sum(len(ids) for ids in self._sequence_index.values()) / total_items if total_items else 0.0
 
         return {

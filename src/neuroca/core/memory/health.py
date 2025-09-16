@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from neuroca.core.health import (
     ComponentHealth,
@@ -17,6 +17,30 @@ from neuroca.core.health import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _finalize_health_result(
+    check: MemoryHealthCheck,
+    start_time: float,
+    status: HealthCheckStatus,
+    message: str,
+    details: dict[str, Any],
+) -> HealthCheckResult:
+    """Create a ``HealthCheckResult`` and merge tier metrics when available."""
+
+    metrics: dict[str, Any] = {}
+    if hasattr(check.memory_system, "get_metrics"):
+        try:
+            candidate = check.memory_system.get_metrics()
+            if isinstance(candidate, dict):
+                metrics = candidate
+        except Exception:  # pragma: no cover - defensive metrics gathering
+            logger.debug("Unable to gather metrics from memory system", exc_info=True)
+
+    combined_details = details | metrics
+    result = check.create_result(status, message, **combined_details)
+    result.execution_time = (time.time() - start_time) * 1000
+    return result
 
 
 class WorkingMemoryHealthCheck(MemoryHealthCheck):
@@ -49,7 +73,7 @@ class WorkingMemoryHealthCheck(MemoryHealthCheck):
             activation_levels = [getattr(chunk, "activation", 0.0) for chunk in chunks]
             avg_activation = sum(activation_levels) / total_items if activation_levels else 0.0
             low_activation_ratio = (
-                sum(1 for level in activation_levels if level < self._activation_threshold) / total_items
+                sum(level < self._activation_threshold for level in activation_levels) / total_items
                 if activation_levels
                 else 0.0
             )
@@ -84,12 +108,7 @@ class WorkingMemoryHealthCheck(MemoryHealthCheck):
                 "low_activation_ratio": low_activation_ratio,
                 "operations_successful": operations_successful,
             }
-            if hasattr(self.memory_system, "get_metrics"):
-                details.update(self.memory_system.get_metrics())
-
-            result = self.create_result(status, message, **details)
-            result.execution_time = (time.time() - start) * 1000
-            return result
+            return _finalize_health_result(self, start, status, message, details)
         except Exception as exc:  # pragma: no cover - defensive logging path
             logger.exception("Error during working memory health check")
             result = self.create_result(
@@ -128,7 +147,7 @@ class EpisodicMemoryHealthCheck(MemoryHealthCheck):
                 chunk.metadata.get("emotional_salience", 0.0) for chunk in chunks if hasattr(chunk, "metadata")
             ]
             avg_emotion = sum(emotional_salience) / total_items if total_items else 0.0
-            high_emotion_count = sum(1 for value in emotional_salience if value >= 0.7)
+            high_emotion_count = sum(value >= 0.7 for value in emotional_salience)
 
             test_content = f"health-check-{time.time()}"
             test_metadata = {"timestamp": time.time(), "emotional_salience": 0.5, "health_check": True}
@@ -159,12 +178,7 @@ class EpisodicMemoryHealthCheck(MemoryHealthCheck):
                 "operations_successful": operations_successful,
                 "metadata_preserved": metadata_preserved,
             }
-            if hasattr(self.memory_system, "get_metrics"):
-                details.update(self.memory_system.get_metrics())
-
-            result = self.create_result(status, message, **details)
-            result.execution_time = (time.time() - start) * 1000
-            return result
+            return _finalize_health_result(self, start, status, message, details)
         except Exception as exc:  # pragma: no cover
             logger.exception("Error during episodic memory health check")
             result = self.create_result(
@@ -197,9 +211,8 @@ class SemanticMemoryHealthCheck(MemoryHealthCheck):
 
             concept_ids = {concept.id for concept in concepts}
             orphaned_relationships = sum(
-                1
+                rel.source_id not in concept_ids or rel.target_id not in concept_ids
                 for rel in relationships
-                if rel.source_id not in concept_ids or rel.target_id not in concept_ids
             )
 
             connected_concepts = {
@@ -259,12 +272,7 @@ class SemanticMemoryHealthCheck(MemoryHealthCheck):
                 "concept_ops_successful": concept_ops_successful,
                 "relationship_ops_successful": relationship_ops_successful,
             }
-            if hasattr(self.memory_system, "get_metrics"):
-                details.update(self.memory_system.get_metrics())
-
-            result = self.create_result(status, message, **details)
-            result.execution_time = (time.time() - start) * 1000
-            return result
+            return _finalize_health_result(self, start, status, message, details)
         except Exception as exc:  # pragma: no cover
             logger.exception("Error during semantic memory health check")
             result = self.create_result(

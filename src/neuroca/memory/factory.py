@@ -33,6 +33,24 @@ from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
 logger = logging.getLogger(__name__)
 
 
+def _deep_merge_dicts(target: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge two dictionaries with list concatenation support."""
+
+    result = dict(target)
+    for key, value in updates.items():
+        if key in result:
+            current = result[key]
+            if isinstance(current, dict) and isinstance(value, dict):
+                result[key] = _deep_merge_dicts(current, value)
+            elif isinstance(current, list) and isinstance(value, list):
+                result[key] = current + value
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
 def create_memory_system(
     backend_type: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -79,29 +97,30 @@ def create_memory_system(
             "ltm": {},
         }
 
-        def _deep_merge(target: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
-            result = dict(target)
-            for key, value in updates.items():
-                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                    result[key] = _deep_merge(result[key], value)
-                else:
-                    result[key] = value
-            return result
+        merged_config = _deep_merge_dicts(base_config, config or {})
 
-        merged_config = _deep_merge(base_config, config or {})
-
-        def _normalize_backend(value: Optional[str]) -> Optional[BackendType]:
+        def _normalize_backend(value: Optional[str | BackendType]) -> Optional[BackendType]:
             if value is None:
                 return None
             if isinstance(value, BackendType):
                 return value
             normalized = value.lower()
-            if normalized == "in_memory":
-                normalized = BackendType.MEMORY.value
+            backend_type_map = {
+                "in_memory": BackendType.MEMORY.value,
+                "memory": BackendType.MEMORY.value,
+                "sqlite": BackendType.SQLITE.value,
+                "redis": BackendType.REDIS.value,
+                "vector": BackendType.VECTOR.value,
+                "sql": BackendType.SQL.value,
+            }
+            normalized = backend_type_map.get(normalized, normalized)
             try:
                 return BackendType(normalized)
             except ValueError:
-                logger.warning("Unknown backend type '%s' requested; defaulting to tier-specific configuration", value)
+                logger.warning(
+                    "Unknown backend type '%s' requested; ignoring override and using tier defaults",
+                    value,
+                )
                 return None
 
         fallback_backend = _normalize_backend(backend_type)
@@ -238,7 +257,7 @@ def create_test_memory_system(
                     result[key] = value
             return result
 
-        test_config = _deep_merge(test_config, config)
+        test_config = _deep_merge_dicts(test_config, config)
 
     return create_memory_system(config=test_config)
 
