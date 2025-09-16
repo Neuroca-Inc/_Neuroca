@@ -21,11 +21,11 @@ Usage:
 
 import logging
 from enum import Enum, auto, unique
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
-@unique
-class MemoryTier(Enum):
+class MemoryTier(str, Enum):
     """
     Represents the three-tiered memory system in the NCA.
     
@@ -34,33 +34,122 @@ class MemoryTier(Enum):
         EPISODIC: Medium-term memory for experiences and events
         SEMANTIC: Long-term memory for facts, concepts, and knowledge
     """
-    WORKING = auto()
-    EPISODIC = auto()
-    SEMANTIC = auto()
-    
+    WORKING = "stm"
+    EPISODIC = "mtm"
+    SEMANTIC = "ltm"
+
+    # Backwards compatible aliases for storage terminology
+    STM = WORKING
+    MTM = EPISODIC
+    LTM = SEMANTIC
+
+    _CANONICAL_LABELS: ClassVar[dict['MemoryTier', str]]
+    _NORMALIZED_MAP: ClassVar[dict[str, 'MemoryTier']]
+
     def __str__(self) -> str:
-        return self.name.lower()
-    
+        return self.canonical_label
+
+    @property
+    def canonical_label(self) -> str:
+        """Return the canonical cognitive label for the tier."""
+        return self._CANONICAL_LABELS[self]
+
+    @property
+    def storage_key(self) -> str:
+        """Return the storage-layer key associated with this tier."""
+        return self.value
+
+    @classmethod
+    def _normalize_key(cls, tier_name: str) -> str:
+        return tier_name.strip().replace("-", "_").replace(" ", "_").lower()
+
     @classmethod
     def from_string(cls, tier_name: str) -> 'MemoryTier':
-        """
-        Convert a string to a MemoryTier enum value.
-        
-        Args:
-            tier_name: String representation of the memory tier
-            
-        Returns:
-            Corresponding MemoryTier enum value
-            
-        Raises:
-            ValueError: If the string doesn't match any memory tier
-        """
+        """Convert a string (or alias) to a MemoryTier enum value."""
+        if isinstance(tier_name, MemoryTier):
+            return tier_name
+
+        if not isinstance(tier_name, str):
+            raise ValueError("Memory tier must be provided as a string")
+
+        normalized_key = cls._normalize_key(tier_name)
+        tier = cls._NORMALIZED_MAP.get(normalized_key)
+        if tier is not None:
+            return tier
+
         try:
             return cls[tier_name.upper()]
         except KeyError:
-            valid_tiers = [t.name.lower() for t in cls]
-            logger.error(f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_tiers)}")
-            raise ValueError(f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_tiers)}")
+            pass
+
+        try:
+            return cls(tier_name)
+        except ValueError:
+            valid_inputs = sorted(
+                {
+                    *cls._NORMALIZED_MAP.keys(),
+                    *(member.storage_key for member in cls),
+                    *(member.canonical_label for member in cls),
+                }
+            )
+            logger.error(
+                "Invalid memory tier: '%s'. Valid tiers are: %s",
+                tier_name,
+                ", ".join(valid_inputs),
+            )
+            raise ValueError(
+                f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_inputs)}"
+            ) from None
+
+
+MemoryTier._CANONICAL_LABELS = {
+    MemoryTier.WORKING: "working",
+    MemoryTier.EPISODIC: "episodic",
+    MemoryTier.SEMANTIC: "semantic",
+}
+
+_MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
+    MemoryTier.WORKING: (
+        "working",
+        "working_memory",
+        "short_term",
+        "short_term_memory",
+        "shortterm",
+        "shortterm_memory",
+        "stm",
+    ),
+    MemoryTier.EPISODIC: (
+        "episodic",
+        "episodic_memory",
+        "medium_term",
+        "medium_term_memory",
+        "mediumterm",
+        "mediumterm_memory",
+        "mtm",
+    ),
+    MemoryTier.SEMANTIC: (
+        "semantic",
+        "semantic_memory",
+        "long_term",
+        "long_term_memory",
+        "longterm",
+        "longterm_memory",
+        "ltm",
+    ),
+}
+
+_normalized_lookup: dict[str, MemoryTier] = {}
+for tier, aliases in _MEMORY_TIER_ALIASES.items():
+    augmented_aliases = set(aliases) | {
+        tier.storage_key,
+        tier.canonical_label,
+        tier.name,
+        tier.name.lower(),
+    }
+    for alias in augmented_aliases:
+        _normalized_lookup[MemoryTier._normalize_key(str(alias))] = tier
+
+MemoryTier._NORMALIZED_MAP = _normalized_lookup
 
 
 @unique
