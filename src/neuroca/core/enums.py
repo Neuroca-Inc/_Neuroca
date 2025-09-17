@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 from enum import Enum, auto, unique
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
+
 
 class MemoryTier(str, Enum):
     """
@@ -25,13 +27,17 @@ class MemoryTier(str, Enum):
     MTM = EPISODIC
     LTM = SEMANTIC
 
+    # Class-level maps (initialized after class definition for full compatibility)
+    _CANONICAL_LABELS: ClassVar[dict['MemoryTier', str]]
+    _NORMALIZED_MAP: ClassVar[dict[str, 'MemoryTier']]
+
     def __str__(self) -> str:
         return self.canonical_label
 
     @property
     def canonical_label(self) -> str:
         """Return the canonical cognitive label for the tier."""
-        return _MEMORY_TIER_CANONICAL_LABELS[self]
+        return self._CANONICAL_LABELS[self]
 
     @property
     def storage_key(self) -> str:
@@ -43,7 +49,7 @@ class MemoryTier(str, Enum):
         return tier_name.strip().replace("-", "_").replace(" ", "_").lower()
 
     @classmethod
-    def from_string(cls, tier_name: str) -> MemoryTier:
+    def from_string(cls, tier_name: str) -> 'MemoryTier':
         """Convert a string (or alias) to a MemoryTier enum value."""
         if isinstance(tier_name, MemoryTier):
             return tier_name
@@ -52,8 +58,7 @@ class MemoryTier(str, Enum):
             raise ValueError("Memory tier must be provided as a string")
 
         normalized_key = cls._normalize_key(tier_name)
-        normalized_map = _MEMORY_TIER_NORMALIZED_MAP
-        tier = normalized_map.get(normalized_key)
+        tier = cls._NORMALIZED_MAP.get(normalized_key)
         if tier is not None:
             return tier
 
@@ -67,7 +72,7 @@ class MemoryTier(str, Enum):
         except ValueError:
             valid_inputs = sorted(
                 {
-                    *_MEMORY_TIER_NORMALIZED_MAP.keys(),
+                    *cls._NORMALIZED_MAP.keys(),
                     *(member.storage_key for member in cls),
                     *(member.canonical_label for member in cls),
                 }
@@ -82,12 +87,16 @@ class MemoryTier(str, Enum):
             ) from None
 
 
+# Canonical labels (module constant kept for back-compat; also bound to class var)
 _MEMORY_TIER_CANONICAL_LABELS: dict[MemoryTier, str] = {
     MemoryTier.WORKING: "working",
     MemoryTier.EPISODIC: "episodic",
     MemoryTier.SEMANTIC: "semantic",
 }
+MemoryTier._CANONICAL_LABELS = _MEMORY_TIER_CANONICAL_LABELS  # sync
 
+
+# Alias table for normalization (module constant)
 _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
     MemoryTier.WORKING: (
         "working",
@@ -118,6 +127,7 @@ _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
     ),
 }
 
+
 def _build_memory_tier_normalized_map() -> dict[str, MemoryTier]:
     normalized_map: dict[str, MemoryTier] = {}
     for tier, aliases in _MEMORY_TIER_ALIASES.items():
@@ -132,7 +142,9 @@ def _build_memory_tier_normalized_map() -> dict[str, MemoryTier]:
     return normalized_map
 
 
+# Normalized lookup (module constant kept for back-compat; also bound to class var)
 _MEMORY_TIER_NORMALIZED_MAP: dict[str, MemoryTier] = _build_memory_tier_normalized_map()
+MemoryTier._NORMALIZED_MAP = _MEMORY_TIER_NORMALIZED_MAP  # sync
 
 
 @unique
@@ -155,7 +167,7 @@ class CognitiveState(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, state_name: str) -> CognitiveState:
+    def from_string(cls, state_name: str) -> 'CognitiveState':
         """
         Convert a string to a CognitiveState enum value.
         
@@ -201,7 +213,7 @@ class HealthIndicator(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, indicator_name: str) -> HealthIndicator:
+    def from_string(cls, indicator_name: str) -> 'HealthIndicator':
         """
         Convert a string to a HealthIndicator enum value.
         
@@ -245,7 +257,7 @@ class ProcessingMode(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, mode_name: str) -> ProcessingMode:
+    def from_string(cls, mode_name: str) -> 'ProcessingMode':
         """
         Convert a string to a ProcessingMode enum value.
         
@@ -291,7 +303,7 @@ class MemoryOperation(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, operation_name: str) -> MemoryOperation:
+    def from_string(cls, operation_name: str) -> 'MemoryOperation':
         """
         Convert a string to a MemoryOperation enum value.
         
@@ -336,7 +348,7 @@ class Priority(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, priority_name: str) -> Priority:
+    def from_string(cls, priority_name: str) -> 'Priority':
         """
         Convert a string to a Priority enum value.
         
@@ -363,7 +375,7 @@ class Priority(Enum):
             ) from err
     
     @classmethod
-    def from_int(cls, value: int) -> Priority:
+    def from_int(cls, value: int) -> 'Priority':
         """
         Convert an integer to a Priority enum value.
         
@@ -402,7 +414,7 @@ class IntegrationMode(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, mode_name: str) -> IntegrationMode:
+    def from_string(cls, mode_name: str) -> 'IntegrationMode':
         """
         Convert a string to an IntegrationMode enum value.
         
@@ -447,7 +459,7 @@ class LogLevel(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, level_name: str) -> LogLevel:
+    def from_string(cls, level_name: str) -> 'LogLevel':
         """
         Convert a string to a LogLevel enum value.
         
