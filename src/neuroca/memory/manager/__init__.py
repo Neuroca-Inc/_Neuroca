@@ -15,15 +15,14 @@ class MemoryType(str, Enum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
 
-# Export the async, interface-driven manager as the primary entry point while
-# retaining an alias to the legacy implementation for any remaining
-# compatibility shims during the stabilization effort.
-MemoryManager = AsyncMemoryManager
+# Retain a backwards-compatible alias for callers that previously referenced the
+# async implementation explicitly. The project now maintains a single manager
+# implementation exposed as ``MemoryManager``.
+AsyncMemoryManager = MemoryManager
 
 __all__ = [
     "MemoryManager",
     "AsyncMemoryManager",
-    "LegacyMemoryManager",
     "RankedMemory",
     "MemoryItem",
     "MemoryType",

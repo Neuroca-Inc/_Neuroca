@@ -9,20 +9,20 @@ operations across all memory tiers (STM, MTM, LTM) and providing a unified API.
 import asyncio
 import logging
 import time
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Union
 
+from neuroca.core.enums import MemoryTier
 from neuroca.memory.backends import BackendType
 from neuroca.memory.exceptions import (
     MemoryManagerInitializationError,
     MemoryManagerOperationError,
     MemoryNotFoundError,
     InvalidTierError,
-    TierOperationError,
 )
 from neuroca.memory.interfaces.memory_manager import MemoryManagerInterface
 from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
-from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResults
 from neuroca.memory.models.working_memory import WorkingMemoryBuffer, WorkingMemoryItem
 from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
 from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
@@ -121,6 +121,220 @@ class MemoryManager(MemoryManagerInterface):
         
         # Maintenance interval
         self._maintenance_interval = self._config.get("maintenance_interval", 3600)  # Default: 1 hour
+
+    # ------------------------------------------------------------------
+    # Legacy compatibility helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_tier_name(tier: Any | None) -> Optional[str]:
+        """Normalize tier inputs originating from legacy call sites."""
+
+        if tier is None:
+            return None
+        if isinstance(tier, MemoryTier):
+            return tier.storage_key
+        try:
+            return MemoryTier.from_string(str(tier)).storage_key
+        except ValueError:
+            return str(tier).strip().lower()
+
+    @staticmethod
+    def _merge_metadata(
+        metadata: Any | None,
+        *,
+        emotional_salience: float | None,
+    ) -> dict[str, Any]:
+        """Return a metadata dictionary honoring historical call patterns."""
+
+        base: dict[str, Any] = {}
+        if isinstance(metadata, dict):
+            base.update(metadata)
+        elif metadata is not None:
+            base["legacy_metadata"] = metadata
+
+        if emotional_salience is not None and "emotional_salience" not in base:
+            base["emotional_salience"] = emotional_salience
+
+        return base
+
+    @staticmethod
+    def _extract_content_payload(content: Any) -> Any:
+        """Derive the legacy-facing content payload from tier search results."""
+
+        if isinstance(content, dict):
+            for key in ("data", "raw_content", "json_data"):
+                if content.get(key) is not None:
+                    return content[key]
+            text = content.get("text")
+            if text is not None:
+                return text
+            summary = content.get("summary")
+            if summary is not None:
+                return summary
+        return content
+
+    @classmethod
+    def _wrap_search_results(cls, results: Iterable[Any] | None) -> list[Any]:
+        """Coerce search results into legacy-compatible objects."""
+
+        if not results:
+            return []
+
+        wrapped: list[Any] = []
+        for item in results:
+            if isinstance(item, MemoryItem):
+                wrapped.append(
+                    SimpleNamespace(
+                        content=cls._extract_content_payload(item.content.model_dump()),
+                        metadata=item.metadata.model_dump(),
+                        tier=item.metadata.tier,
+                        relevance=item.metadata.relevance,
+                        raw=item,
+                        id=getattr(item, "id", None),
+                    )
+                )
+                continue
+
+            if hasattr(item, "content") and hasattr(item, "metadata"):
+                wrapped.append(item)
+                continue
+
+            if isinstance(item, dict):
+                metadata = item.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {} if metadata is None else {"legacy_metadata": metadata}
+                wrapped.append(
+                    SimpleNamespace(
+                        content=cls._extract_content_payload(item.get("content")),
+                        metadata=metadata,
+                        tier=item.get("tier") or metadata.get("tier"),
+                        relevance=item.get("_relevance") or metadata.get("relevance"),
+                        raw=item,
+                        id=item.get("id") or metadata.get("id"),
+                    )
+                )
+                continue
+
+            wrapped.append(item)
+
+        return wrapped
+
+    def _legacy_call(
+        self,
+        coro: Awaitable[Any],
+        *,
+        transform: Callable[[Any], Any] | None = None,
+    ) -> Any:
+        """Execute a coroutine while preserving historical synchronous semantics."""
+
+        async def _runner() -> Any:
+            result = await coro
+            return transform(result) if transform is not None else result
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_runner())
+
+        task = loop.create_task(_runner())
+
+        def _log_failure(done: asyncio.Future[Any]) -> None:
+            if done.cancelled():
+                return
+            try:
+                done.result()
+            except Exception:  # noqa: BLE001
+                logger.exception("Legacy memory manager compatibility call failed")
+
+        task.add_done_callback(_log_failure)
+        return task
+
+    # ------------------------------------------------------------------
+    # Legacy public API compatibility
+    # ------------------------------------------------------------------
+
+    def store(
+        self,
+        content: Any,
+        *,
+        summary: str | None = None,
+        importance: float = 0.5,
+        metadata: Any | None = None,
+        tags: Optional[List[str]] = None,
+        memory_type: Any | None = None,
+        tier: Any | None = None,
+        emotional_salience: float | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Store a memory using the legacy synchronous signature."""
+
+        initial_tier = self._normalize_tier_name(tier or memory_type)
+        merged_metadata = self._merge_metadata(metadata, emotional_salience=emotional_salience)
+
+        return self._legacy_call(
+            self.add_memory(
+                content=content,
+                summary=summary,
+                importance=importance,
+                metadata=merged_metadata,
+                tags=tags,
+                initial_tier=initial_tier,
+                **{k: v for k, v in kwargs.items() if k not in {"memory_type", "tier"}},
+            )
+        )
+
+    def retrieve(
+        self,
+        *args: Any,
+        query: str | None = None,
+        memory_id: str | None = None,
+        memory_type: Any | None = None,
+        tier: Any | None = None,
+        limit: int | None = None,
+        tags: Optional[List[str]] = None,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Retrieve memories using the historic flexible interface."""
+
+        if args and not query and memory_id is None:
+            # Support positional access via ID.
+            memory_id = str(args[0])
+
+        if memory_id is not None:
+            normalized_tier = self._normalize_tier_name(tier)
+            return self._legacy_call(
+                self.retrieve_memory(memory_id, tier=normalized_tier),
+                transform=lambda result: self._wrap_search_results([result])[0] if result else None,
+            )
+
+        normalized_tier = self._normalize_tier_name(tier or memory_type)
+        search_kwargs: dict[str, Any] = {
+            "query": query or (args[0] if args else None),
+            "limit": kwargs.get("top_k", limit),
+            "tiers": [normalized_tier] if normalized_tier else None,
+        }
+
+        if tags:
+            search_kwargs["tags"] = tags
+        if metadata_filters:
+            search_kwargs["metadata_filters"] = metadata_filters
+
+        return self._legacy_call(
+            self.search_memories(**search_kwargs),
+            transform=self._wrap_search_results,
+        )
+
+    def search(self, query: str | None = None, **kwargs: Any) -> Any:
+        """Legacy alias that routed to search APIs."""
+
+        return self.retrieve(query=query, **kwargs)
+
+    def retrieve_relevant(self, query: str, *, tier: Any | None = None, limit: int | None = None, **kwargs: Any) -> Any:
+        """Legacy helper used by integration utilities."""
+
+        return self.retrieve(query=query, tier=tier, limit=limit, **kwargs)
     
     async def initialize(self) -> None:
         """
@@ -555,15 +769,34 @@ class MemoryManager(MemoryManagerInterface):
             
             # Process tags
             if tags is not None:
-                # Get existing tags
-                existing_tags = metadata_data.get("tags", {})
+                metadata_source: dict[str, Any] = {}
+                if isinstance(memory_data, dict):
+                    raw_metadata = memory_data.get("metadata")
+                    if isinstance(raw_metadata, dict):
+                        metadata_source = dict(raw_metadata)
+                else:
+                    existing_metadata = getattr(memory_data, "metadata", None)
+                    if existing_metadata is not None:
+                        if hasattr(existing_metadata, "model_dump"):
+                            try:
+                                dumped = existing_metadata.model_dump()  # type: ignore[call-arg]
+                            except Exception:  # noqa: BLE001
+                                dumped = {}
+                            metadata_source = dumped if isinstance(dumped, dict) else {}
+                        elif hasattr(existing_metadata, "dict"):
+                            try:
+                                dumped = existing_metadata.dict()  # type: ignore[call-arg]
+                            except Exception:  # noqa: BLE001
+                                dumped = {}
+                            metadata_source = dumped if isinstance(dumped, dict) else {}
+
+                existing_tags = metadata_source.get("tags", {}) if metadata_source else {}
                 if not isinstance(existing_tags, dict):
                     existing_tags = {}
-                
-                # Update with new tags
+
                 for tag in tags:
                     existing_tags[tag] = True
-                
+
                 metadata_updates["tags"] = existing_tags
             
             # Merge with additional metadata
@@ -639,7 +872,86 @@ class MemoryManager(MemoryManagerInterface):
             raise MemoryManagerOperationError(
                 f"Failed to delete memory: {str(e)}"
             ) from e
-    
+
+    async def transfer_memory(
+        self,
+        memory_id: str,
+        target_tier: Union[str, MemoryTier],
+    ) -> MemoryItem:
+        """Move a memory from its current tier into ``target_tier``."""
+
+        self._ensure_initialized()
+
+        try:
+            resolved_target = (
+                target_tier.storage_key
+                if isinstance(target_tier, MemoryTier)
+                else MemoryTier.from_string(str(target_tier)).storage_key
+            )
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise InvalidTierError(f"Unknown target tier: {target_tier!r}") from exc
+
+        source_tier_name: Optional[str] = None
+        memory_item: Optional[MemoryItem] = None
+
+        for tier_name in [self.STM_TIER, self.MTM_TIER, self.LTM_TIER]:
+            tier_instance = self._get_tier_by_name(tier_name)
+            fetched = await tier_instance.retrieve(memory_id)
+            if fetched:
+                source_tier_name = tier_name
+                memory_item = (
+                    fetched
+                    if isinstance(fetched, MemoryItem)
+                    else MemoryItem.model_validate(fetched)
+                )
+                break
+
+        if memory_item is None or source_tier_name is None:
+            raise MemoryNotFoundError(f"Memory {memory_id} not found in any tier")
+
+        if source_tier_name == resolved_target:
+            return memory_item
+
+        source_tier = self._get_tier_by_name(source_tier_name)
+        target_tier_instance = self._get_tier_by_name(resolved_target)
+
+        if getattr(memory_item, "metadata", None):
+            memory_item.metadata.tier = resolved_target
+            if hasattr(memory_item.metadata, "updated_at"):
+                memory_item.metadata.updated_at = datetime.now(timezone.utc)
+
+        payload = memory_item.model_dump()
+
+        try:
+            await target_tier_instance.store(payload, memory_id=memory_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Failed to transfer memory %s to %s", memory_id, resolved_target
+            )
+            raise MemoryManagerOperationError(
+                f"Failed to move memory to {resolved_target}: {exc}"
+            ) from exc
+
+        try:
+            await source_tier.delete(memory_id)
+        except Exception:  # noqa: BLE001 - log and continue, target copy already exists
+            logger.warning(
+                "Failed to delete memory %s from %s after transfer",
+                memory_id,
+                source_tier_name,
+                exc_info=True,
+            )
+
+        if self._working_memory and self._working_memory.contains(memory_id):
+            self._working_memory.remove_item(memory_id)
+
+        moved = await target_tier_instance.retrieve(memory_id)
+        return (
+            moved
+            if isinstance(moved, MemoryItem)
+            else MemoryItem.model_validate(moved)
+        )
+
     #-----------------------------------------------------------------------
     # Search and Retrieval
     #-----------------------------------------------------------------------

@@ -1,29 +1,13 @@
-"""
-Enumerations for the NeuroCognitive Architecture (NCA) system.
+"""Enumerations for the NeuroCognitive Architecture (NCA) system."""
 
-This module defines all the enumeration types used throughout the NCA system,
-providing standardized constants for various aspects of the cognitive architecture
-including memory types, cognitive states, health indicators, and processing modes.
-
-These enumerations help maintain consistency across the codebase and provide
-type safety for critical system parameters.
-
-Usage:
-    from neuroca.core.enums import MemoryTier, CognitiveState
-    
-    # Check memory tier
-    if memory.tier == MemoryTier.WORKING:
-        # Process working memory
-        
-    # Set cognitive state
-    agent.set_state(CognitiveState.FOCUSED)
-"""
+from __future__ import annotations
 
 import logging
 from enum import Enum, auto, unique
 from typing import ClassVar
 
 logger = logging.getLogger(__name__)
+
 
 class MemoryTier(str, Enum):
     """
@@ -43,6 +27,7 @@ class MemoryTier(str, Enum):
     MTM = EPISODIC
     LTM = SEMANTIC
 
+    # Class-level maps (initialized after class definition for full compatibility)
     _CANONICAL_LABELS: ClassVar[dict['MemoryTier', str]]
     _NORMALIZED_MAP: ClassVar[dict[str, 'MemoryTier']]
 
@@ -102,12 +87,16 @@ class MemoryTier(str, Enum):
             ) from None
 
 
-MemoryTier._CANONICAL_LABELS = {
+# Canonical labels (module constant kept for back-compat; also bound to class var)
+_MEMORY_TIER_CANONICAL_LABELS: dict[MemoryTier, str] = {
     MemoryTier.WORKING: "working",
     MemoryTier.EPISODIC: "episodic",
     MemoryTier.SEMANTIC: "semantic",
 }
+MemoryTier._CANONICAL_LABELS = _MEMORY_TIER_CANONICAL_LABELS  # sync
 
+
+# Alias table for normalization (module constant)
 _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
     MemoryTier.WORKING: (
         "working",
@@ -138,18 +127,24 @@ _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
     ),
 }
 
-_normalized_lookup: dict[str, MemoryTier] = {}
-for tier, aliases in _MEMORY_TIER_ALIASES.items():
-    augmented_aliases = set(aliases) | {
-        tier.storage_key,
-        tier.canonical_label,
-        tier.name,
-        tier.name.lower(),
-    }
-    for alias in augmented_aliases:
-        _normalized_lookup[MemoryTier._normalize_key(str(alias))] = tier
 
-MemoryTier._NORMALIZED_MAP = _normalized_lookup
+def _build_memory_tier_normalized_map() -> dict[str, MemoryTier]:
+    normalized_map: dict[str, MemoryTier] = {}
+    for tier, aliases in _MEMORY_TIER_ALIASES.items():
+        augmented_aliases = set(aliases) | {
+            tier.storage_key,
+            tier.canonical_label,
+            tier.name,
+            tier.name.lower(),
+        }
+        for alias in augmented_aliases:
+            normalized_map[MemoryTier._normalize_key(str(alias))] = tier
+    return normalized_map
+
+
+# Normalized lookup (module constant kept for back-compat; also bound to class var)
+_MEMORY_TIER_NORMALIZED_MAP: dict[str, MemoryTier] = _build_memory_tier_normalized_map()
+MemoryTier._NORMALIZED_MAP = _MEMORY_TIER_NORMALIZED_MAP  # sync
 
 
 @unique
@@ -187,10 +182,16 @@ class CognitiveState(Enum):
         """
         try:
             return cls[state_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_states = [s.name.lower() for s in cls]
-            logger.error(f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}")
-            raise ValueError(f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}")
+            logger.error(
+                "Invalid cognitive state: '%s'. Valid states are: %s",
+                state_name,
+                ", ".join(valid_states),
+            )
+            raise ValueError(
+                f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}"
+            ) from err
 
 
 @unique
@@ -227,10 +228,16 @@ class HealthIndicator(Enum):
         """
         try:
             return cls[indicator_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_indicators = [i.name.lower() for i in cls]
-            logger.error(f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}")
-            raise ValueError(f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}")
+            logger.error(
+                "Invalid health indicator: '%s'. Valid indicators are: %s",
+                indicator_name,
+                ", ".join(valid_indicators),
+            )
+            raise ValueError(
+                f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}"
+            ) from err
 
 
 @unique
@@ -265,10 +272,16 @@ class ProcessingMode(Enum):
         """
         try:
             return cls[mode_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_modes = [m.name.lower() for m in cls]
-            logger.error(f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
-            raise ValueError(f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
+            logger.error(
+                "Invalid processing mode: '%s'. Valid modes are: %s",
+                mode_name,
+                ", ".join(valid_modes),
+            )
+            raise ValueError(
+                f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}"
+            ) from err
 
 
 @unique
@@ -305,10 +318,16 @@ class MemoryOperation(Enum):
         """
         try:
             return cls[operation_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_operations = [o.name.lower() for o in cls]
-            logger.error(f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}")
-            raise ValueError(f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}")
+            logger.error(
+                "Invalid memory operation: '%s'. Valid operations are: %s",
+                operation_name,
+                ", ".join(valid_operations),
+            )
+            raise ValueError(
+                f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}"
+            ) from err
 
 
 @unique
@@ -344,10 +363,16 @@ class Priority(Enum):
         """
         try:
             return cls[priority_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_priorities = [p.name.lower() for p in cls]
-            logger.error(f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}")
-            raise ValueError(f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}")
+            logger.error(
+                "Invalid priority: '%s'. Valid priorities are: %s",
+                priority_name,
+                ", ".join(valid_priorities),
+            )
+            raise ValueError(
+                f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}"
+            ) from err
     
     @classmethod
     def from_int(cls, value: int) -> 'Priority':
@@ -404,10 +429,16 @@ class IntegrationMode(Enum):
         """
         try:
             return cls[mode_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_modes = [m.name.lower() for m in cls]
-            logger.error(f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
-            raise ValueError(f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
+            logger.error(
+                "Invalid integration mode: '%s'. Valid modes are: %s",
+                mode_name,
+                ", ".join(valid_modes),
+            )
+            raise ValueError(
+                f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}"
+            ) from err
 
 
 @unique
@@ -443,10 +474,16 @@ class LogLevel(Enum):
         """
         try:
             return cls[level_name.upper()]
-        except KeyError:
-            valid_levels = [l.name.lower() for l in cls]
-            logger.error(f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}")
-            raise ValueError(f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}")
+        except KeyError as err:
+            valid_levels = [level.name.lower() for level in cls]
+            logger.error(
+                "Invalid log level: '%s'. Valid levels are: %s",
+                level_name,
+                ", ".join(valid_levels),
+            )
+            raise ValueError(
+                f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}"
+            ) from err
     
     def to_logging_level(self) -> int:
         """

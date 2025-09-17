@@ -23,6 +23,16 @@ import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import json
+import sys
+from pathlib import Path
+
+# Ensure repository sources are importable when running from the sandbox directory.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # Core NCA Imports
 from neuroca.memory.manager import MemoryManager

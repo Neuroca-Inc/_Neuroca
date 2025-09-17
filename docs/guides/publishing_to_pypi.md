@@ -130,6 +130,9 @@ source test-env/bin/activate  # On Windows: test-env\Scripts\activate
 # Install from TestPyPI
 pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ neuroca
 
+# Verify optional extras resolve
+pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "neuroca[dev,test]"
+
 # Test importing
 python -c "import neuroca; print(neuroca.__version__)"
 ```
@@ -159,6 +162,7 @@ twine upload dist/*
 1. Update your documentation to include installation instructions:
    ```
    pip install neuroca
+   pip install neuroca[dev,test]
    ```
 
 2. Consider creating a GitHub tag for the version:

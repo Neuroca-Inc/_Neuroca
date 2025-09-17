@@ -173,6 +173,7 @@ extra:
 # Navigation structure (Updated to match actual files)
 nav:
   - Home: index.md
+  - Release Notes: about/release-notes.md
   - User Guide:
     - Getting Started: user/getting-started.md
     - Configuration: user/configuration.md
@@ -198,6 +199,7 @@ nav:
       - Interactions: architecture/memory_system_component_interactions.md
       - Refactoring: architecture/memory_system_refactoring.md
       - Thread Safety: architecture/memory_system_thread_safety_fixes.md
+    - Cognitive Control Lifecycle: architecture/cognitive_control_lifecycle.md
     - Deployment Guide: architecture/memory_system_deployment_guide.md
     - Directory Structure: architecture/memory_system_directory_structure.md
     - Test Plan: architecture/memory_system_test_plan.md

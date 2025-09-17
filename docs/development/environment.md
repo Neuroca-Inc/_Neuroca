@@ -47,8 +47,9 @@ Before setting up the development environment, ensure you have the following ins
 
 3. **Install dependencies using Poetry**:
    ```bash
-   poetry install
+   poetry install --with dev,test
    ```
+   Use `poetry install` without extras when preparing a runtime-only environment.
 
 4. **Create local environment file**:
    ```bash
@@ -258,7 +259,7 @@ If you encounter database connection problems:
 
 If you encounter dependency conflicts:
 1. Update Poetry lock file: `poetry update`
-2. Recreate virtual environment: `poetry env remove python && poetry install`
+2. Recreate virtual environment: `poetry env remove python && poetry install --with dev,test`
 
 ### Docker Memory Issues
 
@@ -294,7 +295,7 @@ Regularly run these commands to keep your environment up to date:
 
 ```bash
 git pull
-poetry install
+poetry install --with dev,test
 alembic upgrade head
 ```
 

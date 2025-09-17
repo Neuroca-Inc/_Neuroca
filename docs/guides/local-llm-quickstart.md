@@ -104,8 +104,8 @@ Configuration
 Troubleshooting (CLI)
 - If "neuroca" is not found, use the Python module form with PYTHONPATH set to _Neuroca/src (examples above).
 - If Ollama connection is refused, ensure the daemon is running and base_url is correct (default http://127.0.0.1:11434).
-- If imports fail, ensure the repo is installed in editable mode:
-  - pip install -e .
+- If imports fail, ensure the repo is installed in editable mode with extras:
+  - pip install -e ".[dev,test]"
 Notes
 - The manager will call the Ollama adapter’s execute(request) path:
   - ['python.method OllamaAdapter.execute()'](_Neuroca/src/neuroca/integration/adapters/ollama.py:167)
@@ -126,8 +126,8 @@ Two smoke tests were added to validate the local integration (with mocked HTTP c
 Run only these tests to avoid unrelated suites:
 - Linux/macOS:
   - PYTHONPATH=_Neuroca/src pytest -q _Neuroca/tests/unit/integration/test_ollama_adapter.py _Neuroca/tests/integration/test_manager_ollama.py
-- Or install Neuroca in editable mode first:
-  - pip install -e .
+- Or install Neuroca in editable mode first (with extras):
+  - pip install -e ".[dev,test]"
   - pytest -q _Neuroca/tests/unit/integration/test_ollama_adapter.py _Neuroca/tests/integration/test_manager_ollama.py
 
 Troubleshooting

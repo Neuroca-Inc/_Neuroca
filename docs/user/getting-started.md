@@ -43,8 +43,8 @@ Before you begin, ensure you have the following installed:
 git clone https://github.com/your-organization/neuroca.git
 cd neuroca
 
-# Install dependencies with Poetry
-poetry install
+# Install dependencies with Poetry (includes dev/test extras)
+poetry install --with dev,test
 
 # Activate the virtual environment
 poetry shell
@@ -61,8 +61,8 @@ cd neuroca
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
-pip install -e .
+# Install dependencies with extras for tooling and tests
+pip install -e ".[dev,test]"
 ```
 
 ### Using Docker

@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any, Optional
 
+from neuroca.core.enums import MemoryTier
 from neuroca.core.health import (
     ComponentHealth,
     HealthCheckResult,
@@ -289,7 +290,7 @@ class MemoryHealthMonitor:
     """Coordinates memory-specific registrations with the global health system."""
 
     def __init__(self) -> None:
-        self._memory_systems: dict[str, tuple[object, str]] = {}
+        self._memory_systems: dict[str, tuple[object, MemoryTier]] = {}
         self._operation_complexity = {
             "store": 0.8,
             "retrieve": 0.5,
@@ -302,19 +303,19 @@ class MemoryHealthMonitor:
     def register_working_memory(self, memory_system, component_id: str = "working_memory") -> ComponentHealth:
         health = register_component_for_health_tracking(component_id)
         register_health_check(WorkingMemoryHealthCheck(component_id, memory_system))
-        self._memory_systems[component_id] = (memory_system, "working")
+        self._memory_systems[component_id] = (memory_system, MemoryTier.WORKING)
         return health
 
     def register_episodic_memory(self, memory_system, component_id: str = "episodic_memory") -> ComponentHealth:
         health = register_component_for_health_tracking(component_id)
         register_health_check(EpisodicMemoryHealthCheck(component_id, memory_system))
-        self._memory_systems[component_id] = (memory_system, "episodic")
+        self._memory_systems[component_id] = (memory_system, MemoryTier.EPISODIC)
         return health
 
     def register_semantic_memory(self, memory_system, component_id: str = "semantic_memory") -> ComponentHealth:
         health = register_component_for_health_tracking(component_id)
         register_health_check(SemanticMemoryHealthCheck(component_id, memory_system))
-        self._memory_systems[component_id] = (memory_system, "semantic")
+        self._memory_systems[component_id] = (memory_system, MemoryTier.SEMANTIC)
         return health
 
     def record_memory_operation(self, component_id: str, operation: str, num_items: int = 1) -> None:
@@ -336,16 +337,36 @@ def get_memory_health_monitor() -> MemoryHealthMonitor:
     return _memory_health_monitor
 
 
-def register_memory_system(memory_system, memory_type: str, component_id: Optional[str] = None) -> ComponentHealth:
+def register_memory_system(
+    memory_system,
+    memory_type: str | MemoryTier,
+    component_id: Optional[str] = None,
+) -> ComponentHealth:
     monitor = get_memory_health_monitor()
-    memory_type = memory_type.lower()
-    if memory_type == "working":
-        return monitor.register_working_memory(memory_system, component_id or "working_memory")
-    if memory_type == "episodic":
-        return monitor.register_episodic_memory(memory_system, component_id or "episodic_memory")
-    if memory_type == "semantic":
-        return monitor.register_semantic_memory(memory_system, component_id or "semantic_memory")
-    raise ValueError(f"Unknown memory type: {memory_type}")
+
+    if isinstance(memory_type, MemoryTier):
+        resolved_tier = memory_type
+    else:
+        resolved_tier = MemoryTier.from_string(memory_type)
+
+    default_ids = {
+        MemoryTier.WORKING: "working_memory",
+        MemoryTier.EPISODIC: "episodic_memory",
+        MemoryTier.SEMANTIC: "semantic_memory",
+    }
+
+    register_map = {
+        MemoryTier.WORKING: monitor.register_working_memory,
+        MemoryTier.EPISODIC: monitor.register_episodic_memory,
+        MemoryTier.SEMANTIC: monitor.register_semantic_memory,
+    }
+
+    register_fn = register_map.get(resolved_tier)
+    if register_fn is None:  # pragma: no cover - defensive guard for future tiers
+        raise ValueError(f"Unknown memory type: {memory_type}")
+
+    resolved_component_id = component_id or default_ids[resolved_tier]
+    return register_fn(memory_system, resolved_component_id)
 
 
 def record_memory_operation(component_id: str, operation: str, num_items: int = 1) -> None:
