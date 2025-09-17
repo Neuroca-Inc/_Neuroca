@@ -14,5 +14,6 @@ The following checklist tracks remediation work for the Codacy findings shared b
 - [x] Align vector backend `update` signature with base interface expectations.
 - [x] Ensure SQLite backend update signature mirrors the revised pattern.
 - [x] Document remediation progress for traceability.
+- [x] Split the metacognition monitor into focused helpers so the package stays within the 500 LOC architectural limit while keeping complexity low.
 
 All items correspond to warnings surfaced in the Codacy report supplied with this task.
