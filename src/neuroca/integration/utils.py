@@ -148,7 +148,7 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
     # Simple fallback using word count with a multiplier
     else:
         # Most models use about 1.3 tokens per word on average for English text
-        return len(text.split()) * 1.3
+        return int(len(text.split()) * 1.3)
         
 
 def format_prompt(template: str, variables: dict[str, Any], preserve_unknown: bool = True) -> str:

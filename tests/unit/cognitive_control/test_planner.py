@@ -185,7 +185,7 @@ class TestPlanner:
         mock_item.id = "proc_123"
 
         async def search_side_effect(*, query: str, **_: Any) -> list[MemoryItem]:
-            if "procedure" in query:
+            if query == "procedure for use known procedure":
                 return [mock_item]
             return []
 

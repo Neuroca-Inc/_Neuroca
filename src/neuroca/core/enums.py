@@ -118,16 +118,21 @@ _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
     ),
 }
 
-_MEMORY_TIER_NORMALIZED_MAP: dict[str, MemoryTier] = {}
-for tier, aliases in _MEMORY_TIER_ALIASES.items():
-    augmented_aliases = set(aliases) | {
-        tier.storage_key,
-        tier.canonical_label,
-        tier.name,
-        tier.name.lower(),
-    }
-    for alias in augmented_aliases:
-        _MEMORY_TIER_NORMALIZED_MAP[MemoryTier._normalize_key(str(alias))] = tier
+def _build_memory_tier_normalized_map() -> dict[str, MemoryTier]:
+    normalized_map: dict[str, MemoryTier] = {}
+    for tier, aliases in _MEMORY_TIER_ALIASES.items():
+        augmented_aliases = set(aliases) | {
+            tier.storage_key,
+            tier.canonical_label,
+            tier.name,
+            tier.name.lower(),
+        }
+        for alias in augmented_aliases:
+            normalized_map[MemoryTier._normalize_key(str(alias))] = tier
+    return normalized_map
+
+
+_MEMORY_TIER_NORMALIZED_MAP: dict[str, MemoryTier] = _build_memory_tier_normalized_map()
 
 
 @unique

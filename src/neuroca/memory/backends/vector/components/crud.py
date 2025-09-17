@@ -9,10 +9,11 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from neuroca.core.enums import MemoryTier
 from neuroca.memory.backends.vector.components.index import VectorIndex
 from neuroca.memory.backends.vector.components.models import VectorEntry
 from neuroca.memory.backends.vector.components.storage import VectorStorage
-from neuroca.memory.exceptions import StorageBackendError, StorageOperationError
+from neuroca.memory.exceptions import StorageOperationError
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata, MemoryStatus
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class VectorCRUD:
         """
         self.index = index
         self.storage = storage
+        self.include_full_payload_and_tier_in_metadata = True
     
     async def create(self, memory_item: MemoryItem) -> str:
         """
@@ -72,22 +74,25 @@ class VectorCRUD:
                 self.index.add(vector_entry)
             
             # Store additional metadata
-            metadata = memory_item.metadata if memory_item.metadata else None
+            metadata = memory_item.metadata or None
             now_iso = datetime.now().isoformat()
-            self.storage.set_memory_metadata(
-                memory_id,
-                {
-                    "memory": memory_item.model_dump(mode="json"),
-                    "summary": memory_item.summary or "No summary available",
-                    "status": metadata.status.value if metadata and metadata.status else "active",
-                    "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
-                    "last_accessed": now_iso,
-                    "access_count": 0,
-                    "tier": metadata.tier if metadata and metadata.tier else None,
-                    "tags": metadata.tags if metadata else {},
-                    "importance": metadata.importance if metadata else 0.5,
-                },
-            )
+            metadata_dict: Dict[str, Any] = {
+                "summary": memory_item.summary or "No summary available",
+                "status": metadata.status.value if metadata and metadata.status else "active",
+                "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
+                "last_accessed": now_iso,
+                "access_count": 0,
+                "tags": metadata.tags if metadata else {},
+                "importance": metadata.importance if metadata else 0.5,
+            }
+            if self.include_full_payload_and_tier_in_metadata:
+                metadata_dict["memory"] = memory_item.model_dump(mode="json")
+                if metadata and metadata.tier:
+                    metadata_dict["tier"] = metadata.tier
+            elif metadata and metadata.tier:
+                metadata_dict["tier"] = metadata.tier
+
+            self.storage.set_memory_metadata(memory_id, metadata_dict)
             
             # Save index to disk if path is provided
             await self.storage.save()
@@ -130,9 +135,11 @@ class VectorCRUD:
             now_iso = datetime.now().isoformat()
             metadata_dict["last_accessed"] = now_iso
             metadata_dict["access_count"] = metadata_dict.get("access_count", 0) + 1
-            metadata_dict["memory"] = memory_item.model_dump(mode="json")
+            if self.include_full_payload_and_tier_in_metadata:
+                metadata_dict["memory"] = memory_item.model_dump(mode="json")
             metadata_dict["importance"] = memory_item.metadata.importance
-            metadata_dict["tier"] = memory_item.metadata.tier
+            if memory_item.metadata.tier:
+                metadata_dict["tier"] = memory_item.metadata.tier
             self.storage.set_memory_metadata(memory_id, metadata_dict)
 
             # Save updated metadata
@@ -267,22 +274,25 @@ class VectorCRUD:
                 vector_entries.append(vector_entry)
                 
                 # Store additional metadata
-                metadata = memory_item.metadata if memory_item.metadata else None
+                metadata = memory_item.metadata or None
                 now_iso = datetime.now().isoformat()
-                self.storage.set_memory_metadata(
-                    memory_id,
-                    {
-                        "memory": memory_item.model_dump(mode="json"),
-                        "summary": memory_item.summary or "No summary available",
-                        "status": metadata.status.value if metadata and metadata.status else "active",
-                        "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
-                        "last_accessed": now_iso,
-                        "access_count": 0,
-                        "tier": metadata.tier if metadata and metadata.tier else None,
-                        "tags": metadata.tags if metadata else {},
-                        "importance": metadata.importance if metadata else 0.5,
-                    },
-                )
+                metadata_dict: Dict[str, Any] = {
+                    "summary": memory_item.summary or "No summary available",
+                    "status": metadata.status.value if metadata and metadata.status else "active",
+                    "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
+                    "last_accessed": now_iso,
+                    "access_count": 0,
+                    "tags": metadata.tags if metadata else {},
+                    "importance": metadata.importance if metadata else 0.5,
+                }
+                if self.include_full_payload_and_tier_in_metadata:
+                    metadata_dict["memory"] = memory_item.model_dump(mode="json")
+                    if metadata and metadata.tier:
+                        metadata_dict["tier"] = metadata.tier
+                elif metadata and metadata.tier:
+                    metadata_dict["tier"] = metadata.tier
+
+                self.storage.set_memory_metadata(memory_id, metadata_dict)
             
             # Store in index
             self.index.batch_add(vector_entries)
@@ -341,9 +351,11 @@ class VectorCRUD:
                 if entry:
                     metadata_dict = metadata_by_id.get(memory_id, {})
                     memory_item = self._vector_entry_to_memory(entry, metadata_dict)
-                    metadata_dict["memory"] = memory_item.model_dump(mode="json")
+                    if self.include_full_payload_and_tier_in_metadata:
+                        metadata_dict["memory"] = memory_item.model_dump(mode="json")
                     metadata_dict["importance"] = memory_item.metadata.importance
-                    metadata_dict["tier"] = memory_item.metadata.tier
+                    if memory_item.metadata.tier:
+                        metadata_dict["tier"] = memory_item.metadata.tier
                     self.storage.set_memory_metadata(memory_id, metadata_dict)
                     need_save = True
                     result[memory_id] = memory_item
@@ -355,7 +367,7 @@ class VectorCRUD:
                 await self.storage.save()
             
             logger.debug(
-                f"Batch retrieved {sum(1 for item in result.values() if item)} out of {len(memory_ids)} memories from vector database"
+                f"Batch retrieved {sum(bool(item) for item in result.values())} out of {len(memory_ids)} memories from vector database"
             )
             return result
             
@@ -399,7 +411,15 @@ class VectorCRUD:
             error_msg = f"Failed to batch delete memories from vector database: {str(e)}"
             logger.error(error_msg, exc_info=True)
             raise StorageOperationError(error_msg) from e
-    
+
+    def vector_entry_to_memory(
+        self,
+        vector_entry: VectorEntry,
+        metadata_dict: Dict[str, Any],
+    ) -> MemoryItem:
+        """Public wrapper for converting a stored vector entry to a memory item."""
+        return self._vector_entry_to_memory(vector_entry, metadata_dict)
+
     def _memory_to_vector_entry(self, memory_item: MemoryItem) -> VectorEntry:
         """
         Convert a MemoryItem to a VectorEntry.
@@ -410,7 +430,7 @@ class VectorCRUD:
         Returns:
             VectorEntry: The converted vector entry
         """
-        metadata = memory_item.metadata if memory_item.metadata else None
+        metadata = memory_item.metadata or None
         tag_map = metadata.tags if metadata and isinstance(metadata.tags, dict) else {}
         serialized_memory = memory_item.model_dump(mode="json")
 
@@ -471,7 +491,14 @@ class VectorCRUD:
         memory_item.metadata.access_count = metadata_dict.get("access_count", 0)
 
         tier_value = metadata_dict.get("tier") or vector_entry.metadata.get("tier")
-        if tier_value:
-            memory_item.metadata.tier = tier_value
+        if tier_value is not None:
+            if isinstance(tier_value, MemoryTier):
+                resolved_tier = tier_value.storage_key
+            else:
+                try:
+                    resolved_tier = MemoryTier.from_string(str(tier_value)).storage_key
+                except ValueError:
+                    resolved_tier = str(tier_value)
+            memory_item.metadata.tier = resolved_tier
 
         return memory_item

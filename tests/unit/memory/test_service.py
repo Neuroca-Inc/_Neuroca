@@ -50,7 +50,12 @@ async def test_list_memories_passes_filters():
         }
     ]
 
-    params = MemorySearchParams(user_id="user-1", query="example", tier="mtm", limit=5)
+    params = MemorySearchParams(
+        user_id="user-1",
+        query="example",
+        tier=MemoryTier.MTM.storage_key,
+        limit=5,
+    )
     results = await service.list_memories(params)
 
     assert len(results) == 1
@@ -99,7 +104,31 @@ async def test_transfer_memory_normalizes_target_tier():
     transferred.metadata.tier = MemoryTier.MTM.storage_key
     service.memory_manager.transfer_memory.return_value = transferred
 
-    response = await service.transfer_memory(UUID("12345678-1234-5678-1234-567812345678"), "mtm")
+    response = await service.transfer_memory(
+        UUID("12345678-1234-5678-1234-567812345678"),
+        MemoryTier.MTM,
+    )
 
     service.memory_manager.transfer_memory.assert_awaited_once()
     assert response.tier == MemoryTier.MTM.storage_key
+
+
+@pytest.mark.asyncio
+async def test_create_memory_initializes_manager_if_needed():
+    service = MemoryService()
+    fake_item = MemoryItem.from_text("hello world")
+    fake_item.metadata.tier = MemoryTier.STM.storage_key
+
+    service.memory_manager = AsyncMock()
+    service.memory_manager.add_memory.return_value = "memory-id"
+    service.memory_manager.retrieve_memory.return_value = fake_item
+
+    payload = {
+        "content": "hello world",
+        "user_id": "user-123",
+    }
+
+    response = await service.create_memory(payload)
+
+    service.memory_manager.initialize.assert_awaited_once()
+    assert response.tier == MemoryTier.STM.storage_key

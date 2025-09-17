@@ -26,7 +26,7 @@ class CognitiveProcess(BaseModel):
     ) -> None:
         super().__init__(id=id, **kwargs)
         self.name = name
-        self.state = CognitiveState(state) if not isinstance(state, CognitiveState) else state
+        self.state = state if isinstance(state, CognitiveState) else CognitiveState(state)
         self.last_transition = last_transition or datetime.utcnow()
         self.metadata = dict(metadata or {})
 

@@ -122,7 +122,7 @@ class User(BaseModel):
         self.password_hash = password_hash or self.hash_password(username)
         self.first_name = first_name
         self.last_name = last_name
-        self.role = UserRole(role) if not isinstance(role, UserRole) else role
+        self.role = role if isinstance(role, UserRole) else UserRole(role)
         self.is_active = is_active
         self.created_at = created_at or datetime.utcnow()
         self.last_login = last_login

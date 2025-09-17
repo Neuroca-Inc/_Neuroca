@@ -126,8 +126,6 @@ class VectorBackend(BaseStorageBackend):
         matched_ids = self._filter_memory_ids(filters)
         if offset:
             matched_ids = matched_ids[offset:]
-        if limit is not None:
-            matched_ids = matched_ids[:limit]
 
         if not matched_ids:
             return []
@@ -140,10 +138,16 @@ class VectorBackend(BaseStorageBackend):
         ]
 
         if sort_by:
-            memory_dicts.sort(
-                key=lambda entry: self._extract_sort_value(entry, sort_by),
-                reverse=not ascending,
-            )
+            def sort_key(entry: Dict[str, Any]) -> Any:
+                value = self._extract_sort_value(entry, sort_by)
+                if value is None:
+                    return float("inf") if ascending else float("-inf")
+                return value
+
+            memory_dicts.sort(key=sort_key, reverse=not ascending)
+
+        if limit is not None:
+            memory_dicts = memory_dicts[:limit]
 
         return memory_dicts
 
@@ -280,7 +284,7 @@ class VectorBackend(BaseStorageBackend):
                 entry = self.index.get(memory_id)
                 if entry is None:
                     continue
-                memory_payload = self.crud._vector_entry_to_memory(entry, metadata).model_dump(mode="json")
+                memory_payload = self.crud.vector_entry_to_memory(entry, metadata).model_dump(mode="json")
                 metadata["memory"] = memory_payload
                 self.storage.set_memory_metadata(memory_id, metadata)
 
@@ -355,15 +359,34 @@ class VectorBackend(BaseStorageBackend):
             actual = self._extract_nested_value(memory_payload, key)
 
             if isinstance(expected, dict):
-                if "$exists" in expected:
-                    exists = actual is not None
-                    if bool(expected["$exists"]) != exists:
-                        return False
-                elif "$in" in expected:
-                    if actual not in expected["$in"]:
-                        return False
+                if any(str(operator).startswith("$") for operator in expected):
+                    for operator, value in expected.items():
+                        op_key = str(operator)
+                        if op_key == "$exists":
+                            exists = actual is not None
+                            if bool(value) != exists:
+                                return False
+                        elif op_key == "$in":
+                            if actual not in value:
+                                return False
+                        elif op_key == "$all":
+                            if not isinstance(actual, list) or not all(item in actual for item in value):
+                                return False
+                        elif op_key == "$any":
+                            if not isinstance(actual, list) or not any(item in actual for item in value):
+                                return False
+                        elif op_key == "$size":
+                            if not isinstance(actual, list) or len(actual) != value:
+                                return False
+                        else:
+                            if isinstance(actual, dict):
+                                if not self._matches_filters(actual, {op_key: value}):
+                                    return False
+                            else:
+                                return False
                 else:
-                    continue
+                    if not isinstance(actual, dict) or not self._matches_filters(actual, expected):
+                        return False
             else:
                 if isinstance(actual, list) and not isinstance(expected, list):
                     if expected not in actual:
@@ -384,5 +407,4 @@ class VectorBackend(BaseStorageBackend):
         return current
 
     def _extract_sort_value(self, payload: Dict[str, Any], sort_key: str) -> Any:
-        value = self._extract_nested_value(payload, sort_key)
-        return value if value is not None else 0
+        return self._extract_nested_value(payload, sort_key)

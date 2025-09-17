@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
@@ -12,6 +13,20 @@ from neuroca.core.health.dynamics import HealthState
 from ._async_utils import extract_metadata, search_memories
 
 logger = logging.getLogger(__name__)
+
+GOAL_ALIGNMENT_BONUS = 0.2
+
+
+async def maybe_await_callable(func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Await functions that may be synchronous or asynchronous."""
+
+    if inspect.iscoroutinefunction(func):
+        return await func(*args, **kwargs)
+
+    result = func(*args, **kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
 
 
 @dataclass(slots=True)
@@ -82,7 +97,11 @@ class DecisionMaker:
 
         for option in options:
             past_outcome_adjustment = await self._evaluate_past_outcomes(option)
-            goal_alignment_bonus = 0.2 if current_goal_description.lower() in option.description.lower() else 0.0
+            goal_alignment_bonus = (
+                GOAL_ALIGNMENT_BONUS
+                if self._is_goal_aligned(current_goal_description, option.description)
+                else 0.0
+            )
             adjusted_utility = (
                 option.estimated_utility
                 + goal_alignment_bonus
@@ -118,7 +137,11 @@ class DecisionMaker:
         if requires_plan and self.planner:
             logger.info("Chosen action '%s' requires further planning.", best_option.description)
             try:
-                sub_plan = await self.planner.generate_plan(goal_description=goal_for_plan, context=context)
+                sub_plan = await maybe_await_callable(
+                    self.planner.generate_plan,
+                    goal_description=goal_for_plan,
+                    context=context,
+                )
             except Exception:  # noqa: BLE001
                 logger.exception("Planner failed to generate sub-plan for '%s'", best_option.description)
             else:
@@ -131,28 +154,50 @@ class DecisionMaker:
 
         return best_option
 
-    async def _evaluate_past_outcomes(self, option: DecisionOption, limit: int = 5) -> float:
+    async def _evaluate_past_outcomes(
+        self,
+        option: DecisionOption,
+        limit: int = 5,
+        min_samples: int = 3,
+    ) -> float:
         if not self.memory_manager:
             return 0.0
 
         query = f"outcome related to {option.description}"
-        past_attempts = await search_memories(
-            self.memory_manager,
-            query=query,
-            limit=limit,
-            tiers=[MemoryTier.EPISODIC],
-        )
+        try:
+            past_attempts = await search_memories(
+                self.memory_manager,
+                query=query,
+                limit=limit,
+                tiers=[MemoryTier.EPISODIC],
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to retrieve past outcomes for '%s'", option.description, exc_info=True)
+            return 0.0
+
         if not past_attempts:
             return 0.0
 
         success_count = 0
+        evaluated_attempts = 0
         for item in past_attempts:
             metadata = extract_metadata(item)
             outcome = metadata.get("outcome") or metadata.get("result")
+            if outcome is None:
+                continue
+            evaluated_attempts += 1
             if isinstance(outcome, str) and outcome.lower() == "success":
                 success_count += 1
+            elif isinstance(outcome, bool) and outcome:
+                success_count += 1
 
-        success_rate = success_count / len(past_attempts)
+        if evaluated_attempts == 0:
+            return 0.0
+
+        if evaluated_attempts < min_samples:
+            success_rate = (success_count + 1) / (evaluated_attempts + 2)
+        else:
+            success_rate = success_count / evaluated_attempts
         adjustment = (success_rate - 0.5) * 0.2
         logger.debug(
             "Option '%s': past success rate %0.2f, adjustment %0.2f",
@@ -161,6 +206,16 @@ class DecisionMaker:
             adjustment,
         )
         return adjustment
+
+    @staticmethod
+    def _is_goal_aligned(goal: Optional[str], option_desc: Optional[str]) -> bool:
+        if not goal or not option_desc:
+            return False
+        goal_tokens = {token for token in goal.lower().split() if token}
+        if not goal_tokens:
+            return False
+        option_tokens = {token for token in option_desc.lower().split() if token}
+        return goal_tokens.issubset(option_tokens)
 
     @staticmethod
     def _determine_risk_aversion(health_state: HealthState) -> float:

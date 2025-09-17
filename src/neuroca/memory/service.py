@@ -84,6 +84,10 @@ except ImportError:
             min_relevance: float = 0.0,
             tiers: list[str] | None = None,
         ) -> list[dict[str, Any]]:
+            if embedding:
+                logging.getLogger(__name__).warning(
+                    "Fallback MemoryManager.search_memories ignores embedding-based ranking."
+                )
             results = list(self._memories.values())
 
             if tiers:
@@ -293,7 +297,7 @@ class MemoryService:
             importance=memory_data.get("importance", 0.5),
             metadata={'user_id': memory_data.get('user_id')},
             tags=memory_data.get("tags", []),
-            initial_tier=memory_data.get("tier", "stm")  # Use stm as default, not working
+            initial_tier=self._resolve_initial_tier(memory_data.get("tier")),
         )
         
         # Retrieve the stored memory to return it
@@ -351,6 +355,21 @@ class MemoryService:
             tiers=tiers,
         )
         return [MemoryResponse.from_orm(res) for res in results]
+
+    @staticmethod
+    def _resolve_initial_tier(tier: Any) -> str:
+        if isinstance(tier, MemoryTier):
+            return tier.storage_key
+        if tier is None:
+            return MemoryTier.STM.storage_key
+        try:
+            return MemoryTier.from_string(str(tier)).storage_key
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                "Unknown tier %r provided during memory creation. Defaulting to STM.",
+                tier,
+            )
+            return MemoryTier.STM.storage_key
 
     async def update_memory(self, memory_id: UUID, update_data: dict) -> MemoryResponse:
         """

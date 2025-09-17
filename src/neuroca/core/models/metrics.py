@@ -38,7 +38,7 @@ class MetricDefinition(BaseModel):
         super().__init__(id=id or name, **kwargs)
         self.name = name
         self.description = description
-        self.type = MetricType(type) if not isinstance(type, MetricType) else type
+        self.type = type if isinstance(type, MetricType) else MetricType(type)
         self.unit = unit
         self.aggregation = aggregation
         self.retention_days = retention_days

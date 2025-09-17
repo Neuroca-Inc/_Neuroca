@@ -99,6 +99,10 @@ class Planner:
                 normalized = str(health_state).split(".")[-1].upper()
                 health_state = HealthState[normalized]
             except Exception:  # noqa: BLE001
+                logger.error(
+                    "Invalid health_state context value %r. Falling back to NORMAL state.",
+                    health_state,
+                )
                 health_state = HealthState.NORMAL
 
         if health_state in {HealthState.IMPAIRED, HealthState.CRITICAL}:
