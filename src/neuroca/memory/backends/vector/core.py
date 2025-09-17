@@ -172,26 +172,39 @@ class VectorBackend(BaseStorageBackend):
             logger.error(error_msg, exc_info=True)
             raise StorageOperationError(error_msg) from e
     
-    async def update(self, memory_item: MemoryItem) -> bool:
-        """
-        Update an existing memory item in the vector database.
-        
-        Args:
-            memory_item: Memory item to update
-            
-        Returns:
-            bool: True if update was successful, False otherwise
-            
-        Raises:
-            StorageOperationError: If the update operation fails
-        """
+    async def update(
+        self,
+        item: MemoryItem | str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Update an existing memory item in the vector database."""
+
+        memory_item = self._coerce_memory_item(item, data)
         try:
-            # Delegate to CRUD component
             return await self.crud.update(memory_item)
-        except Exception as e:
-            error_msg = f"Failed to update memory {memory_item.id} in vector database: {str(e)}"
+        except Exception as error:
+            error_msg = f"Failed to update memory {memory_item.id} in vector database: {error}"
             logger.error(error_msg, exc_info=True)
-            raise StorageOperationError(error_msg) from e
+            raise StorageOperationError(error_msg) from error
+
+    @staticmethod
+    def _coerce_memory_item(
+        item: MemoryItem | str,
+        data: Optional[Dict[str, Any]],
+    ) -> MemoryItem:
+        if isinstance(item, MemoryItem):
+            return item
+
+        if isinstance(data, MemoryItem):
+            data.id = str(item)
+            return data
+
+        if data is None:
+            raise ValueError("Updating by identifier requires accompanying memory data.")
+
+        payload = dict(data)
+        payload["id"] = str(item)
+        return MemoryItem.model_validate(payload)
     
     async def delete(self, memory_id: str) -> bool:
         """

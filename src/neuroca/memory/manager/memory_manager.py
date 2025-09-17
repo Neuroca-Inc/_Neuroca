@@ -443,6 +443,26 @@ class MemoryManager(MemoryManagerInterface):
             raise MemoryManagerOperationError(
                 f"Failed to add memory: {str(e)}"
             ) from e
+
+    # ------------------------------------------------------------------
+    # Legacy compatibility shims
+    # ------------------------------------------------------------------
+
+    def store(
+        self,
+        content: Any,
+        tier: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Compatibility wrapper for legacy synchronous APIs."""
+
+        raise NotImplementedError("Use add_memory asynchronously instead of store().")
+
+    def retrieve(self, *args: Any, **kwargs: Any) -> Any:
+        """Compatibility wrapper for legacy synchronous APIs."""
+
+        raise NotImplementedError("Use retrieve_memory asynchronously instead of retrieve().")
     
     async def retrieve_memory(
         self,

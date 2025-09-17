@@ -18,7 +18,7 @@ from typing import Any, Optional
 from neuroca.core.health.dynamics import (  # Example
     HealthState,
 )
-from neuroca.memory.manager import MemoryItem  # Example
+from neuroca.memory.models.memory_item import MemoryItem
 
 from .goal_manager import GoalStatus  # Example, Import GoalStatus
 
@@ -55,58 +55,74 @@ class MetacognitiveMonitor:
         }
         self.max_error_log_size = 20
 
-    def log_error(self, error_details: dict[str, Any]):
-         """
-         Log an error observed during cognitive processing and store in episodic memory.
-         
-         Args:
-             error_details: Dictionary with error information (type, message, source, etc.)
-         """
-         # Add timestamp if not present
-         error_details['timestamp'] = error_details.get('timestamp', time.time())
-         
-         # Add to local log buffer
-         self.last_error_log.append(error_details)
-         if len(self.last_error_log) > self.max_error_log_size:
-             self.last_error_log.pop(0)  # Keep log size bounded
-         
-         # Log to standard logger
-         logger.warning(f"Metacognition logged error: {error_details.get('type', 'Unknown')}: {error_details.get('message', '')}")
-         
-         # Store error in episodic memory for pattern recognition
-         if self.memory_manager:
-             try:
-                 # Create a structured representation for the memory
-                 mem_content = {
-                     "type": "error",
-                     "error_type": error_details.get("type", "Unknown"),
-                     "message": error_details.get("message", ""),
-                     "details": error_details
-                 }
-                 
-                 # Store with appropriate metadata
-                 mem_metadata = {
-                     "error_source": error_details.get("source", "unknown_component"),
-                     "component": error_details.get("component", "system"),
-                     "severity": error_details.get("severity", "warning"),
-                     "tags": ["error", error_details.get("type", "unknown_error")]
-                 }
-                 
-                 # If task/action related, add context
-                 if "task" in error_details:
-                     mem_metadata["task"] = error_details["task"]
-                 if "action" in error_details:
-                     mem_metadata["action"] = error_details["action"]
-                 
-                 # Store in episodic memory with high emotional salience (errors are important)
-                 self.memory_manager.store(content=mem_content, 
-                                           memory_type="episodic", 
-                                           metadata=mem_metadata,
-                                           emotional_salience=0.8)
-                 
-                 logger.debug(f"Error stored in episodic memory: {error_details.get('type', 'Unknown')}")
-             except Exception as e:
-                 logger.error(f"Failed to store error in memory: {e}")
+    def log_error(self, error_details: dict[str, Any]) -> None:
+        """Record an error and persist it for later analysis."""
+
+        normalized = self._normalise_error_details(error_details)
+        self._remember_recent_error(normalized)
+        logger.warning(
+            "Metacognition logged error: %s - %s",
+            normalized.get("type", "Unknown"),
+            normalized.get("message", ""),
+        )
+        self._persist_error_memory(normalized)
+
+    def _normalise_error_details(self, error_details: dict[str, Any]) -> dict[str, Any]:
+        """Ensure the error payload contains the core fields used downstream."""
+
+        normalised = dict(error_details)
+        normalised.setdefault("timestamp", time.time())
+        normalised.setdefault("type", "Unknown")
+        normalised.setdefault("message", "")
+        return normalised
+
+    def _remember_recent_error(self, error_details: dict[str, Any]) -> None:
+        """Maintain a bounded list of recent errors for quick inspection."""
+
+        self.last_error_log.append(error_details)
+        if len(self.last_error_log) > self.max_error_log_size:
+            self.last_error_log.pop(0)
+
+    def _persist_error_memory(self, error_details: dict[str, Any]) -> None:
+        """Persist an error entry to episodic memory if a manager is available."""
+
+        if not self.memory_manager:
+            return
+
+        content, metadata = self._build_error_memory_payload(error_details)
+        try:
+            self.memory_manager.store(
+                content=content,
+                memory_type="episodic",
+                metadata=metadata,
+                emotional_salience=0.8,
+            )
+            logger.debug("Error stored in episodic memory: %s", error_details.get("type", "Unknown"))
+        except Exception as error:  # noqa: BLE001 - defensive guard
+            logger.error("Failed to store error in memory: %s", error)
+
+    @staticmethod
+    def _build_error_memory_payload(error_details: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Create the content and metadata payload used for memory storage."""
+
+        content = {
+            "type": "error",
+            "error_type": error_details.get("type", "Unknown"),
+            "message": error_details.get("message", ""),
+            "details": error_details,
+        }
+        metadata = {
+            "error_source": error_details.get("source", "unknown_component"),
+            "component": error_details.get("component", "system"),
+            "severity": error_details.get("severity", "warning"),
+            "tags": ["error", error_details.get("type", "unknown_error")],
+        }
+
+        for key in ("task", "action"):
+            if key in error_details:
+                metadata[key] = error_details[key]
+
+        return content, metadata
 
     def log_action_completion(self, action_cost: float):
          """Log the completion of an action to update performance metrics."""
@@ -224,274 +240,328 @@ class MetacognitiveMonitor:
         return final_confidence
         # --- End Enhanced Placeholder ---
 
-    def select_strategy(self, task_description: str, available_strategies: list[str], context: Optional[dict[str, Any]] = None) -> Optional[str]:
-        """
-        Select the most appropriate cognitive strategy for a given task.
+    def select_strategy(
+        self,
+        task_description: str,
+        available_strategies: list[str],
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Select the most appropriate cognitive strategy for a given task."""
 
-        Args:
-            task_description: Description of the task to be performed.
-            available_strategies: List of possible strategies (e.g., "detailed_planning", "heuristic_search", "memory_retrieval").
-            context: Current situational information.
+        if not available_strategies:
+            logger.warning("No strategies provided for task '%s'.", task_description)
+            return None
 
-        Returns:
-            The name of the selected strategy, or None.
-        """
-        logger.info(f"Selecting strategy for task: {task_description}")
         context = context or {}
-
-        # --- Enhanced Placeholder Strategy Selection Logic ---
-        # 1. Assess Current State
         current_state = self.assess_current_state()
         health_status = current_state.get("overall_health", "healthy")
         wm_load = current_state.get("working_memory_load", 0.0)
+        success_rates = self._collect_strategy_success_rates(available_strategies, task_description)
 
-        # 2. Retrieve Past Performance for Strategy Selection
-        past_success = {}
-        if self.memory_manager:
-            try:
-                for strategy in available_strategies:
-                    # Query episodic memory for past attempts using this strategy on similar tasks
-                    past_attempts = self.memory_manager.retrieve(
-                        query=f"strategy {strategy} task {task_description}", 
-                        memory_type="episodic", 
-                        limit=5
-                    )
-                    
-                    if past_attempts:
-                        # Calculate success rate based on outcome metadata
-                        success_count = sum(1 for item in past_attempts 
-                                         if item.metadata.get("outcome") == "success")
-                        success_rate = success_count / len(past_attempts)
-                        past_success[strategy] = success_rate
-                        logger.debug(f"Strategy '{strategy}' has past success rate: {success_rate:.2f} ({success_count}/{len(past_attempts)})")
-                    else:
-                        past_success[strategy] = 0.5  # Default when no data
-                        logger.debug(f"No past attempts found for strategy '{strategy}'")
-            except Exception as e:
-                logger.warning(f"Error retrieving past performance: {e}")
-                # Fall back to defaults if memory retrieval fails
-                past_success = {strategy: 0.5 for strategy in available_strategies}
+        scores = {
+            strategy: self._score_strategy(
+                strategy,
+                health_status,
+                wm_load,
+                success_rates.get(strategy, 0.5),
+            )
+            for strategy in available_strategies
+        }
 
-        # 3. Score Strategies based on Context and Performance
-        strategy_scores: dict[str, float] = {}
-        for strategy in available_strategies:
-            score = 0.5 # Base score
+        if not scores:
+            logger.warning("No strategies could be scored for task '%s'.", task_description)
+            return None
 
-            # Adjust based on health
-            if health_status == "healthy":
-                 if strategy == "detailed_planning": score += 0.2
-                 if strategy == "systematic_search": score += 0.1
-            elif health_status == "degraded":
-                 if strategy == "heuristic_search": score += 0.1
-                 if strategy == "memory_retrieval": score += 0.1
-                 if strategy == "detailed_planning": score -= 0.2 # Penalize demanding strategy
-            elif health_status == "unhealthy":
-                 if strategy == "simple_heuristic": score += 0.3
-                 if strategy == "detailed_planning": score -= 0.5
-
-            # Adjust based on WM load
-            if wm_load > 0.8 and strategy == "detailed_planning": score -= 0.3 # Penalize if WM is full
-
-            # Adjust based on past success rate
-            score += past_success.get(strategy, 0.5) * 0.3  # Weight past success by 30%
-
-            strategy_scores[strategy] = score
-
-        # 4. Select Best Strategy
-        if not strategy_scores:
-             logger.warning(f"No strategies available or scored for task '{task_description}'.")
-             return None
-
-        best_strategy = max(strategy_scores, key=strategy_scores.get)
-        logger.info(f"Selected strategy '{best_strategy}' for task '{task_description}' (Score: {strategy_scores[best_strategy]:.2f}, Health: {health_status}, WM Load: {wm_load:.2f}). Scores: {strategy_scores}")
-
+        best_strategy = max(scores, key=scores.get)
+        logger.info(
+            "Selected strategy '%s' for task '%s' (score=%.2f, health=%s, wm_load=%.2f)",
+            best_strategy,
+            task_description,
+            scores[best_strategy],
+            health_status,
+            wm_load,
+        )
         return best_strategy
-        # --- End Enhanced Placeholder ---
+
+    def _collect_strategy_success_rates(
+        self,
+        strategies: list[str],
+        task_description: str,
+    ) -> dict[str, float]:
+        """Gather empirical success rates for the available strategies."""
+
+        default_rate = 0.5
+        rates = {strategy: default_rate for strategy in strategies}
+        if not self.memory_manager:
+            return rates
+
+        for strategy in strategies:
+            try:
+                past_attempts = self.memory_manager.retrieve(
+                    query=f"strategy {strategy} task {task_description}",
+                    memory_type="episodic",
+                    limit=5,
+                )
+            except Exception as error:  # noqa: BLE001 - external dependency safety net
+                logger.warning("Error retrieving past performance for '%s': %s", strategy, error)
+                continue
+
+            rates[strategy] = self._calculate_success_rate(past_attempts)
+        return rates
+
+    @staticmethod
+    def _calculate_success_rate(past_attempts: Optional[list[Any]]) -> float:
+        """Calculate the success rate from memory records."""
+
+        if not past_attempts:
+            return 0.5
+
+        successes = 0
+        total = 0
+        for item in past_attempts:
+            metadata = getattr(item, "metadata", {}) or {}
+            if metadata.get("outcome") == "success":
+                successes += 1
+            total += 1
+
+        if total == 0:
+            return 0.5
+
+        return successes / total
+
+    def _score_strategy(
+        self,
+        strategy: str,
+        health_status: str,
+        wm_load: float,
+        success_rate: float,
+    ) -> float:
+        """Combine contextual factors into a single score for a strategy."""
+
+        score = 0.5 + (success_rate * 0.3)
+        score += self._health_strategy_modifier(strategy, health_status)
+        if wm_load > 0.8 and strategy == "detailed_planning":
+            score -= 0.3
+        return score
+
+    @staticmethod
+    def _health_strategy_modifier(strategy: str, health_status: str) -> float:
+        """Health-specific adjustments used during strategy scoring."""
+
+        if health_status == "healthy":
+            if strategy == "detailed_planning":
+                return 0.2
+            if strategy == "systematic_search":
+                return 0.1
+        elif health_status == "degraded":
+            if strategy in {"heuristic_search", "memory_retrieval"}:
+                return 0.1
+            if strategy == "detailed_planning":
+                return -0.2
+        elif health_status == "unhealthy":
+            if strategy == "simple_heuristic":
+                return 0.3
+            if strategy == "detailed_planning":
+                return -0.5
+        return 0.0
 
     def detect_error_patterns(self, error_type: Optional[str] = None) -> dict[str, Any]:
-        """
-        Analyze past errors to detect recurring patterns and potential root causes.
-        
-        Args:
-            error_type: Optional filter for specific error type to analyze
-            
-        Returns:
-            Dictionary with error pattern analysis including frequency, common sources, etc.
-        """
+        """Analyze past errors to detect recurring patterns and potential causes."""
+
         if not self.memory_manager:
             logger.warning("Cannot detect error patterns: Memory manager not available")
             return {"patterns_detected": False, "reason": "memory_unavailable"}
-            
+
         try:
-            # Query parameters
-            query = "type:error"
-            if error_type:
-                query += f" error_type:{error_type}"
-                
-            # Retrieve recent errors
-            error_memories = self.memory_manager.retrieve(
-                query=query,
-                memory_type="episodic",
-                limit=20,
-                sort_by="timestamp",
-                sort_order="descending"
-            )
-            
-            if not error_memories:
-                return {"patterns_detected": False, "reason": "no_errors_found"}
-                
-            # Analyze error patterns
-            patterns = {
-                "total_errors": len(error_memories),
-                "by_type": {},
-                "by_component": {},
-                "by_source": {},
-                "common_sequences": [],
-                "recent_errors": []
-            }
-            
-            # Count frequencies
-            for mem in error_memories:
-                # Extract error details
-                error_type = mem.content.get("error_type", "unknown")
-                component = mem.metadata.get("component", "unknown")
-                source = mem.metadata.get("error_source", "unknown")
-                
-                # Update counts
-                patterns["by_type"][error_type] = patterns["by_type"].get(error_type, 0) + 1
-                patterns["by_component"][component] = patterns["by_component"].get(component, 0) + 1
-                patterns["by_source"][source] = patterns["by_source"].get(source, 0) + 1
-                
-                # Add to recent errors list (just a few for reference)
-                if len(patterns["recent_errors"]) < 5:
-                    patterns["recent_errors"].append({
-                        "type": error_type,
-                        "message": mem.content.get("message", ""),
-                        "component": component,
-                        "timestamp": mem.metadata.get("timestamp", 0)
-                    })
-            
-            # Determine most common patterns
-            most_common_type = max(patterns["by_type"].items(), key=lambda x: x[1])[0] if patterns["by_type"] else None
-            most_common_component = max(patterns["by_component"].items(), key=lambda x: x[1])[0] if patterns["by_component"] else None
-            
-            patterns["most_common_type"] = most_common_type
-            patterns["most_common_component"] = most_common_component
-            patterns["patterns_detected"] = True
-            
-            # Look for sequences (errors that tend to happen together or in sequence)
-            # This would be more sophisticated in a real implementation
-            
-            return patterns
-            
-        except Exception as e:
-            logger.error(f"Error during pattern detection: {e}")
-            return {"patterns_detected": False, "reason": f"analysis_error: {str(e)}"}
+            error_memories = self._retrieve_error_memories(error_type)
+        except Exception as error:  # noqa: BLE001 - protect against backend failures
+            logger.error("Error during pattern detection: %s", error)
+            return {"patterns_detected": False, "reason": f"analysis_error: {error}"}
 
-    def optimize_resource_allocation(self, task_complexity: float, current_plan: Optional[Plan] = None, task_type: Optional[str] = None) -> dict[str, float]:
-        """
-        Suggest adjustments to resource allocation based on task and state.
+        if not error_memories:
+            return {"patterns_detected": False, "reason": "no_errors_found"}
 
-        Args:
-            task_complexity: Estimated complexity of the current task/plan (0.0-1.0).
-            current_plan: The plan currently being executed (optional).
-            task_type: Type of task being performed (e.g., "planning", "retrieval", "reasoning")
+        patterns = self._initialise_error_pattern_summary(error_memories)
+        for memory in error_memories:
+            self._update_error_pattern_counts(patterns, memory)
+        self._finalise_error_patterns(patterns)
+        return patterns
 
-        Returns:
-            A dictionary suggesting resource adjustments (e.g., {"energy_budget": 0.8, "focus_level": 0.9}).
-        """
-        logger.debug(f"Optimizing resource allocation for task complexity: {task_complexity:.2f}")
-        
-        # 1. Assess current state (health, memory load, active goals)
+    def optimize_resource_allocation(
+        self,
+        task_complexity: float,
+        current_plan: Optional[Plan] = None,
+        task_type: Optional[str] = None,
+    ) -> dict[str, float]:
+        """Suggest adjustments to resource allocation based on task context."""
+
+        logger.debug("Optimizing resource allocation for task complexity %.2f", task_complexity)
         state = self.assess_current_state()
         health_status = state.get("overall_health", "healthy")
-        state.get("average_energy", 1.0)
-        state.get("working_memory_load", 0.5)
-        
-        # Default allocation
-        allocation = {
-            "energy_budget_factor": 1.0,  # Proportion of maximum energy to allocate
-            "attention_focus_level": 0.8,  # Level of attentional focus (higher = more focused)
-            "time_budget_factor": 1.0,     # Proportion of standard time to allocate
-            "parallel_processes": 1        # Number of parallel cognitive processes to allow
+        allocation = self._default_allocation()
+
+        self._adjust_for_health_and_complexity(allocation, health_status, task_complexity)
+        if task_type:
+            self._incorporate_task_history(allocation, task_type, task_complexity)
+        self._adjust_for_plan_characteristics(allocation, current_plan, health_status)
+        self._clamp_allocation(allocation)
+
+        logger.info(
+            "Suggested resource allocation: %s (Health: %s, Task Complexity: %.2f)",
+            allocation,
+            health_status,
+            task_complexity,
+        )
+        return allocation
+
+    def _retrieve_error_memories(self, error_type: Optional[str]) -> list[Any]:
+        query = "type:error"
+        if error_type:
+            query += f" error_type:{error_type}"
+
+        return self.memory_manager.retrieve(
+            query=query,
+            memory_type="episodic",
+            limit=20,
+            sort_by="timestamp",
+            sort_order="descending",
+        )
+
+    @staticmethod
+    def _initialise_error_pattern_summary(error_memories: list[Any]) -> dict[str, Any]:
+        return {
+            "total_errors": len(error_memories),
+            "by_type": {},
+            "by_component": {},
+            "by_source": {},
+            "recent_errors": [],
         }
 
-        # 2. Adjust based on health status and task complexity
+    @staticmethod
+    def _update_error_pattern_counts(patterns: dict[str, Any], memory: Any) -> None:
+        content = getattr(memory, "content", {}) or {}
+        metadata = getattr(memory, "metadata", {}) or {}
+        error_type = content.get("error_type", "unknown")
+        component = metadata.get("component", "unknown")
+        source = metadata.get("error_source", "unknown")
+
+        patterns["by_type"][error_type] = patterns["by_type"].get(error_type, 0) + 1
+        patterns["by_component"][component] = patterns["by_component"].get(component, 0) + 1
+        patterns["by_source"][source] = patterns["by_source"].get(source, 0) + 1
+
+        if len(patterns["recent_errors"]) < 5:
+            patterns["recent_errors"].append(
+                {
+                    "type": error_type,
+                    "message": content.get("message", ""),
+                    "component": component,
+                    "timestamp": metadata.get("timestamp", 0),
+                }
+            )
+
+    @staticmethod
+    def _finalise_error_patterns(patterns: dict[str, Any]) -> None:
+        by_type = patterns.get("by_type", {})
+        by_component = patterns.get("by_component", {})
+        patterns["most_common_type"] = max(by_type, key=by_type.get, default=None)
+        patterns["most_common_component"] = max(by_component, key=by_component.get, default=None)
+        patterns["patterns_detected"] = True
+
+    @staticmethod
+    def _default_allocation() -> dict[str, float]:
+        return {
+            "energy_budget_factor": 1.0,
+            "attention_focus_level": 0.8,
+            "time_budget_factor": 1.0,
+            "parallel_processes": 1,
+        }
+
+    def _adjust_for_health_and_complexity(
+        self,
+        allocation: dict[str, float],
+        health_status: str,
+        task_complexity: float,
+    ) -> None:
         if health_status == "degraded":
-            allocation["energy_budget_factor"] = 0.7  # Conserve energy
-            allocation["attention_focus_level"] = 0.6
-            allocation["parallel_processes"] = 1  # No parallel processing when degraded
+            allocation.update(
+                {
+                    "energy_budget_factor": 0.7,
+                    "attention_focus_level": 0.6,
+                    "parallel_processes": 1,
+                }
+            )
         elif health_status == "unhealthy":
-            allocation["energy_budget_factor"] = 0.4
-            allocation["attention_focus_level"] = 0.5
-            allocation["time_budget_factor"] = 1.5  # Allow more time when unhealthy
-        
+            allocation.update(
+                {
+                    "energy_budget_factor": 0.4,
+                    "attention_focus_level": 0.5,
+                    "time_budget_factor": 1.5,
+                }
+            )
+
         if task_complexity > 0.7:
-            allocation["attention_focus_level"] = min(1.0, allocation["attention_focus_level"] + 0.2)  # Increase focus for complex tasks
-            allocation["energy_budget_factor"] = min(1.0, allocation["energy_budget_factor"] + 0.1)    # Allow slightly more energy
-            allocation["time_budget_factor"] = 1.2  # More time for complex tasks
-        
-        # 3. Query memory for similar past tasks if available
-        if self.memory_manager and task_type:
-            try:
-                # Find similar past tasks and their resource usage patterns
-                similar_tasks = self.memory_manager.retrieve(
-                    query=f"task_type:{task_type} complexity:{int(task_complexity*10)}/10",
-                    memory_type="episodic",
-                    limit=5
-                )
-                
-                if similar_tasks:
-                    logger.debug(f"Found {len(similar_tasks)} similar past tasks to inform resource allocation")
-                    
-                    # Calculate average resource allocations from past similar tasks
-                    past_energy = []
-                    past_attention = []
-                    past_time = []
-                    
-                    for task_mem in similar_tasks:
-                        if "resources" in task_mem.metadata:
-                            resources = task_mem.metadata["resources"]
-                            if "energy_used" in resources:
-                                past_energy.append(resources["energy_used"])
-                            if "attention_level" in resources:
-                                past_attention.append(resources["attention_level"])
-                            if "time_taken" in resources:
-                                past_time.append(resources["time_taken"])
-                    
-                    # Adjust current allocation based on past performance if we have enough data
-                    if len(past_energy) >= 3:
-                        avg_energy_used = sum(past_energy) / len(past_energy)
-                        allocation["energy_budget_factor"] = (allocation["energy_budget_factor"] + avg_energy_used) / 2
-                        
-                    if len(past_attention) >= 3:
-                        avg_attention = sum(past_attention) / len(past_attention)
-                        allocation["attention_focus_level"] = (allocation["attention_focus_level"] + avg_attention) / 2
-                        
-                    if len(past_time) >= 3:
-                        avg_time_factor = sum(past_time) / len(past_time)
-                        allocation["time_budget_factor"] = (allocation["time_budget_factor"] + avg_time_factor) / 2
-            
-            except Exception as e:
-                logger.warning(f"Error retrieving past task memory for resource optimization: {e}")
-                # Fall back to the default allocations calculated above
-        
-        # 4. Adjust for specific plan characteristics if available
-        if current_plan:
-            plan_steps = len(current_plan.steps) if hasattr(current_plan, 'steps') else 0
-            if plan_steps > 5:
-                # Complex multi-step plans need more attention and possibly parallel processing
-                allocation["attention_focus_level"] = min(1.0, allocation["attention_focus_level"] + 0.1)
-                if health_status == "healthy":
-                    allocation["parallel_processes"] = min(3, max(1, plan_steps // 3))
-        
-        # Final adjustments and clamping to valid ranges
-        for key in allocation:
+            allocation["attention_focus_level"] = min(1.0, allocation["attention_focus_level"] + 0.2)
+            allocation["energy_budget_factor"] = min(1.0, allocation["energy_budget_factor"] + 0.1)
+            allocation["time_budget_factor"] = max(allocation["time_budget_factor"], 1.2)
+
+    def _incorporate_task_history(
+        self,
+        allocation: dict[str, float],
+        task_type: str,
+        task_complexity: float,
+    ) -> None:
+        if not self.memory_manager:
+            return
+
+        try:
+            similar_tasks = self.memory_manager.retrieve(
+                query=f"task_type:{task_type} complexity:{int(task_complexity * 10)}/10",
+                memory_type="episodic",
+                limit=5,
+            )
+        except Exception as error:  # noqa: BLE001 - memory lookups may fail
+            logger.warning("Error retrieving past task memory for resource optimization: %s", error)
+            return
+
+        history = [getattr(task, "metadata", {}).get("resources", {}) for task in similar_tasks or []]
+        if not history:
+            return
+
+        self._average_resource_history(allocation, history)
+
+    @staticmethod
+    def _average_resource_history(allocation: dict[str, float], history: list[dict[str, Any]]) -> None:
+        energy = [entry["energy_used"] for entry in history if "energy_used" in entry]
+        attention = [entry["attention_level"] for entry in history if "attention_level" in entry]
+        time_factors = [entry["time_taken"] for entry in history if "time_taken" in entry]
+
+        if len(energy) >= 3:
+            allocation["energy_budget_factor"] = (allocation["energy_budget_factor"] + sum(energy) / len(energy)) / 2
+        if len(attention) >= 3:
+            allocation["attention_focus_level"] = (allocation["attention_focus_level"] + sum(attention) / len(attention)) / 2
+        if len(time_factors) >= 3:
+            allocation["time_budget_factor"] = (allocation["time_budget_factor"] + sum(time_factors) / len(time_factors)) / 2
+
+    @staticmethod
+    def _adjust_for_plan_characteristics(
+        allocation: dict[str, float],
+        current_plan: Optional[Plan],
+        health_status: str,
+    ) -> None:
+        if not current_plan or not hasattr(current_plan, "steps"):
+            return
+
+        plan_steps = len(current_plan.steps)
+        if plan_steps <= 5:
+            return
+
+        allocation["attention_focus_level"] = min(1.0, allocation["attention_focus_level"] + 0.1)
+        if health_status == "healthy":
+            allocation["parallel_processes"] = min(3, max(1, plan_steps // 3))
+
+    @staticmethod
+    def _clamp_allocation(allocation: dict[str, float]) -> None:
+        for key, value in allocation.items():
             if key.endswith("_factor") or key == "attention_focus_level":
-                allocation[key] = max(0.1, min(2.0, allocation[key]))  # Clamp between 0.1 and 2.0
-        
-        # Ensure parallel_processes is an integer
+                allocation[key] = max(0.1, min(2.0, value))
         allocation["parallel_processes"] = int(allocation["parallel_processes"])
-        
-        logger.info(f"Suggested resource allocation: {allocation} (Health: {health_status}, Task Complexity: {task_complexity:.2f})")
-        return allocation

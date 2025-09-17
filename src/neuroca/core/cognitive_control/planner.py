@@ -16,10 +16,11 @@ Key functionalities:
 import logging
 from typing import Any, Optional
 
+from neuroca.core.enums import MemoryTier
 from neuroca.core.health.dynamics import HealthState  # Example for context checking
 
 # Import necessary components for potential integration
-from neuroca.memory.manager import MemoryItem, MemoryType  # Example
+from neuroca.memory.models.memory_item import MemoryItem
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -93,187 +94,209 @@ class Planner:
         # NOTE: Consider implementing a proper dependency injection framework
         # for managing manager instances instead of direct constructor passing.
 
-    def generate_plan(self, goal_description: str, context: Optional[dict[str, Any]] = None) -> Optional[Plan]:
-        """
-        Generate a plan to achieve the specified goal description given the context.
+    def generate_plan(
+        self,
+        goal_description: str,
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[Plan]:
+        """Generate a plan to achieve the specified goal description."""
 
-        Args:
-            goal: The objective to achieve.
-            context: Current situational information (e.g., state, resources).
+        logger.info("Generating plan for goal: %s", goal_description)
+        context = context or {}
+        health_state = self._resolve_health_state(context)
+        if self._planning_blocked(health_state, goal_description):
+            return None
 
-        Returns:
-            A Plan object, or None if planning fails.
-        """
-        logger.info(f"Generating plan for goal: {goal_description}")
-        context = context or {} # Ensure context is a dict
-
-        # --- Enhanced Placeholder Planning Logic ---
-
-        # 0. Get Goal Details (if GoalManager is available)
-        context.get("goal_priority", 5) # Default priority
-        # if self.goal_manager:
-        #     active_goal = self.goal_manager.get_goal_by_description(goal_description) # Assumes such a method exists
-        #     if active_goal:
-        #         goal_priority = active_goal.priority
-        #     else:
-        #         logger.warning(f"Goal '{goal_description}' not found in GoalManager during planning.")
-
-        # 1. Check Health Status (Example)
-        # Assume health_manager provides component health, get overall or relevant component state
-        health_state = context.get("health_state", HealthState.NORMAL) # Get from context or default
-        # if self.health_manager:
-        #     planner_health = self.health_manager.get_component_health("planner_component") # Hypothetical ID
-        #     if planner_health: health_state = planner_health.state
-
-        if health_state in [HealthState.IMPAIRED, HealthState.CRITICAL]:
-            logger.warning(f"Cannot generate complex plan in {health_state.value} state. Aborting planning for '{goal_description}'.")
-            return None # Cannot plan in severely impaired state
-
-        # 2. Retrieve Relevant Knowledge
-        semantic_knowledge: list[MemoryItem] = []
-        episodic_knowledge: list[MemoryItem] = []
-        if self.memory_manager:
-            try:
-                # Search semantic memory for general plans/procedures
-                semantic_knowledge = self.memory_manager.retrieve(
-                    query=f"procedure for {goal_description}", 
-                    memory_type=MemoryType.SEMANTIC,
-                    limit=1 # Look for one good procedure first
-                )
-                # Search episodic memory for specific past attempts (successful or failed)
-                episodic_knowledge = self.memory_manager.retrieve(
-                    query=f"past plan {goal_description}", 
-                    memory_type=MemoryType.EPISODIC,
-                    limit=3 # Look at a few recent attempts
-                )
-                logger.debug(f"Retrieved {len(semantic_knowledge)} semantic, {len(episodic_knowledge)} episodic memories for planning.")
-            except Exception as e:
-                 logger.error(f"Error retrieving knowledge during planning: {e}")
-        else:
-            logger.debug("MemoryManager not available for planning knowledge retrieval.")
-
-        # 3. Decompose Goal & Select Actions (using knowledge or falling back)
-        plan = None
-        
-        # --- Try using retrieved knowledge first ---
-        if semantic_knowledge:
-            item = semantic_knowledge[0] # Use the first relevant procedure found
-            # Example expected structure for a procedure stored in memory content:
-            # { "type": "procedure", "steps": [ {"action": "...", "parameters": {...}, "cost": 0.1}, ... ] }
-            if isinstance(item.content, dict) and item.content.get("type") == "procedure":
-                known_procedure = item.content
-                logger.info(f"Attempting to use known procedure from semantic memory (ID: {item.id}) for goal '{goal_description}'.")
-                try:
-                    procedure_steps = known_procedure.get("steps")
-                    if isinstance(procedure_steps, list) and procedure_steps:
-                         # Validate and create PlanStep objects
-                         steps = []
-                         valid_procedure = True
-                         for i, step_info in enumerate(procedure_steps):
-                              if isinstance(step_info, dict) and "action" in step_info:
-                                   steps.append(PlanStep(action=step_info["action"], 
-                                                         parameters=step_info.get("parameters", {}), 
-                                                         estimated_cost=step_info.get("cost", 0.1)))
-                              else:
-                                   logger.warning(f"Invalid step format in known procedure (step {i}): {step_info}")
-                                   valid_procedure = False
-                                   break
-                         
-                         if valid_procedure and steps:
-                              plan = Plan(goal=goal_description, steps=steps)
-                              logger.info(f"Successfully constructed plan with {len(steps)} steps from semantic knowledge.")
-                         elif not steps:
-                              logger.warning("Known procedure found but contained no valid steps.")
-                    else:
-                         logger.warning("Known procedure found but 'steps' list was missing or empty.")
-                except Exception as e:
-                    logger.error(f"Error constructing plan from known procedure: {e}")
-                    plan = None # Failed to use the procedure
-            else:
-                 logger.warning(f"Retrieved semantic knowledge (ID: {item.id}) was not a valid procedure dictionary.")
-        # This block was duplicated and incorrectly indented, removing the duplicate part.
-        # The correct block starts below.
-
+        semantic_knowledge, episodic_knowledge = self._retrieve_knowledge(goal_description)
+        plan = self._plan_from_semantic(goal_description, semantic_knowledge)
         if not plan and episodic_knowledge:
-             # Attempt to adapt a plan from a similar past episode (more complex logic needed here)
-             # Placeholder: Just log that we found episodic memories
-             logger.info(f"Found {len(episodic_knowledge)} related past episodes. Adaptation logic not implemented.")
-             # plan = adapt_plan_from_episode(episodic_knowledge[0], context) # Hypothetical function
-        # --- End Knowledge Retrieval ---
+            self._log_episode_reference(goal_description, episodic_knowledge)
 
-        # Fallback to generic decomposition if no plan generated from knowledge
-        if not plan:
-            logger.debug(f"No knowledge-based or rule-based plan found for '{goal_description}'. Attempting generic decomposition.")
-            steps = []
-            # --- Generic Decomposition Example ---
-            # Simple approach: treat words as potential actions/objects
-            words = goal_description.lower().split()
-            if len(words) > 0:
-                 # Assume first word is the primary action
-                 action_verb = words[0]
-                 action_object = " ".join(words[1:]) if len(words) > 1 else "default_target"
-                 
-                 # Create steps based on this simple parse
-                 steps.append(PlanStep(action=f"prepare_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2))
-                 steps.append(PlanStep(action=f"execute_{action_verb}", parameters={"target": action_object}, estimated_cost=0.6))
-                 steps.append(PlanStep(action=f"verify_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2))
-                 
-                 logger.info(f"Created generic 3-step plan based on goal words: {action_verb}, {action_object}")
-            else:
-                 logger.warning("Cannot decompose empty goal description.")
-                 
-            # --- Sub-goal Decomposition Placeholder (Could be integrated here) ---
-            # if self.goal_manager and len(steps) > 5: # Example: If plan is too long, try sub-goals
-            #     logger.info(f"Decomposing complex task '{goal_description}' into sub-goals.")
-            #     # ... (sub-goal logic as before) ...
-            # --- End Sub-goal Decomposition ---
-                 
-            # --- Rule-Based Decomposition (Now acts as refinement/alternative) ---
-            # Example: If generic decomposition seems too simple, try specific rules
-            if len(steps) <= 1: # If generic plan was very basic
-                 rule_based_steps = []
-                 if "make" in goal_description.lower() and "tea" in goal_description.lower():
-                     if health_state == HealthState.FATIGUED:
-                         logger.info("Applying simplified 'make tea' rule due to FATIGUED state.")
-                         rule_based_steps = [ PlanStep(action="boil_water", estimated_cost=0.4), PlanStep(action="make_tea_simple", estimated_cost=0.2) ]
-                     else:
-                         logger.info("Applying standard 'make tea' rule.")
-                         rule_based_steps = [
-                             PlanStep(action="find_kettle", estimated_cost=0.1), PlanStep(action="fill_kettle", parameters={"water_level": "full"}, estimated_cost=0.1),
-                             PlanStep(action="boil_water", estimated_cost=0.3), PlanStep(action="find_mug_and_tea_bag", estimated_cost=0.1),
-                             PlanStep(action="pour_water", estimated_cost=0.1), PlanStep(action="steep_tea", parameters={"duration_seconds": 180}, estimated_cost=0.05),
-                         ]
-                 elif "resolve" in goal_description.lower() and ("dependency" in goal_description.lower() or "conflict" in goal_description.lower()):
-                      logger.info("Applying 'resolve dependency/conflict' rule.")
-                      target = context.get("target_entity", "unknown")
-                      rule_based_steps = [
-                          PlanStep(action="analyze_situation", parameters={"target": target}, estimated_cost=0.5), PlanStep(action="identify_root_cause", estimated_cost=0.4),
-                          PlanStep(action="generate_solutions", estimated_cost=0.3), PlanStep(action="select_best_solution", estimated_cost=0.1),
-                          PlanStep(action="implement_solution", estimated_cost=0.4), PlanStep(action="verify_resolution", estimated_cost=0.2),
-                      ]
-                 # Add more rules...
-
-                 if rule_based_steps:
-                      logger.info("Replacing generic plan with rule-based plan.")
-                      steps = rule_based_steps
-            # --- End Rule-Based Decomposition ---
-
-            if steps:
-                 plan = Plan(goal=goal_description, steps=steps)
-            else:
-                 logger.error(f"Failed to generate any steps for goal: {goal_description}")
-
-        # 4. Final Checks & Return (Resource validation, etc.)
         if plan:
-             # NOTE: Implement plan validation before returning.
-             # This should check estimated resource costs against available resources
-             # reported by the health_manager.
-             logger.info(f"Generated plan with {len(plan.steps)} steps for goal: {goal_description} (Health State: {health_state.value})")
-             return plan
-        else:
-             logger.warning(f"No planning strategy found for goal: {goal_description}")
-             return None
-        # --- End Enhanced Placeholder ---
+            return plan
+
+        steps = self._generic_decomposition(goal_description, context, health_state)
+        if not steps:
+            logger.warning("No planning strategy found for goal: %s", goal_description)
+            return None
+
+        final_plan = Plan(goal=goal_description, steps=steps)
+        logger.info(
+            "Generated plan with %s steps for goal '%s' (health=%s)",
+            len(final_plan.steps),
+            goal_description,
+            getattr(health_state, "value", health_state),
+        )
+        return final_plan
+
+    @staticmethod
+    def _resolve_health_state(context: dict[str, Any]) -> HealthState:
+        value = context.get("health_state", HealthState.NORMAL)
+        return value if isinstance(value, HealthState) else HealthState.NORMAL
+
+    def _planning_blocked(self, health_state: HealthState, goal_description: str) -> bool:
+        if health_state in {HealthState.IMPAIRED, HealthState.CRITICAL}:
+            logger.warning(
+                "Cannot generate complex plan in %s state. Aborting planning for '%s'.",
+                health_state.value,
+                goal_description,
+            )
+            return True
+        return False
+
+    def _retrieve_knowledge(self, goal_description: str) -> tuple[list[MemoryItem], list[MemoryItem]]:
+        if not self.memory_manager:
+            logger.debug("MemoryManager not available for planning knowledge retrieval.")
+            return [], []
+
+        semantic: list[MemoryItem] = []
+        episodic: list[MemoryItem] = []
+        try:
+            semantic = self.memory_manager.retrieve(
+                query=f"procedure for {goal_description}",
+                memory_type=MemoryTier.SEMANTIC,
+                limit=1,
+            ) or []
+            episodic = self.memory_manager.retrieve(
+                query=f"past plan {goal_description}",
+                memory_type=MemoryTier.EPISODIC,
+                limit=3,
+            ) or []
+            logger.debug(
+                "Retrieved %s semantic and %s episodic memories for planning.",
+                len(semantic),
+                len(episodic),
+            )
+        except Exception as error:  # noqa: BLE001 - memory lookups may fail
+            logger.error("Error retrieving knowledge during planning: %s", error)
+        return semantic, episodic
+
+    def _plan_from_semantic(
+        self,
+        goal_description: str,
+        semantic_knowledge: list[MemoryItem],
+    ) -> Optional[Plan]:
+        if not semantic_knowledge:
+            return None
+
+        item = semantic_knowledge[0]
+        content = getattr(item, "content", {})
+        if not isinstance(content, dict) or content.get("type") != "procedure":
+            logger.warning("Semantic memory item %s was not a valid procedure dictionary.", getattr(item, "id", "unknown"))
+            return None
+
+        steps: list[PlanStep] = []
+        procedure_steps = content.get("steps", [])
+        for index, step_info in enumerate(procedure_steps):
+            if not isinstance(step_info, dict) or "action" not in step_info:
+                logger.warning("Invalid step format in known procedure (step %s): %s", index, step_info)
+                return None
+            steps.append(
+                PlanStep(
+                    action=step_info["action"],
+                    parameters=step_info.get("parameters", {}),
+                    estimated_cost=step_info.get("cost", 0.1),
+                )
+            )
+
+        if not steps:
+            logger.warning("Known procedure for '%s' contained no valid steps.", goal_description)
+            return None
+
+        logger.info(
+            "Constructed plan with %s steps from semantic knowledge (ID: %s).",
+            len(steps),
+            getattr(item, "id", "unknown"),
+        )
+        return Plan(goal=goal_description, steps=steps)
+
+    @staticmethod
+    def _log_episode_reference(goal_description: str, episodic_knowledge: list[MemoryItem]) -> None:
+        logger.info(
+            "Found %s related past episodes for goal '%s'. Adaptation logic not implemented.",
+            len(episodic_knowledge),
+            goal_description,
+        )
+
+    def _generic_decomposition(
+        self,
+        goal_description: str,
+        context: dict[str, Any],
+        health_state: HealthState,
+    ) -> list[PlanStep]:
+        base_steps = self._base_steps_from_goal(goal_description)
+        if not base_steps:
+            return []
+        return self._apply_rule_based_adjustments(goal_description, base_steps, context, health_state)
+
+    @staticmethod
+    def _base_steps_from_goal(goal_description: str) -> list[PlanStep]:
+        words = goal_description.lower().split()
+        if not words:
+            logger.warning("Cannot decompose empty goal description.")
+            return []
+
+        action_verb = words[0]
+        action_object = " ".join(words[1:]) if len(words) > 1 else "default_target"
+        logger.info(
+            "Created generic 3-step plan based on goal words: %s, %s",
+            action_verb,
+            action_object,
+        )
+        return [
+            PlanStep(action=f"prepare_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2),
+            PlanStep(action=f"execute_{action_verb}", parameters={"target": action_object}, estimated_cost=0.6),
+            PlanStep(action=f"verify_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2),
+        ]
+
+    def _apply_rule_based_adjustments(
+        self,
+        goal_description: str,
+        steps: list[PlanStep],
+        context: dict[str, Any],
+        health_state: HealthState,
+    ) -> list[PlanStep]:
+        if len(steps) > 1:
+            return steps
+
+        lowered_goal = goal_description.lower()
+        if "make" in lowered_goal and "tea" in lowered_goal:
+            return self._make_tea_steps(health_state)
+        if "resolve" in lowered_goal and ("dependency" in lowered_goal or "conflict" in lowered_goal):
+            target = context.get("target_entity", "unknown")
+            return self._resolve_dependency_steps(target)
+        return steps
+
+    @staticmethod
+    def _make_tea_steps(health_state: HealthState) -> list[PlanStep]:
+        if health_state == HealthState.FATIGUED:
+            logger.info("Applying simplified 'make tea' rule due to FATIGUED state.")
+            return [
+                PlanStep(action="boil_water", estimated_cost=0.4),
+                PlanStep(action="make_tea_simple", estimated_cost=0.2),
+            ]
+
+        logger.info("Applying standard 'make tea' rule.")
+        return [
+            PlanStep(action="find_kettle", estimated_cost=0.1),
+            PlanStep(action="fill_kettle", parameters={"water_level": "full"}, estimated_cost=0.1),
+            PlanStep(action="boil_water", estimated_cost=0.3),
+            PlanStep(action="find_mug_and_tea_bag", estimated_cost=0.1),
+            PlanStep(action="pour_water", estimated_cost=0.1),
+            PlanStep(action="steep_tea", parameters={"duration_seconds": 180}, estimated_cost=0.05),
+        ]
+
+    @staticmethod
+    def _resolve_dependency_steps(target: str) -> list[PlanStep]:
+        logger.info("Applying 'resolve dependency/conflict' rule.")
+        return [
+            PlanStep(action="analyze_situation", parameters={"target": target}, estimated_cost=0.5),
+            PlanStep(action="identify_root_cause", estimated_cost=0.4),
+            PlanStep(action="generate_solutions", estimated_cost=0.3),
+            PlanStep(action="select_best_solution", estimated_cost=0.1),
+            PlanStep(action="implement_solution", estimated_cost=0.4),
+            PlanStep(action="verify_resolution", estimated_cost=0.2),
+        ]
 
     def replan(self, failed_plan: Plan, reason: str, context: Optional[dict[str, Any]] = None) -> Optional[Plan]:
         """

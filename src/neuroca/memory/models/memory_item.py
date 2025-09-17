@@ -190,7 +190,7 @@ class MemoryItem(BaseModel):
     def mark_accessed(self) -> None:
         """Mark the memory as accessed, updating access metrics."""
         self.metadata.mark_accessed()
-    
+
     def get_text(self) -> str:
         """Get the main text representation of this memory."""
         if isinstance(self.content, MemoryContent):
@@ -201,6 +201,12 @@ class MemoryItem(BaseModel):
             return self.content["text"]
         else:
             return str(self.content)
+
+    def calculate_activation(self) -> float:
+        """Return a coarse activation score based on metadata."""
+
+        importance = getattr(self.metadata, "importance", 0.5)
+        return max(0.0, min(1.0, importance))
     
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Override dict() to handle custom fields."""

@@ -62,126 +62,199 @@ class DecisionMaker:
         # NOTE: Consider implementing a proper dependency injection framework
         # for managing manager instances instead of direct constructor passing.
 
-    def choose_action(self, options: list[DecisionOption], context: Optional[dict[str, Any]] = None) -> Optional[DecisionOption]:
-        """
-        Selects the best action from a list of options based on utility and risk.
+    def choose_action(
+        self,
+        options: list[DecisionOption],
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[DecisionOption]:
+        """Select the best action from a list of options."""
 
-        Args:
-            options: A list of DecisionOption objects representing possible choices.
-            context: Current situational information (e.g., health state, active goals).
-
-        Returns:
-            The selected DecisionOption, or None if no suitable option is found.
-        """
         if not options:
             logger.warning("No options provided for decision making.")
             return None
 
-        logger.info(f"Evaluating {len(options)} options.")
+        context = context or {}
+        health_state = self._resolve_health_state(context)
+        risk_aversion = self._risk_aversion_for_health(health_state)
+        goal_description = self._resolve_goal_description(context)
 
-        # --- Enhanced Placeholder Decision Logic ---
-        context = context or {} # Ensure context is a dict
-        best_option = None
-        max_adjusted_utility = -float('inf')
+        logger.info(
+            "Evaluating %s options (health=%s, goal=%s).",
+            len(options),
+            getattr(health_state, "value", health_state),
+            goal_description,
+        )
 
-        # 1. Get Current Goal Context (Placeholder)
-        current_goal_description = "default_goal"
-        # if self.goal_manager:
-        #     highest_goal = self.goal_manager.get_highest_priority_active_goal()
-        #     if highest_goal:
-        #         current_goal_description = highest_goal.description
-        #         logger.debug(f"Considering highest priority goal: {current_goal_description}")
+        best_option: Optional[DecisionOption] = None
+        best_score = -float("inf")
 
-        # 2. Get Health Context
-        health_state = context.get("health_state", HealthState.NORMAL)
-        # Determine risk aversion based on health state
-        if health_state == HealthState.STRESSED:
-            risk_aversion_factor = 0.8
-        elif health_state in [HealthState.IMPAIRED, HealthState.CRITICAL]:
-            risk_aversion_factor = 1.0
-        elif health_state == HealthState.OPTIMAL:
-            risk_aversion_factor = 0.3
-        else: # NORMAL or FATIGUED
-            risk_aversion_factor = 0.5
-        logger.debug(f"Decision context: Health={health_state.value}, RiskFactor={risk_aversion_factor:.2f}, Goal='{current_goal_description}'")
-
-        # 3. Evaluate Options
         for option in options:
-            # Base utility calculation
-            base_utility = option.estimated_utility
-
-            # --- Retrieve Past Outcomes ---
-            past_outcome_adjustment = 0.0
-            if self.memory_manager:
-                try:
-                    # Query episodic memory for past outcomes of this action/description
-                    # Assuming MemoryItem metadata stores outcome like: {"outcome": "success" | "failure", "details": "..."}
-                    past_attempts = self.memory_manager.retrieve(
-                        query=f"outcome related to {option.description}", # More general query
-                        memory_type=MemoryTier.EPISODIC, # Use MemoryTier instead of MemoryType
-                        limit=5 # Look at recent attempts
-                    )
-                    if past_attempts:
-                        logger.debug(f"Retrieved {len(past_attempts)} past attempts related to '{option.description}'.")
-                        # Simple average of past success/failure 
-                        success_count = sum(1 for item in past_attempts if isinstance(item, MemoryItem) and item.metadata.get("outcome") == "success")
-                        len(past_attempts) - success_count
-                        if len(past_attempts) > 0:
-                             success_rate = success_count / len(past_attempts)
-                             # Adjust utility: +0.1 for >50% success, -0.1 for <50% success
-                             past_outcome_adjustment = (success_rate - 0.5) * 0.2
-                             logger.debug(f"Option '{option.description}': Past success rate {success_rate:.2f}, Utility Adjustment={past_outcome_adjustment:.2f}")
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"Error retrieving past outcomes for decision making: {e}")
-            # --- End Past Outcome ---
-
-            # Adjust utility based on goal alignment (placeholder)
-            goal_alignment_bonus = 0.0
-            if current_goal_description in option.description.lower(): # Very simple check
-                 goal_alignment_bonus = 0.2
-            
-            # Adjust utility based on risk aversion and past outcomes
-            adjusted_utility = base_utility + goal_alignment_bonus + past_outcome_adjustment - (risk_aversion_factor * option.risk)
-            
-            logger.debug(f"Option '{option.description}': BaseUtil={base_utility:.2f}, GoalBonus={goal_alignment_bonus:.2f}, PastAdj={past_outcome_adjustment:.2f}, Risk={option.risk:.2f}, FinalUtil={adjusted_utility:.2f}")
-
-            if adjusted_utility > max_adjusted_utility:
-                max_adjusted_utility = adjusted_utility
+            adjusted_utility = self._evaluate_option(
+                option,
+                goal_description,
+                risk_aversion,
+            )
+            if adjusted_utility > best_score:
                 best_option = option
+                best_score = adjusted_utility
 
-        if best_option:
-            logger.info(f"Selected option: '{best_option.description}' with adjusted utility {max_adjusted_utility:.2f}")
-        else:
+        if not best_option:
             logger.warning("Could not select a suitable option.")
+            return None
 
-        # 4. Post-Decision Actions / Plan Triggering (Placeholder)
-        if best_option:
-             # Example: If the chosen action itself represents a sub-goal or complex task, trigger planning.
-             # This requires a way to identify such actions (e.g., based on type, description, or metadata).
-             action_requires_plan = False
-             if isinstance(best_option.action, str) and best_option.action.startswith("goal:"):
-                 action_requires_plan = True
-                 goal_desc_for_plan = best_option.action.split(":", 1)[1].strip()
-             elif isinstance(best_option.action, dict) and best_option.action.get("type") == "complex_action":
-                  action_requires_plan = True
-                  goal_desc_for_plan = best_option.description # Use option description as goal
-
-             if action_requires_plan:
-                 logger.info(f"Chosen action '{best_option.description}' requires further planning.")
-                 if self.planner:
-                     # Generate a sub-plan for the chosen complex action/sub-goal
-                     sub_plan = self.planner.generate_plan(goal_description=goal_desc_for_plan, context=context)
-                     if sub_plan:
-                          logger.info(f"Generated sub-plan for action '{best_option.description}'.")
-                          # The system's execution loop would now likely focus on this sub_plan.
-                          # We might replace the 'action' in the DecisionOption with the generated Plan.
-                          best_option.action = sub_plan 
-                     else:
-                          logger.error(f"Failed to generate sub-plan for chosen action '{best_option.description}'. Decision might need reconsideration.")
-                          # NOTE: Implement handling for sub-plan generation failure.
-                          # This could involve selecting an alternative option or raising an error.
-                 else:
-                     logger.warning("Planner not available to create sub-plan for complex action.")
-
+        logger.info(
+            "Selected option '%s' with adjusted utility %.2f.",
+            best_option.description,
+            best_score,
+        )
+        self._maybe_generate_subplan(best_option, context)
         return best_option
-        # --- End Enhanced Placeholder ---
+
+    def _resolve_goal_description(self, context: dict[str, Any]) -> str:
+        """Determine the most relevant goal description for the current decision."""
+
+        if "goal_description" in context and context["goal_description"]:
+            return str(context["goal_description"]).strip()
+
+        if self.goal_manager and hasattr(self.goal_manager, "get_highest_priority_active_goal"):
+            try:
+                active_goal = self.goal_manager.get_highest_priority_active_goal()
+                if active_goal and getattr(active_goal, "description", None):
+                    return str(active_goal.description)
+            except Exception:  # noqa: BLE001 - guard against external implementations
+                logger.debug("Goal manager unavailable for resolving goal description.")
+
+        return "default_goal"
+
+    @staticmethod
+    def _resolve_health_state(context: dict[str, Any]) -> HealthState:
+        """Extract the health state from the provided context."""
+
+        value = context.get("health_state", HealthState.NORMAL)
+        return value if isinstance(value, HealthState) else HealthState.NORMAL
+
+    @staticmethod
+    def _risk_aversion_for_health(health_state: HealthState) -> float:
+        """Map health state to a risk aversion coefficient."""
+
+        match health_state:
+            case HealthState.STRESSED:
+                return 0.8
+            case HealthState.IMPAIRED | HealthState.CRITICAL:
+                return 1.0
+            case HealthState.OPTIMAL:
+                return 0.3
+            case _:
+                return 0.5
+
+    def _evaluate_option(
+        self,
+        option: DecisionOption,
+        current_goal: str,
+        risk_aversion: float,
+    ) -> float:
+        """Calculate the adjusted utility for an individual option."""
+
+        base_utility = option.estimated_utility
+        goal_bonus = self._goal_alignment_bonus(option.description, current_goal)
+        past_outcome_adjustment = self._past_outcome_adjustment(option)
+        adjusted = base_utility + goal_bonus + past_outcome_adjustment - (risk_aversion * option.risk)
+
+        logger.debug(
+            "Option '%s': base=%.2f goal_bonus=%.2f past_adj=%.2f risk=%.2f final=%.2f",
+            option.description,
+            base_utility,
+            goal_bonus,
+            past_outcome_adjustment,
+            option.risk,
+            adjusted,
+        )
+        return adjusted
+
+    @staticmethod
+    def _goal_alignment_bonus(description: str, current_goal: str) -> float:
+        """Provide a simple alignment bonus when the option relates to the goal."""
+
+        if current_goal and current_goal.lower() in description.lower():
+            return 0.2
+        return 0.0
+
+    def _past_outcome_adjustment(self, option: DecisionOption) -> float:
+        """Adjust utility based on historical outcomes stored in memory."""
+
+        if not self.memory_manager:
+            return 0.0
+
+        try:
+            past_attempts = self.memory_manager.retrieve(
+                query=f"outcome related to {option.description}",
+                memory_type=MemoryTier.EPISODIC,
+                limit=5,
+            )
+        except Exception as error:  # noqa: BLE001 - defensive against external dependency
+            logger.error("Error retrieving past outcomes: %s", error)
+            return 0.0
+
+        if not past_attempts:
+            return 0.0
+
+        successes = 0
+        total = 0
+        for item in past_attempts:
+            if isinstance(item, MemoryItem):
+                metadata = getattr(item, "metadata", {}) or {}
+                if metadata.get("outcome") == "success":
+                    successes += 1
+                total += 1
+
+        if total == 0:
+            return 0.0
+
+        success_rate = successes / total
+        adjustment = (success_rate - 0.5) * 0.2
+        logger.debug(
+            "Option '%s': success_rate=%.2f adjustment=%.2f (successes=%s total=%s)",
+            option.description,
+            success_rate,
+            adjustment,
+            successes,
+            total,
+        )
+        return adjustment
+
+    def _maybe_generate_subplan(
+        self,
+        best_option: DecisionOption,
+        context: dict[str, Any],
+    ) -> None:
+        """Trigger planning for complex actions when a planner is available."""
+
+        plan_request = self._derive_plan_request(best_option)
+        if not plan_request:
+            return
+
+        if not self.planner:
+            logger.warning("Planner not available to create sub-plan for complex action '%s'.", best_option.description)
+            return
+
+        logger.info("Generating sub-plan for '%s' using goal '%s'.", best_option.description, plan_request)
+        sub_plan = self.planner.generate_plan(goal_description=plan_request, context=context)
+        if sub_plan:
+            best_option.action = sub_plan
+            logger.info("Attached generated sub-plan to option '%s'.", best_option.description)
+        else:
+            logger.error("Failed to generate sub-plan for '%s'.", best_option.description)
+
+    @staticmethod
+    def _derive_plan_request(option: DecisionOption) -> Optional[str]:
+        """Determine whether additional planning is required for an option."""
+
+        action = option.action
+        if isinstance(action, str) and action.startswith("goal:"):
+            _, _, goal = action.partition(":")
+            return goal.strip() or option.description
+
+        if isinstance(action, dict) and action.get("type") == "complex_action":
+            return option.description
+
+        return None
