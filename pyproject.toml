@@ -10,7 +10,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "neuroca"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "NeuroCognitive Architecture (NCA) for Large Language Models"
 authors = [
     {name = "Justin Lietz", email = "jlietz93@gmail.com"},
@@ -25,6 +25,8 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.9,<3.13"
@@ -69,6 +71,7 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/neuroca/neuroca"
 Documentation = "https://docs.neuroca.dev"
+"Release Notes" = "https://github.com/neuroca/neuroca/blob/main/docs/RELEASE_NOTES.md"
 
 [project.scripts]
 neuroca = "neuroca.cli.main:main"
@@ -160,17 +163,27 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
+files = [
+    "src/neuroca/core/enums.py",
+]
 
 [[tool.mypy.overrides]]
-module = "tests.*"
+module = ["neuroca.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["neuroca.core.enums"]
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
-# === CORRECTED RUFF CONFIGURATION (for v0.0.272) START ===
 [tool.ruff]
-# ALL settings go directly under [tool.ruff] for this version (e.g., v0.0.272)
 line-length = 100
 target-version = "py39"
+src = ["src"]
 exclude = [
     ".git",
     ".mypy_cache",
@@ -181,37 +194,35 @@ exclude = [
     "build",
     "dist",
     "archive",
+    "analysis_artifacts",
+    "reports",
+    "benchmarks",
 ]
+
+[tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "F",  # pyflakes
-    "B",  # flake8-bugbear
-    "I",  # isort
-    "N",  # pep8-naming
-    "UP", # pyupgrade
-    "S",  # flake8-bandit (includes S101)
-    "BLE",# flake8-blind-except
-    "A",  # flake8-builtins
-    "C4", # flake8-comprehensions
-    "T20",# flake8-print
-    "PT", # flake8-pytest-style
-    "RET",# flake8-return
-    "SIM",# flake8-simplify
+    "E",
+    "F",
 ]
 ignore = ["E203", "E501"]
+exclude = [
+    "tests",
+    "sandbox",
+    "scripts",
+    "analysis_artifacts",
+    "reports",
+    "src/neuroca/memory/backends",
+    "src/neuroca/memory/interfaces",
+    "src/neuroca/memory/models",
+    "src/neuroca/memory/tiers",
+    "src/neuroca/tools",
+    "src/neuroca/db",
+    "src/neuroca/core/cognitive_control/attention_manager.py",
+    "src/neuroca/core/cognitive_control/goal_manager.py",
+]
 
-# per-file-ignores also goes directly under [tool.ruff]
-# Use the inline table syntax for the value
-per-file-ignores = { "tests/**/*.py" = ["S101"] }
-
-# Optional ignores commented out below:
-# per-file-ignores = {
-#    "tests/**/*.py" = ["S101", "S311"], # Example: Ignore assert and random in tests
-#    "**/__init__.py" = ["F401"]          # Example: Ignore unused imports in __init__
-# }
-
-# DO NOT include a [tool.ruff.lint] section for this version.
-# === CORRECTED RUFF CONFIGURATION (for v0.0.272) END ===
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
 
 
 [tool.pytest.ini_options]

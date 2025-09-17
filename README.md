@@ -154,8 +154,11 @@ pip install neuroca
 git clone https://github.com/justinlietz93/Neuro-Cognitive-Architecture.git
 cd Neuro-Cognitive-Architecture
 
-# Install as a package (development mode)
-pip install -e .
+# Install as a package (development mode with extras)
+pip install -e ".[dev,test]"
+
+# Runtime-only installs can omit extras
+# pip install -e .
 
 # Or build and install the package
 pip install build
@@ -172,8 +175,8 @@ pip install dist/*.whl
 git clone https://github.com/justinlietz93/Neuro-Cognitive-Architecture.git
 cd Neuro-Cognitive-Architecture
 
-# Install dependencies using Poetry
-poetry install
+# Install dependencies using Poetry (with dev/test extras)
+poetry install --with dev,test
 
 # Activate the virtual environment
 poetry shell
@@ -190,8 +193,8 @@ cd Neuro-Cognitive-Architecture
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies with extras for tooling and tests
+pip install -e ".[dev,test]"
 ```
 
 ### Using Docker
@@ -274,13 +277,45 @@ response = nca.process("What is the relationship between quantum physics and con
 working_memory = nca.memory.working.get_contents()
 ```
 
+### Memory Manager Quick Start (Async)
+
+```python
+import asyncio
+from neuroca.memory.manager import MemoryManager, MemoryTier
+
+
+async def main() -> None:
+    manager = MemoryManager()
+    await manager.initialize()
+
+    await manager.add_memory(
+        tier=MemoryTier.WORKING,
+        content="Remember to announce the beta release",
+        metadata={"tags": ["release", "beta"], "importance": 0.9},
+    )
+
+    results = await manager.search_memories(
+        query="beta release announcement",
+        tier=MemoryTier.SEMANTIC,
+        limit=5,
+    )
+
+    for memory in results:
+        print(memory.content, memory.metadata)
+
+    await manager.shutdown()
+
+
+asyncio.run(main())
+```
+
 ## Development
 
 ### Setting Up Development Environment
 
 ```bash
-# Install development dependencies
-poetry install --with dev
+# Install development dependencies (includes test extras)
+poetry install --with dev,test
 
 # Set up pre-commit hooks
 pre-commit install
@@ -315,6 +350,8 @@ mypy neuroca
 ## Documentation
 
 **Official Documentation:** [https://docs.neuroca.dev/](https://docs.neuroca.dev/)
+
+- Latest beta release notes: [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 
 Comprehensive documentation is also available in the `docs/` directory and can be built and served locally using MkDocs:
 

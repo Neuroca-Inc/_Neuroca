@@ -196,8 +196,24 @@ class VectorStorage:
     def get_all_memory_metadata(self) -> Dict[str, Dict[str, Any]]:
         """
         Get metadata for all memory items.
-        
+
         Returns:
             Dict mapping memory IDs to their metadata
         """
         return self._memory_metadata.copy()
+
+    async def clear(self) -> None:
+        """Remove all vector entries and cached metadata."""
+
+        self.index.clear()
+        self._memory_metadata.clear()
+
+        if self.index_path and os.path.exists(self.index_path):
+            try:
+                os.remove(self.index_path)
+            except OSError:
+                logger.warning(
+                    "Failed to remove persisted vector index at %s",
+                    self.index_path,
+                    exc_info=True,
+                )

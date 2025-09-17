@@ -4,8 +4,212 @@ Test script to demonstrate temporal database features and functionality.
 """
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
+
 import pandas as pd
-from datetime import datetime
+
+
+def ensure_temporal_database(conn: sqlite3.Connection) -> None:
+    """Create a minimal temporal schema with seed data for demonstration tests."""
+
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS components (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_name TEXT UNIQUE NOT NULL,
+            category_id INTEGER,
+            priority TEXT NOT NULL,
+            notes TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS components_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_id INTEGER NOT NULL,
+            component_name TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            history_timestamp TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS component_change_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_id INTEGER NOT NULL,
+            component_name TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            history_timestamp TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS component_usage_analysis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_id INTEGER NOT NULL,
+            component_name TEXT NOT NULL,
+            working_status TEXT NOT NULL,
+            priority_to_fix TEXT NOT NULL,
+            complexity_to_fix TEXT NOT NULL,
+            effort_hours INTEGER NOT NULL,
+            missing_dependencies TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS critical_blockers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            component_id INTEGER NOT NULL,
+            component_name TEXT NOT NULL,
+            working_status TEXT NOT NULL,
+            priority_to_fix TEXT NOT NULL,
+            complexity_to_fix TEXT NOT NULL,
+            effort_hours INTEGER NOT NULL,
+            missing_dependencies TEXT,
+            FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS data_quality_report (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            metric TEXT NOT NULL,
+            score REAL NOT NULL,
+            status TEXT NOT NULL,
+            evaluated_at TEXT NOT NULL
+        );
+        """
+    )
+
+    # Ensure baseline components exist so subsequent queries and updates succeed.
+    baseline_components = [
+        ("FastAPI Application", 1, "High", "Initial record for temporal tests", 1),
+        ("Memory Manager", 1, "Medium", "Initial record for temporal tests", 1),
+    ]
+    for name, category_id, priority, notes, is_active in baseline_components:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO components (component_name, category_id, priority, notes, is_active)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (name, category_id, priority, notes, is_active),
+        )
+
+    fastapi_id = conn.execute(
+        "SELECT id FROM components WHERE component_name = ?", ("FastAPI Application",)
+    ).fetchone()[0]
+    memory_id = conn.execute(
+        "SELECT id FROM components WHERE component_name = ?", ("Memory Manager",)
+    ).fetchone()[0]
+
+    now = datetime.now(UTC)
+
+    if conn.execute("SELECT COUNT(*) FROM components_history").fetchone()[0] == 0:
+        conn.executemany(
+            """
+            INSERT INTO components_history (
+                component_id, component_name, change_type, history_timestamp, version
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (fastapi_id, "FastAPI Application", "initialized", now.isoformat(timespec="seconds"), 1),
+                (
+                    memory_id,
+                    "Memory Manager",
+                    "initialized",
+                    (now - timedelta(minutes=5)).isoformat(timespec="seconds"),
+                    1,
+                ),
+            ],
+        )
+
+    if conn.execute("SELECT COUNT(*) FROM component_change_history").fetchone()[0] == 0:
+        conn.executemany(
+            """
+            INSERT INTO component_change_history (
+                component_id, component_name, change_type, history_timestamp, version
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (fastapi_id, "FastAPI Application", "created", now.isoformat(timespec="seconds"), 1),
+                (
+                    fastapi_id,
+                    "FastAPI Application",
+                    "configuration_updated",
+                    (now - timedelta(minutes=1)).isoformat(timespec="seconds"),
+                    2,
+                ),
+                (
+                    memory_id,
+                    "Memory Manager",
+                    "created",
+                    (now - timedelta(minutes=10)).isoformat(timespec="seconds"),
+                    1,
+                ),
+            ],
+        )
+
+    if conn.execute("SELECT COUNT(*) FROM component_usage_analysis").fetchone()[0] == 0:
+        conn.executemany(
+            """
+            INSERT INTO component_usage_analysis (
+                component_id, component_name, working_status, priority_to_fix,
+                complexity_to_fix, effort_hours, missing_dependencies, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    fastapi_id,
+                    "FastAPI Application",
+                    "Fully Working",
+                    "CRITICAL",
+                    "High",
+                    12,
+                    "None",
+                    1,
+                ),
+                (
+                    memory_id,
+                    "Memory Manager",
+                    "Missing",
+                    "HIGH",
+                    "Medium",
+                    6,
+                    "STM consolidation backlog",
+                    1,
+                ),
+            ],
+        )
+
+    if conn.execute("SELECT COUNT(*) FROM critical_blockers").fetchone()[0] == 0:
+        conn.execute(
+            """
+            INSERT INTO critical_blockers (
+                component_id, component_name, working_status, priority_to_fix,
+                complexity_to_fix, effort_hours, missing_dependencies
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fastapi_id,
+                "FastAPI Application",
+                "Degraded",
+                "CRITICAL",
+                "High",
+                8,
+                "Vector index rebuild",
+            ),
+        )
+
+    if conn.execute("SELECT COUNT(*) FROM data_quality_report").fetchone()[0] == 0:
+        conn.executemany(
+            """
+            INSERT INTO data_quality_report (metric, score, status, evaluated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                ("Schema Coverage", 0.92, "Good", now.isoformat(timespec="seconds")),
+                ("Freshness", 0.87, "Needs Attention", (now - timedelta(hours=2)).isoformat(timespec="seconds")),
+            ],
+        )
+
+    conn.commit()
 
 def test_temporal_database():
     """Test the temporal database features"""
@@ -17,6 +221,8 @@ def test_temporal_database():
     conn = sqlite3.connect("neuroca_temporal_analysis.db")
     conn.execute("PRAGMA foreign_keys = ON")
     
+    ensure_temporal_database(conn)
+
     # Test 1: Show current critical blockers
     print("\n🚨 CRITICAL BLOCKERS:")
     print("-" * 30)

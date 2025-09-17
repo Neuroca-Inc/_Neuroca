@@ -27,6 +27,9 @@ jobs:
     - name: Install build dependencies
       run: python -m pip install --upgrade pip build
 
+    - name: Verify optional extras install
+      run: pip install '.[dev,test]'
+
     - name: Build package
       run: python -m build
 
@@ -58,6 +61,9 @@ jobs:
 
     - name: Install build dependencies
       run: python -m pip install --upgrade pip build
+
+    - name: Verify optional extras install
+      run: pip install '.[dev,test]'
 
     - name: Build package
       run: python -m build # Build is needed again in this job

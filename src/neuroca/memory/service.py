@@ -6,9 +6,9 @@ API routes and the core MemoryManager. It encapsulates business logic,
 user-specific operations, and error handling.
 """
 
-from uuid import UUID
-from typing import Any, List
 import logging
+from uuid import UUID
+from typing import Any
 
 # Import the memory models from the memory system
 try:
@@ -20,83 +20,150 @@ except ImportError:
     MemoryContent = None
 
 # Import core exceptions
+from neuroca.core.enums import MemoryTier
 from neuroca.core.exceptions import (
-    MemoryAccessDeniedError,
     MemoryNotFoundError,
     MemoryStorageError,
-    MemoryTierFullError,
 )
 
 # Import MemoryManager
 try:
     from neuroca.memory.manager.memory_manager import MemoryManager
 except ImportError:
-    # Fallback if MemoryManager doesn't exist yet - create a mock
-    class MemoryManager:
+    # Fallback if MemoryManager doesn't exist yet - create an async-compatible mock
+    class MemoryManager:  # pragma: no cover - used only when real manager is unavailable
         def __init__(self):
-            self._memories = {}
+            self._memories: dict[str, dict[str, Any]] = {}
             self._id_counter = 0
-        
-        def store(self, content, tier="working", metadata=None):
+
+        async def initialize(self) -> None:  # noqa: D401 - simple stub
+            """Initialize the in-memory manager."""
+
+        async def shutdown(self) -> None:  # noqa: D401 - simple stub
+            """Shutdown stub."""
+
+        async def add_memory(
+            self,
+            content: Any,
+            summary: str | None = None,
+            importance: float = 0.5,
+            metadata: dict[str, Any] | None = None,
+            tags: list[str] | None = None,
+            embedding: list[float] | None = None,
+            initial_tier: str | None = None,
+        ) -> str:
             memory_id = f"mock-{self._id_counter}"
             self._id_counter += 1
-            memory = {
+
+            tags_dict = {tag: True for tag in tags or []}
+            metadata_dict = dict(metadata or {})
+            metadata_dict.setdefault("tier", initial_tier or MemoryTier.STM.storage_key)
+            metadata_dict.setdefault("importance", importance)
+            metadata_dict.setdefault("tags", tags_dict)
+
+            stored = {
                 "id": memory_id,
-                "content": content,
-                "tier": tier,  # Properly store the tier
-                "metadata": metadata or {}
+                "content": {"text": content} if isinstance(content, str) else content,
+                "summary": summary,
+                "metadata": metadata_dict,
             }
-            self._memories[memory_id] = memory
-            return memory
-        
-        def get(self, memory_id):
+
+            self._memories[memory_id] = stored
+            return memory_id
+
+        async def retrieve_memory(self, memory_id: str, tier: str | None = None) -> dict[str, Any] | None:
+            return self._memories.get(str(memory_id))
+
+        async def search_memories(
+            self,
+            query: str | None = None,
+            embedding: list[float] | None = None,
+            tags: list[str] | None = None,
+            metadata_filters: dict[str, Any] | None = None,
+            limit: int = 10,
+            min_relevance: float = 0.0,
+            tiers: list[str] | None = None,
+        ) -> list[dict[str, Any]]:
+            if embedding:
+                logging.getLogger(__name__).warning(
+                    "Fallback MemoryManager.search_memories ignores embedding-based ranking."
+                )
+            results = list(self._memories.values())
+
+            if tiers:
+                tier_set = set(tiers)
+                results = [m for m in results if m.get("metadata", {}).get("tier") in tier_set]
+
+            if query:
+                lowered = query.lower()
+                results = [m for m in results if lowered in str(m.get("content", "")).lower()]
+
+            if metadata_filters:
+                for key, expected in metadata_filters.items():
+                    if key.startswith("metadata."):
+                        field = key.split(".", 1)[1]
+                        results = [
+                            m
+                            for m in results
+                            if m.get("metadata", {}).get(field) == expected
+                        ]
+
+            return results[:limit]
+
+        async def update_memory(
+            self,
+            memory_id: str,
+            content: Any | None = None,
+            summary: str | None = None,
+            importance: float | None = None,
+            metadata: dict[str, Any] | None = None,
+            tags: list[str] | None = None,
+        ) -> bool:
+            memory = self._memories.get(str(memory_id))
+            if not memory:
+                return False
+
+            if content is not None:
+                memory["content"] = {"text": content} if isinstance(content, str) else content
+            if summary is not None:
+                memory["summary"] = summary
+            if importance is not None:
+                memory.setdefault("metadata", {})["importance"] = importance
+            if metadata:
+                memory.setdefault("metadata", {}).update(metadata)
+            if tags is not None:
+                tag_dict = memory.setdefault("metadata", {}).setdefault("tags", {})
+                for tag in tags:
+                    tag_dict[tag] = True
+            return True
+
+        async def delete_memory(self, memory_id: str, tier: str | None = None) -> bool:
+            return self._memories.pop(str(memory_id), None) is not None
+
+        async def transfer_memory(
+            self,
+            memory_id: str,
+            target_tier: str | MemoryTier,
+        ) -> dict[str, Any]:
             memory = self._memories.get(str(memory_id))
             if not memory:
                 raise MemoryNotFoundError(f"Memory with ID {memory_id} not found.")
+
+            resolved = (
+                target_tier.storage_key
+                if isinstance(target_tier, MemoryTier)
+                else str(target_tier)
+            )
+            memory.setdefault("metadata", {})["tier"] = resolved
             return memory
-        
-        def search(self, query, limit=50):
-            return list(self._memories.values())[:limit]
-        
-        def update(self, memory_id, update_data):
-            if str(memory_id) not in self._memories:
-                raise MemoryNotFoundError(f"Memory with ID {memory_id} not found for update.")
-            
-            # Update the memory with new data
-            memory = self._memories[str(memory_id)]
-            if "content" in update_data:
-                memory["content"] = update_data["content"]
-            if "metadata" in update_data:
-                memory["metadata"].update(update_data["metadata"])
-            if "tier" in update_data:
-                memory["tier"] = update_data["tier"]
-            
-            return memory
-        
-        def delete(self, memory_id):
-            if str(memory_id) not in self._memories:
-                raise MemoryNotFoundError(f"Memory with ID {memory_id} not found.")
-            return self._memories.pop(str(memory_id), None)
-        
-        def transfer_tier(self, memory_id, target_tier):
-            if str(memory_id) not in self._memories:
-                raise MemoryNotFoundError(f"Memory with ID {memory_id} not found.")
-            
-            memory = self._memories[str(memory_id)]
-            memory["tier"] = target_tier  # Update the tier
-            return memory
-        
-        def get_tier_stats(self):
-            stats = {"working": 0, "episodic": 0, "semantic": 0}
+
+        async def get_system_stats(self) -> dict[str, Any]:
+            stats: dict[str, Any] = {"tiers": {}, "total_memories": len(self._memories)}
             for memory in self._memories.values():
-                tier = memory.get("tier", "working")
-                if tier in stats:
-                    stats[tier] += 1
-            
-            return {
-                "total_memories": len(self._memories), 
-                "tiers": stats
-            }
+                tier = memory.get("metadata", {}).get("tier", MemoryTier.STM.storage_key)
+                tier_stats = stats["tiers"].setdefault(tier, {"total_memories": 0})
+                tier_stats["total_memories"] += 1
+            return stats
 
 logger = logging.getLogger(__name__)
 
@@ -135,44 +202,49 @@ class MemoryResponse(BaseModel):
         """Create response from memory item."""
         # Handle both object and dictionary formats
         if isinstance(memory_item, dict):
-            # Dictionary format (from mock MemoryManager)
-            metadata = memory_item.get('metadata', {})
-            return cls(
-                id=memory_item.get('id', ''),
-                user_id=metadata.get('user_id'),
-                tier=memory_item.get('tier', 'working'),  # Get tier from top level
-                content=memory_item.get('content'),
-                metadata=metadata
+            metadata = memory_item.get("metadata", {})
+            tier = (
+                memory_item.get("tier")
+                or metadata.get("tier")
+                or MemoryTier.STM.storage_key
             )
-        else:
-            # Object format (from real MemoryManager) - MemoryItem with MemoryMetadata
-            # Handle MemoryMetadata Pydantic model
-            metadata_obj = getattr(memory_item, 'metadata', None)
-            if metadata_obj:
-                # For MemoryMetadata objects, access fields directly
-                if hasattr(metadata_obj, 'tags') and isinstance(metadata_obj.tags, dict):
-                    user_id = metadata_obj.tags.get('user_id')
-                else:
-                    user_id = getattr(metadata_obj, 'user_id', None)
-                
-                # Convert MemoryMetadata to dict for response
-                if hasattr(metadata_obj, 'model_dump'):
-                    metadata_dict = metadata_obj.model_dump()
-                elif hasattr(metadata_obj, 'dict'):
-                    metadata_dict = metadata_obj.dict()
-                else:
-                    metadata_dict = {}
+            return cls(
+                id=memory_item.get("id", ""),
+                user_id=metadata.get("user_id"),
+                tier=tier,
+                content=memory_item.get("content"),
+                metadata=metadata,
+            )
+
+        metadata_obj = getattr(memory_item, "metadata", None)
+        metadata_dict: dict[str, Any] = {}
+        user_id = None
+        tier_value = MemoryTier.STM.storage_key
+
+        if metadata_obj is not None:
+            if hasattr(metadata_obj, "model_dump"):
+                metadata_dict = metadata_obj.model_dump()
+            elif hasattr(metadata_obj, "dict"):
+                metadata_dict = metadata_obj.dict()
             else:
-                user_id = None
                 metadata_dict = {}
-            
-            return cls(
-                id=getattr(memory_item, 'id', ''),
-                user_id=user_id,
-                tier='stm',  # Default tier for real memory items
-                content=getattr(memory_item, 'content', None),
-                metadata=metadata_dict
-            )
+
+            user_id = metadata_dict.get("user_id")
+            tier_value = metadata_dict.get("tier", tier_value)
+
+        content_obj = getattr(memory_item, "content", None)
+        if hasattr(content_obj, "model_dump"):
+            content_payload = content_obj.model_dump()
+        else:
+            content_payload = content_obj
+
+        return cls(
+            id=getattr(memory_item, "id", ""),
+            user_id=user_id,
+            tier=tier_value,
+            content=content_payload,
+            metadata=metadata_dict,
+        )
 
 class MemorySearchParams(BaseModel):
     """Search parameters for memory queries."""
@@ -187,12 +259,6 @@ class MemorySearchParams(BaseModel):
         super().__init__(**kwargs)
 
 # Memory tier enum-like class
-class MemoryTier:
-    """Memory tier constants."""
-    WORKING = "working"
-    EPISODIC = "episodic"
-    SEMANTIC = "semantic"
-
 class MemoryService:
     """
     Service class for memory operations, handling business logic and
@@ -231,7 +297,7 @@ class MemoryService:
             importance=memory_data.get("importance", 0.5),
             metadata={'user_id': memory_data.get('user_id')},
             tags=memory_data.get("tags", []),
-            initial_tier=memory_data.get("tier", "stm")  # Use stm as default, not working
+            initial_tier=self._resolve_initial_tier(memory_data.get("tier")),
         )
         
         # Retrieve the stored memory to return it
@@ -268,15 +334,42 @@ class MemoryService:
         Returns:
             A list of memories matching the criteria.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Listing memories for user {search_params.user_id}")
-        # The manager's search needs to be adapted to handle user_id from metadata
-        # This is a placeholder implementation.
-        results = self.memory_manager.search(
+
+        metadata_filters: dict[str, Any] | None = None
+        if search_params.user_id is not None:
+            metadata_filters = {"metadata.user_id": search_params.user_id}
+
+        tiers: list[str] | None = None
+        if search_params.tier:
+            try:
+                tiers = [MemoryTier.from_string(search_params.tier).storage_key]
+            except ValueError:
+                tiers = [str(search_params.tier)]
+
+        results = await self.memory_manager.search_memories(
             query=search_params.query,
             limit=search_params.limit,
-            # More complex filtering would be needed here
+            metadata_filters=metadata_filters,
+            tiers=tiers,
         )
         return [MemoryResponse.from_orm(res) for res in results]
+
+    @staticmethod
+    def _resolve_initial_tier(tier: Any) -> str:
+        if isinstance(tier, MemoryTier):
+            return tier.storage_key
+        if tier is None:
+            return MemoryTier.STM.storage_key
+        try:
+            return MemoryTier.from_string(str(tier)).storage_key
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                "Unknown tier %r provided during memory creation. Defaulting to STM.",
+                tier,
+            )
+            return MemoryTier.STM.storage_key
 
     async def update_memory(self, memory_id: UUID, update_data: dict) -> MemoryResponse:
         """
@@ -289,24 +382,41 @@ class MemoryService:
         Returns:
             The updated memory object.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Updating memory {memory_id}")
-        updated_memory = self.memory_manager.update(memory_id, update_data)
-        if not updated_memory:
+
+        success = await self.memory_manager.update_memory(
+            str(memory_id),
+            content=update_data.get("content"),
+            summary=update_data.get("summary"),
+            importance=update_data.get("importance"),
+            metadata=update_data.get("metadata"),
+            tags=update_data.get("tags"),
+        )
+        if not success:
             raise MemoryNotFoundError(f"Memory with ID {memory_id} not found for update.")
-        return MemoryResponse.from_orm(updated_memory)
+
+        updated = await self.memory_manager.retrieve_memory(str(memory_id))
+        if not updated:
+            raise MemoryNotFoundError(f"Memory with ID {memory_id} not found after update.")
+
+        return MemoryResponse.from_orm(updated)
 
     async def delete_memory(self, memory_id: UUID) -> None:
         """
         Deletes a memory by its ID.
-        
+
         Args:
             memory_id: The ID of the memory to delete.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Deleting memory {memory_id}")
-        self.memory_manager.delete(memory_id)
+        deleted = await self.memory_manager.delete_memory(str(memory_id))
+        if not deleted:
+            raise MemoryNotFoundError(f"Memory with ID {memory_id} not found.")
         logger.info(f"Memory {memory_id} deleted from service.")
 
-    async def transfer_memory(self, memory_id: UUID, target_tier: MemoryTier) -> MemoryResponse:
+    async def transfer_memory(self, memory_id: UUID, target_tier: MemoryTier | str) -> MemoryResponse:
         """
         Transfers a memory to a different tier.
         
@@ -317,8 +427,22 @@ class MemoryService:
         Returns:
             The transferred memory object with its updated tier.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Transferring memory {memory_id} to {target_tier}")
-        transferred_memory = self.memory_manager.transfer_tier(memory_id, target_tier)
+
+        try:
+            resolved_tier = (
+                target_tier
+                if isinstance(target_tier, MemoryTier)
+                else MemoryTier.from_string(str(target_tier))
+            )
+        except ValueError as exc:
+            raise MemoryStorageError(f"Invalid target tier: {target_tier}") from exc
+
+        transferred_memory = await self.memory_manager.transfer_memory(
+            str(memory_id),
+            resolved_tier,
+        )
         return MemoryResponse.from_orm(transferred_memory)
 
     async def consolidate_memories(self, memory_ids: list[UUID], user_id: UUID, summary: str, tags: list[str]) -> list[MemoryResponse]:
@@ -334,20 +458,35 @@ class MemoryService:
         Returns:
             A list containing the new consolidated memory and the original memories.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Consolidating memories for user {user_id}")
-        # This is a complex operation that needs careful implementation.
-        # The manager likely needs a corresponding method.
-        # Placeholder implementation:
+
+        metadata = {
+            "user_id": str(user_id),
+            "consolidated_from": [str(mid) for mid in memory_ids],
+        }
         new_memory_content = f"Consolidated summary: {summary}"
-        new_memory = self.memory_manager.store(
+        new_memory_id = await self.memory_manager.add_memory(
             content=new_memory_content,
-            tier="semantic",
-            metadata={'user_id': user_id, 'consolidated_from': memory_ids}
+            summary=summary,
+            metadata=metadata,
+            tags=tags,
+            initial_tier=MemoryTier.SEMANTIC.storage_key,
         )
-        
-        original_memories = [self.memory_manager.get(mid) for mid in memory_ids]
-        
-        return [MemoryResponse.from_orm(new_memory)] + [MemoryResponse.from_orm(mem) for mem in original_memories if mem]
+
+        consolidated = await self.memory_manager.retrieve_memory(new_memory_id)
+
+        original_memories: list[Any] = []
+        for mid in memory_ids:
+            existing = await self.memory_manager.retrieve_memory(str(mid))
+            if existing:
+                original_memories.append(existing)
+
+        responses: list[MemoryResponse] = []
+        if consolidated:
+            responses.append(MemoryResponse.from_orm(consolidated))
+        responses.extend(MemoryResponse.from_orm(mem) for mem in original_memories)
+        return responses
 
     async def get_memory_stats(self, user_id: UUID) -> dict[str, Any]:
         """
@@ -359,10 +498,9 @@ class MemoryService:
         Returns:
             A dictionary of memory statistics.
         """
+        await self._ensure_initialized()
         logger.debug(f"Service: Getting memory stats for user {user_id}")
-        # The manager's stats methods would need to be adapted to filter by user.
-        # Placeholder implementation:
-        return self.memory_manager.get_tier_stats()
+        return await self.memory_manager.get_system_stats()
 
     async def health_check(self) -> dict[str, Any]:
         """
