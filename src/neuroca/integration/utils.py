@@ -1,17 +1,8 @@
-"""
-Utilities Module for NeuroCognitive Architecture (NCA) LLM Integration
+"""Utility helpers that back NeuroCognitive Architecture (NCA) integrations."""
 
-This module provides utility functions for the LLM integration components,
-including token counting, prompt formatting, response parsing, and input sanitization.
+from __future__ import annotations
 
-Functions:
-    count_tokens: Count the number of tokens in a text
-    format_prompt: Format a prompt with templates and variables
-    parse_response: Parse a response from an LLM provider
-    sanitize_input: Sanitize input to remove sensitive or problematic content
-    create_embedding: Create an embedding for text using a local model
-"""
-
+import ast
 import json
 import logging
 import re
@@ -19,20 +10,70 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to import different tokenizers, falling back as needed
-try:
-    import tiktoken
-    TOKENIZER_TYPE = "tiktoken"
-except ImportError:
-    try:
-        from transformers import AutoTokenizer
-        TOKENIZER_TYPE = "transformers"
-    except ImportError:
-        TOKENIZER_TYPE = "simple"
-        logger.warning("Neither tiktoken nor transformers is available. Using simple word-based tokenization.")
+# ---------------------------------------------------------------------------
+# Optional third-party dependencies
+# ---------------------------------------------------------------------------
+try:  # pragma: no cover - exercised through mocks
+    import tiktoken  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - import guard
+    tiktoken = None  # type: ignore[assignment]
 
-# Cache for tokenizers to avoid recreating them
-_tokenizers = {}
+try:  # pragma: no cover - exercised through mocks
+    from transformers import AutoTokenizer as _TransformersAutoTokenizer  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - import guard
+    _TransformersAutoTokenizer = None
+
+
+class _AutoTokenizerProxy:
+    """Lightweight proxy so tests can patch the tokenizer regardless of availability."""
+
+    def __init__(self, backend: Any | None) -> None:
+        self._backend = backend
+
+    def from_pretrained(self, model_name: str):  # pragma: no cover - exercised via mocks
+        if self._backend is None:
+            raise ImportError(
+                "transformers is required for token counting with HuggingFace tokenizers."
+            )
+        return self._backend.from_pretrained(model_name)
+
+
+AutoTokenizer = _AutoTokenizerProxy(_TransformersAutoTokenizer)
+
+try:  # pragma: no cover - exercised through mocks
+    from sentence_transformers import SentenceTransformer as _SentenceTransformerBackend  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - import guard
+    _SentenceTransformerBackend = None
+
+
+class _SentenceTransformerProxy:
+    """Callable shim that mirrors :class:`SentenceTransformer` for patching."""
+
+    def __call__(self, model: str, *, device: str = "cpu"):
+        if _SentenceTransformerBackend is None:
+            raise ImportError(
+                "sentence_transformers is required for local embeddings. Install with "
+                "'pip install sentence-transformers'."
+            )
+        return _SentenceTransformerBackend(model, device=device)
+
+
+SentenceTransformer = _SentenceTransformerProxy()
+
+
+if tiktoken is not None:
+    TOKENIZER_TYPE = "tiktoken"
+elif _TransformersAutoTokenizer is not None:
+    TOKENIZER_TYPE = "transformers"
+else:
+    TOKENIZER_TYPE = "simple"
+    logger.warning(
+        "Neither tiktoken nor transformers is available. Using simple word-based tokenization."
+    )
+
+# Cache stores both tokenizer instances and embedding models to avoid expensive reloads.
+_tokenizers: dict[str, Any] = {}
+_embedding_models: dict[str, Any] = {}
 
 
 def count_tokens(text: str, model: str = "gpt-4") -> int:
@@ -103,11 +144,11 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
                 
         # Count tokens
         return len(_tokenizers[hf_model].encode(text))
-        
+
     # Simple fallback using word count with a multiplier
     else:
         # Most models use about 1.3 tokens per word on average for English text
-        return int(len(text.split()) * 1.3)
+        return len(text.split()) * 1.3
         
 
 def format_prompt(template: str, variables: dict[str, Any], preserve_unknown: bool = True) -> str:
@@ -133,7 +174,7 @@ def format_prompt(template: str, variables: dict[str, Any], preserve_unknown: bo
             # Convert non-string values to string
             if not isinstance(value, str):
                 if isinstance(value, (dict, list)):
-                    return json.dumps(value, ensure_ascii=False)
+                    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
                 return str(value)
             return value
         elif preserve_unknown:
@@ -171,15 +212,18 @@ def parse_response(response: str, expected_format: str = "text") -> Any:
         try:
             return json.loads(json_str)
         except json.JSONDecodeError:
-            # Try to fix common JSON errors
-            json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)  # Replace single quotes with double quotes in keys
-            json_str = re.sub(r",\s*}", "}", json_str)  # Remove trailing commas
-            
+            # Try to fix common JSON errors while preserving the cleaned payload for diagnostics
+            cleaned = re.sub(r"'([^']*)':", r'"\1":', json_str)
+            cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
+
             try:
-                return json.loads(json_str)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse JSON response: {str(e)}")
-                raise ValueError(f"Response is not valid JSON: {json_str}")
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                try:
+                    return ast.literal_eval(cleaned)
+                except (ValueError, SyntaxError) as exc:
+                    logger.warning("Failed to parse JSON response", exc_info=False)
+                    raise ValueError(f"Response is not valid JSON: {cleaned}") from exc
                 
     elif expected_format == "list":
         # Try to extract a list from the response
@@ -252,25 +296,35 @@ async def create_embedding(
         ImportError: If the required dependencies are not installed
         RuntimeError: If embedding creation fails
     """
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        logger.error("sentence_transformers is required for local embeddings")
-        raise ImportError("sentence_transformers is required for local embeddings. Install with 'pip install sentence-transformers'")
-        
-    # Get or create the model
-    cache_key = f"{model}_{device}"
-    if cache_key not in _tokenizers:
+    cache_key = f"{model}:{device}"
+    cached = _embedding_models.get(cache_key)
+    if cached is None or cached.get("factory") is not SentenceTransformer:
         try:
-            _tokenizers[cache_key] = SentenceTransformer(model, device=device)
-        except Exception as e:
-            logger.error(f"Failed to load embedding model {model}: {str(e)}")
-            raise RuntimeError(f"Failed to load embedding model: {str(e)}")
-            
-    # Create embedding
+            model_instance = SentenceTransformer(model, device=device)
+        except ImportError as exc:
+            logger.error("sentence_transformers is required for local embeddings")
+            raise ImportError(
+                "sentence_transformers is required for local embeddings. Install with "
+                "'pip install sentence-transformers'."
+            ) from exc
+        except Exception as exc:
+            logger.error(f"Failed to load embedding model {model}: {str(exc)}")
+            raise RuntimeError(f"Failed to load embedding model: {str(exc)}") from exc
+        else:
+            cached = {"factory": SentenceTransformer, "model": model_instance}
+            _embedding_models[cache_key] = cached
+
+    model_instance = cached["model"]
+
     try:
-        embedding = _tokenizers[cache_key].encode(text)
-        return embedding.tolist()
-    except Exception as e:
-        logger.error(f"Failed to create embedding: {str(e)}")
-        raise RuntimeError(f"Failed to create embedding: {str(e)}")
+        embedding = model_instance.encode(text)
+    except Exception as exc:
+        logger.error(f"Failed to create embedding: {str(exc)}")
+        raise RuntimeError(f"Failed to create embedding: {str(exc)}") from exc
+
+    if hasattr(embedding, "tolist"):
+        embedding = embedding.tolist()
+    elif not isinstance(embedding, list):
+        embedding = list(embedding)
+
+    return embedding

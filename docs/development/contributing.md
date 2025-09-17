@@ -56,8 +56,8 @@ We are committed to providing a welcoming and inclusive environment for all cont
    # Install Poetry if you don't have it
    curl -sSL https://install.python-poetry.org | python3 -
 
-   # Install dependencies
-   poetry install
+   # Install dependencies with dev/test extras
+   poetry install --with dev,test
    ```
 
 2. **Set up pre-commit hooks**:

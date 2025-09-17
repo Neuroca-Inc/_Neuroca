@@ -196,8 +196,10 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
     if body.memory_context and create_memory_system:
         try:
             # Use a lightweight default memory system suitable for local runs
-            memory_manager = create_memory_system("manager")
+            memory_manager = create_memory_system()
+            await memory_manager.initialize()
         except Exception:
+            logger.exception("Unable to initialize memory manager for LLM route")
             memory_manager = None  # non-fatal
 
     if body.health_aware and HealthDynamicsManager:
@@ -304,6 +306,11 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
             await mgr.close()
         except Exception:
             pass
+        if memory_manager and hasattr(memory_manager, "shutdown"):
+            try:
+                await memory_manager.shutdown()
+            except Exception:
+                logger.debug("Memory manager shutdown failed", exc_info=True)
 
 # --- Streaming SSE endpoint (Ollama-first, with memory visibility) ---
 
@@ -357,8 +364,10 @@ async def stream_llm(
 
     if memory_context and create_memory_system:
         try:
-            _memory_manager = create_memory_system("manager")
+            _memory_manager = create_memory_system()
+            await _memory_manager.initialize()
         except Exception:
+            logger.exception("Unable to initialize memory manager for streaming LLM route")
             _memory_manager = None  # non-fatal
 
     if health_aware and HealthDynamicsManager:
@@ -534,6 +543,11 @@ async def stream_llm(
                 await mgr.close()
             except Exception:
                 pass
+            if _memory_manager and hasattr(_memory_manager, "shutdown"):
+                try:
+                    await _memory_manager.shutdown()
+                except Exception:
+                    logger.debug("Streaming memory manager shutdown failed", exc_info=True)
 
     headers = {
         "Cache-Control": "no-cache",

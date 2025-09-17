@@ -42,76 +42,58 @@ from neuroca.core.models.base import (  # noqa: E402
 )
 
 # Import and re-export cognitive models
-try:
-    from neuroca.core.models.cognitive import (  # noqa: E402
-        CognitiveState,
-        CognitiveProcess,
-        Attention,
-        WorkingMemoryBuffer,
-    )
-except ImportError:
-    logger.warning("Cognitive models could not be imported. Some functionality may be limited.")
-    # Define placeholder classes to prevent import errors elsewhere
-    class CognitiveState(BaseModel): pass
-    class CognitiveProcess(BaseModel): pass
-    class Attention(BaseModel): pass
-    class WorkingMemoryBuffer(BaseModel): pass
+from neuroca.core.models.cognitive import (  # noqa: E402
+    Attention,
+    CognitiveProcess,
+    CognitiveState,
+    WorkingMemoryBuffer,
+)
 
 # Import and re-export memory models
-try:
-    from neuroca.core.models.memory import (  # noqa: E402
-        MemoryItem,
-        ShortTermMemory,
-        LongTermMemory,
-        EpisodicMemory,
-        SemanticMemory,
-        ProceduralMemory,
-        MemoryRetrieval,
-        MemoryEncoding,
-    )
-except ImportError:
-    logger.warning("Memory models could not be imported. Memory functionality will be limited.")
-    # Define placeholder classes to prevent import errors elsewhere
-    class MemoryItem(BaseModel): pass
-    class ShortTermMemory(BaseModel): pass
-    class LongTermMemory(BaseModel): pass
-    class EpisodicMemory(BaseModel): pass
-    class SemanticMemory(BaseModel): pass
-    class ProceduralMemory(BaseModel): pass
-    class MemoryRetrieval(BaseModel): pass
-    class MemoryEncoding(BaseModel): pass
+from neuroca.core.models.memory import (  # noqa: E402
+    MemoryContent,
+    MemoryItem,
+    MemoryMetadata,
+    MemorySearchOptions,
+    MemorySearchResult,
+    MemoryStatus,
+    WorkingMemoryItem,
+)
 
 # Import and re-export health models
-try:
-    from neuroca.core.models.health import (  # noqa: E402
-        HealthMetrics,
-        SystemState,
-        ResourceUtilization,
-        PerformanceIndicators,
-    )
-except ImportError:
-    logger.warning("Health models could not be imported. Health monitoring may be limited.")
-    # Define placeholder classes to prevent import errors elsewhere
-    class HealthMetrics(BaseModel): pass
-    class SystemState(BaseModel): pass
-    class ResourceUtilization(BaseModel): pass
-    class PerformanceIndicators(BaseModel): pass
+from neuroca.core.models.health import (  # noqa: E402
+    HealthMetrics,
+    PerformanceIndicators,
+    ResourceUtilization,
+    SystemState,
+)
 
 # Import and re-export agent models
-try:
-    from neuroca.core.models.agent import (  # noqa: E402
-        Agent,
-        AgentProfile,
-        AgentCapability,
-        AgentState,
-    )
-except ImportError:
-    logger.warning("Agent models could not be imported. Agent functionality may be limited.")
-    # Define placeholder classes to prevent import errors elsewhere
-    class Agent(BaseModel): pass
-    class AgentProfile(BaseModel): pass
-    class AgentCapability(BaseModel): pass
-    class AgentState(BaseModel): pass
+from neuroca.core.models.agent import (  # noqa: E402
+    Agent,
+    AgentCapability,
+    AgentProfile,
+    AgentState,
+)
+
+# User models
+from neuroca.core.models.user import (  # noqa: E402
+    CognitiveProfile,
+    User,
+    UserPreferences,
+    UserRole,
+)
+
+# Metrics models
+from neuroca.core.models.metrics import (  # noqa: E402
+    MemoryMetrics,
+    MetricDefinition,
+    MetricSummary,
+    MetricTimeseriesData,
+    MetricType,
+    PerformanceMetrics,
+    SystemHealthMetrics,
+)
 
 # Type variable for generic model operations
 T = TypeVar('T', bound=BaseModel)
@@ -125,34 +107,48 @@ __all__ = [
     'ValidationError',
     'ModelID',
     'ModelNotFoundError',
-    
+
     # Cognitive models
     'CognitiveState',
     'CognitiveProcess',
     'Attention',
     'WorkingMemoryBuffer',
-    
+
     # Memory models
+    'MemoryContent',
     'MemoryItem',
-    'ShortTermMemory',
-    'LongTermMemory',
-    'EpisodicMemory',
-    'SemanticMemory',
-    'ProceduralMemory',
-    'MemoryRetrieval',
-    'MemoryEncoding',
-    
+    'MemoryMetadata',
+    'MemoryStatus',
+    'MemorySearchResult',
+    'MemorySearchOptions',
+    'WorkingMemoryItem',
+
     # Health models
     'HealthMetrics',
     'SystemState',
     'ResourceUtilization',
     'PerformanceIndicators',
-    
+
     # Agent models
     'Agent',
     'AgentProfile',
     'AgentCapability',
     'AgentState',
+
+    # User models
+    'User',
+    'UserPreferences',
+    'UserRole',
+    'CognitiveProfile',
+
+    # Metrics
+    'MetricType',
+    'MetricDefinition',
+    'MetricSummary',
+    'MetricTimeseriesData',
+    'MemoryMetrics',
+    'PerformanceMetrics',
+    'SystemHealthMetrics',
 ]
 
 # Initialize the model registry

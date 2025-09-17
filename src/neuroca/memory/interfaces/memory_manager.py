@@ -161,19 +161,29 @@ class MemoryManagerInterface(abc.ABC):
     ) -> bool:
         """
         Delete a memory by ID.
-        
+
         Args:
             memory_id: Memory ID
             tier: Optional tier to delete from (tries all tiers if not specified)
-            
+
         Returns:
             bool: True if the deletion was successful
-            
+
         Raises:
             MemoryManagerOperationError: If the delete operation fails
         """
         pass
-    
+
+    @abc.abstractmethod
+    async def transfer_memory(
+        self,
+        memory_id: str,
+        target_tier: Union[str, Any],
+    ) -> Any:
+        """Move a memory between tiers."""
+
+        pass
+
     #-----------------------------------------------------------------------
     # Search and Retrieval
     #-----------------------------------------------------------------------

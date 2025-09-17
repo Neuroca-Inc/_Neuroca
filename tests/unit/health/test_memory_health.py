@@ -8,6 +8,7 @@ including health checks, metrics tracking, and cognitive operation recording.
 
 import pytest
 
+from neuroca.core.enums import MemoryTier
 from neuroca.core.health import (
     ComponentStatus,
     HealthCheckStatus,
@@ -15,7 +16,6 @@ from neuroca.core.health import (
     get_health_monitor,
     run_health_check,
 )
-from neuroca.core.memory.episodic_memory import EpisodicMemory
 from neuroca.core.memory.factory import create_memory_system
 from neuroca.core.memory.health import (
     EpisodicMemoryHealthCheck,
@@ -25,10 +25,9 @@ from neuroca.core.memory.health import (
     record_memory_operation,
     register_memory_system,
 )
-from neuroca.core.memory.working_memory import WorkingMemory
-
-# Import the concrete implementation from the correct location
+from neuroca.memory.episodic_memory import EpisodicMemory
 from neuroca.memory.semantic_memory import Concept, SemanticMemory
+from neuroca.memory.working_memory import WorkingMemory
 
 
 @pytest.fixture()
@@ -50,9 +49,21 @@ def memory_systems():
 def monitored_memory_systems():
     """Provide memory systems registered for health monitoring."""
     # Create memory systems with health monitoring
-    working = create_memory_system("working", enable_health_monitoring=True, component_id="test_working")
-    episodic = create_memory_system("episodic", enable_health_monitoring=True, component_id="test_episodic")
-    semantic = create_memory_system("semantic", enable_health_monitoring=True, component_id="test_semantic")
+    working = create_memory_system(
+        MemoryTier.WORKING,
+        enable_health_monitoring=True,
+        component_id="test_working",
+    )
+    episodic = create_memory_system(
+        MemoryTier.EPISODIC,
+        enable_health_monitoring=True,
+        component_id="test_episodic",
+    )
+    semantic = create_memory_system(
+        MemoryTier.SEMANTIC,
+        enable_health_monitoring=True,
+        component_id="test_semantic",
+    )
     
     # Clean up after tests
     yield working, episodic, semantic
@@ -68,7 +79,7 @@ def test_register_memory_system():
     working = WorkingMemory()
     
     # Register for health monitoring
-    health = register_memory_system(working, "working", "test_register")
+    health = register_memory_system(working, MemoryTier.WORKING, "test_register")
     
     # Verify registration
     assert health.component_id == "test_register"
@@ -251,7 +262,7 @@ def test_health_dynamics_integration(monitored_memory_systems):
 def test_factory_integration():
     """Test memory factory integration with health monitoring."""
     # Create memory with health monitoring enabled
-    create_memory_system("working", enable_health_monitoring=True)
+    create_memory_system(MemoryTier.WORKING, enable_health_monitoring=True)
     
     # Get component ID from memory type
     component_id = "working_memory"
@@ -272,7 +283,7 @@ def test_factory_integration():
     assert component_status.status in [ComponentStatus.OPTIMAL, ComponentStatus.FUNCTIONAL]
     
     # Create memory with health monitoring disabled
-    create_memory_system("episodic", enable_health_monitoring=False)
+    create_memory_system(MemoryTier.EPISODIC, enable_health_monitoring=False)
     
     # Record operation (should not raise errors even though not monitored)
     record_memory_operation("episodic_memory", "store", 1)
@@ -289,7 +300,7 @@ def test_memory_health_monitor_singleton():
     
     # Register a memory system
     working = WorkingMemory()
-    register_memory_system(working, "working", "singleton_test")
+    register_memory_system(working, MemoryTier.WORKING, "singleton_test")
     
     # Monitor should have the registered system
     assert "singleton_test" in monitor1._memory_systems

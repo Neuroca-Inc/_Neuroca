@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Type
 
+from neuroca.core.enums import MemoryTier
 from neuroca.core.memory.health import register_memory_system
 from neuroca.core.memory.interfaces import MemorySystem
 
@@ -29,14 +30,28 @@ def register_memory_implementation(memory_type: str, implementation: Type[Memory
 
 
 def create_memory_system(
-    memory_type: str,
+    memory_type: str | MemoryTier,
     *,
     enable_health_monitoring: bool = True,
     component_id: Optional[str] = None,
     **config: object,
 ) -> MemorySystem:
     _register_defaults()
-    normalized_type = _memory_type_aliases.get(memory_type.lower(), memory_type.lower())
+
+    if isinstance(memory_type, MemoryTier):
+        tier = memory_type
+    else:
+        try:
+            tier = MemoryTier.from_string(memory_type)
+        except ValueError:
+            normalized_type = _memory_type_aliases.get(memory_type.lower(), memory_type.lower())
+            if normalized_type in _memory_system_registry:
+                tier = MemoryTier.from_string(normalized_type)
+            else:
+                valid = sorted(set(_memory_system_registry) | set(_memory_type_aliases))
+                raise ValueError(f"Unknown memory type: {memory_type}. Valid types: {valid}") from None
+
+    normalized_type = tier.canonical_label
     if normalized_type not in _memory_system_registry:
         valid = sorted(set(_memory_system_registry) | set(_memory_type_aliases))
         raise ValueError(f"Unknown memory type: {memory_type}. Valid types: {valid}")
@@ -46,7 +61,7 @@ def create_memory_system(
 
     if enable_health_monitoring:
         try:
-            health = register_memory_system(memory_system, normalized_type, component_id)
+            health = register_memory_system(memory_system, tier, component_id)
             logger.debug(
                 "Registered %s memory for health monitoring as %s", normalized_type, health.component_id
             )
@@ -66,12 +81,20 @@ def create_memory_trio(
     semantic_id = f"{prefix}semantic_memory" if prefix else None
 
     return {
-        "working": create_memory_system("working", enable_health_monitoring=enable_health_monitoring, component_id=working_id),
+        "working": create_memory_system(
+            MemoryTier.WORKING,
+            enable_health_monitoring=enable_health_monitoring,
+            component_id=working_id,
+        ),
         "episodic": create_memory_system(
-            "episodic", enable_health_monitoring=enable_health_monitoring, component_id=episodic_id
+            MemoryTier.EPISODIC,
+            enable_health_monitoring=enable_health_monitoring,
+            component_id=episodic_id,
         ),
         "semantic": create_memory_system(
-            "semantic", enable_health_monitoring=enable_health_monitoring, component_id=semantic_id
+            MemoryTier.SEMANTIC,
+            enable_health_monitoring=enable_health_monitoring,
+            component_id=semantic_id,
         ),
     }
 
@@ -80,9 +103,9 @@ def _register_defaults() -> None:
     if _memory_system_registry:
         return
 
-    from neuroca.core.memory.episodic_memory import EpisodicMemory
-    from neuroca.core.memory.working_memory import WorkingMemory
+    from neuroca.memory.episodic_memory import EpisodicMemory
     from neuroca.memory.semantic_memory import SemanticMemory
+    from neuroca.memory.working_memory import WorkingMemory
 
     register_memory_implementation("working", WorkingMemory)
     register_memory_implementation("episodic", EpisodicMemory)

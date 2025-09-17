@@ -44,8 +44,9 @@ This document outlines the development workflow for the NeuroCognitive Architect
 
 3. Install dependencies:
    ```bash
-   poetry install
+   poetry install --with dev,test
    ```
+   Use `poetry install` without extras when preparing a runtime-only build.
 
 4. Set up pre-commit hooks:
    ```bash

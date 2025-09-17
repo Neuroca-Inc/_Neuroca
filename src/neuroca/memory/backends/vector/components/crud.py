@@ -72,13 +72,22 @@ class VectorCRUD:
                 self.index.add(vector_entry)
             
             # Store additional metadata
-            self.storage.set_memory_metadata(memory_id, {
-                "content_summary": memory_item.summary or "No summary available",
-                "status": memory_item.metadata.status.value if memory_item.metadata and memory_item.metadata.status else "active",
-                "created_at": memory_item.metadata.created_at.isoformat() if memory_item.metadata and memory_item.metadata.created_at else datetime.now().isoformat(),
-                "last_accessed": datetime.now().isoformat(),
-                "access_count": 0,
-            })
+            metadata = memory_item.metadata if memory_item.metadata else None
+            now_iso = datetime.now().isoformat()
+            self.storage.set_memory_metadata(
+                memory_id,
+                {
+                    "memory": memory_item.model_dump(mode="json"),
+                    "summary": memory_item.summary or "No summary available",
+                    "status": metadata.status.value if metadata and metadata.status else "active",
+                    "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
+                    "last_accessed": now_iso,
+                    "access_count": 0,
+                    "tier": metadata.tier if metadata and metadata.tier else None,
+                    "tags": metadata.tags if metadata else {},
+                    "importance": metadata.importance if metadata else 0.5,
+                },
+            )
             
             # Save index to disk if path is provided
             await self.storage.save()
@@ -114,14 +123,18 @@ class VectorCRUD:
             # Get metadata
             metadata_dict = self.storage.get_memory_metadata(memory_id)
             
-            # Update access stats
-            metadata_dict["last_accessed"] = datetime.now().isoformat()
-            metadata_dict["access_count"] = metadata_dict.get("access_count", 0) + 1
-            self.storage.set_memory_metadata(memory_id, metadata_dict)
-            
             # Convert VectorEntry to MemoryItem
             memory_item = self._vector_entry_to_memory(vector_entry, metadata_dict)
-            
+
+            # Update access stats and persist full memory payload
+            now_iso = datetime.now().isoformat()
+            metadata_dict["last_accessed"] = now_iso
+            metadata_dict["access_count"] = metadata_dict.get("access_count", 0) + 1
+            metadata_dict["memory"] = memory_item.model_dump(mode="json")
+            metadata_dict["importance"] = memory_item.metadata.importance
+            metadata_dict["tier"] = memory_item.metadata.tier
+            self.storage.set_memory_metadata(memory_id, metadata_dict)
+
             # Save updated metadata
             await self.storage.save()
             
@@ -254,13 +267,22 @@ class VectorCRUD:
                 vector_entries.append(vector_entry)
                 
                 # Store additional metadata
-                self.storage.set_memory_metadata(memory_id, {
-                    "content_summary": memory_item.summary or "No summary available",
-                    "status": memory_item.metadata.status.value if memory_item.metadata and memory_item.metadata.status else "active",
-                    "created_at": memory_item.metadata.created_at.isoformat() if memory_item.metadata and memory_item.metadata.created_at else datetime.now().isoformat(),
-                    "last_accessed": datetime.now().isoformat(),
-                    "access_count": 0,
-                })
+                metadata = memory_item.metadata if memory_item.metadata else None
+                now_iso = datetime.now().isoformat()
+                self.storage.set_memory_metadata(
+                    memory_id,
+                    {
+                        "memory": memory_item.model_dump(mode="json"),
+                        "summary": memory_item.summary or "No summary available",
+                        "status": metadata.status.value if metadata and metadata.status else "active",
+                        "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else now_iso,
+                        "last_accessed": now_iso,
+                        "access_count": 0,
+                        "tier": metadata.tier if metadata and metadata.tier else None,
+                        "tags": metadata.tags if metadata else {},
+                        "importance": metadata.importance if metadata else 0.5,
+                    },
+                )
             
             # Store in index
             self.index.batch_add(vector_entries)
@@ -306,13 +328,11 @@ class VectorCRUD:
                 if memory_id in entries and entries[memory_id]:
                     # Get metadata
                     metadata_dict = self.storage.get_memory_metadata(memory_id)
-                    
+
                     # Update access stats
-                    metadata_dict["last_accessed"] = datetime.now().isoformat()
+                    now_iso = datetime.now().isoformat()
+                    metadata_dict["last_accessed"] = now_iso
                     metadata_dict["access_count"] = metadata_dict.get("access_count", 0) + 1
-                    self.storage.set_memory_metadata(memory_id, metadata_dict)
-                    need_save = True
-                    
                     metadata_by_id[memory_id] = metadata_dict
             
             # Convert entries to memory items
@@ -320,7 +340,13 @@ class VectorCRUD:
                 entry = entries.get(memory_id)
                 if entry:
                     metadata_dict = metadata_by_id.get(memory_id, {})
-                    result[memory_id] = self._vector_entry_to_memory(entry, metadata_dict)
+                    memory_item = self._vector_entry_to_memory(entry, metadata_dict)
+                    metadata_dict["memory"] = memory_item.model_dump(mode="json")
+                    metadata_dict["importance"] = memory_item.metadata.importance
+                    metadata_dict["tier"] = memory_item.metadata.tier
+                    self.storage.set_memory_metadata(memory_id, metadata_dict)
+                    need_save = True
+                    result[memory_id] = memory_item
                 else:
                     result[memory_id] = None
             
@@ -328,7 +354,9 @@ class VectorCRUD:
             if need_save:
                 await self.storage.save()
             
-            logger.debug(f"Batch retrieved {sum(1 for item in result.values() if item)} out of {len(memory_ids)} memories from vector database")
+            logger.debug(
+                f"Batch retrieved {sum(1 for item in result.values() if item)} out of {len(memory_ids)} memories from vector database"
+            )
             return result
             
         except Exception as e:
@@ -382,20 +410,23 @@ class VectorCRUD:
         Returns:
             VectorEntry: The converted vector entry
         """
-        # Create vector entry
-        vector_entry = VectorEntry(
+        metadata = memory_item.metadata if memory_item.metadata else None
+        tag_map = metadata.tags if metadata and isinstance(metadata.tags, dict) else {}
+        serialized_memory = memory_item.model_dump(mode="json")
+
+        return VectorEntry(
             id=memory_item.id,
             vector=memory_item.embedding,
             metadata={
-                "summary": memory_item.summary,
-                "status": memory_item.metadata.status.value if memory_item.metadata and memory_item.metadata.status else "active",
-                "created_at": memory_item.metadata.created_at.isoformat() if memory_item.metadata and memory_item.metadata.created_at else datetime.now().isoformat(),
-                "tags": memory_item.metadata.tags if memory_item.metadata else [],
-                "importance": memory_item.metadata.importance if memory_item.metadata else 0.5,
-            }
+                "summary": memory_item.summary or serialized_memory.get("summary") or "",
+                "status": metadata.status.value if metadata and metadata.status else "active",
+                "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else datetime.now().isoformat(),
+                "tags": list(tag_map.keys()) if tag_map else metadata.tags if metadata else [],
+                "importance": metadata.importance if metadata else 0.5,
+                "tier": metadata.tier if metadata and metadata.tier else None,
+                "memory": serialized_memory,
+            },
         )
-        
-        return vector_entry
     
     def _vector_entry_to_memory(
         self, 
@@ -412,23 +443,35 @@ class VectorCRUD:
         Returns:
             MemoryItem: The converted memory item
         """
-        # Create metadata object
-        metadata = MemoryMetadata(
-            status=MemoryStatus(vector_entry.metadata.get("status", "active")),
-            created_at=datetime.fromisoformat(vector_entry.metadata.get("created_at", datetime.now().isoformat())),
-            tags=vector_entry.metadata.get("tags", []),
-            importance=vector_entry.metadata.get("importance", 0.5),
-            last_accessed=datetime.fromisoformat(metadata_dict.get("last_accessed", datetime.now().isoformat())),
-            access_count=metadata_dict.get("access_count", 0),
+        memory_payload = metadata_dict.get("memory") or vector_entry.metadata.get("memory")
+
+        if memory_payload:
+            memory_item = MemoryItem.model_validate(memory_payload)
+        else:
+            metadata = MemoryMetadata(
+                status=MemoryStatus(vector_entry.metadata.get("status", "active")),
+                created_at=datetime.fromisoformat(
+                    vector_entry.metadata.get("created_at", datetime.now().isoformat())
+                ),
+                tags=vector_entry.metadata.get("tags", {}),
+                importance=vector_entry.metadata.get("importance", 0.5),
+            )
+
+            memory_item = MemoryItem(
+                id=vector_entry.id,
+                content={},
+                summary=vector_entry.metadata.get("summary", ""),
+                embedding=vector_entry.vector,
+                metadata=metadata,
+            )
+
+        memory_item.metadata.last_accessed = datetime.fromisoformat(
+            metadata_dict.get("last_accessed", datetime.now().isoformat())
         )
-        
-        # Create memory item
-        memory_item = MemoryItem(
-            id=vector_entry.id,
-            content={},  # Vector database doesn't store full content
-            summary=vector_entry.metadata.get("summary", ""),
-            embedding=vector_entry.vector,
-            metadata=metadata,
-        )
-        
+        memory_item.metadata.access_count = metadata_dict.get("access_count", 0)
+
+        tier_value = metadata_dict.get("tier") or vector_entry.metadata.get("tier")
+        if tier_value:
+            memory_item.metadata.tier = tier_value
+
         return memory_item

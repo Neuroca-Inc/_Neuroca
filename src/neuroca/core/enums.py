@@ -1,31 +1,13 @@
-"""
-Enumerations for the NeuroCognitive Architecture (NCA) system.
+"""Enumerations for the NeuroCognitive Architecture (NCA) system."""
 
-This module defines all the enumeration types used throughout the NCA system,
-providing standardized constants for various aspects of the cognitive architecture
-including memory types, cognitive states, health indicators, and processing modes.
-
-These enumerations help maintain consistency across the codebase and provide
-type safety for critical system parameters.
-
-Usage:
-    from neuroca.core.enums import MemoryTier, CognitiveState
-    
-    # Check memory tier
-    if memory.tier == MemoryTier.WORKING:
-        # Process working memory
-        
-    # Set cognitive state
-    agent.set_state(CognitiveState.FOCUSED)
-"""
+from __future__ import annotations
 
 import logging
 from enum import Enum, auto, unique
 
 logger = logging.getLogger(__name__)
 
-@unique
-class MemoryTier(Enum):
+class MemoryTier(str, Enum):
     """
     Represents the three-tiered memory system in the NCA.
     
@@ -34,33 +16,118 @@ class MemoryTier(Enum):
         EPISODIC: Medium-term memory for experiences and events
         SEMANTIC: Long-term memory for facts, concepts, and knowledge
     """
-    WORKING = auto()
-    EPISODIC = auto()
-    SEMANTIC = auto()
-    
+    WORKING = "stm"
+    EPISODIC = "mtm"
+    SEMANTIC = "ltm"
+
+    # Backwards compatible aliases for storage terminology
+    STM = WORKING
+    MTM = EPISODIC
+    LTM = SEMANTIC
+
     def __str__(self) -> str:
-        return self.name.lower()
-    
+        return self.canonical_label
+
+    @property
+    def canonical_label(self) -> str:
+        """Return the canonical cognitive label for the tier."""
+        return _MEMORY_TIER_CANONICAL_LABELS[self]
+
+    @property
+    def storage_key(self) -> str:
+        """Return the storage-layer key associated with this tier."""
+        return self.value
+
     @classmethod
-    def from_string(cls, tier_name: str) -> 'MemoryTier':
-        """
-        Convert a string to a MemoryTier enum value.
-        
-        Args:
-            tier_name: String representation of the memory tier
-            
-        Returns:
-            Corresponding MemoryTier enum value
-            
-        Raises:
-            ValueError: If the string doesn't match any memory tier
-        """
+    def _normalize_key(cls, tier_name: str) -> str:
+        return tier_name.strip().replace("-", "_").replace(" ", "_").lower()
+
+    @classmethod
+    def from_string(cls, tier_name: str) -> MemoryTier:
+        """Convert a string (or alias) to a MemoryTier enum value."""
+        if isinstance(tier_name, MemoryTier):
+            return tier_name
+
+        if not isinstance(tier_name, str):
+            raise ValueError("Memory tier must be provided as a string")
+
+        normalized_key = cls._normalize_key(tier_name)
+        normalized_map = _MEMORY_TIER_NORMALIZED_MAP
+        tier = normalized_map.get(normalized_key)
+        if tier is not None:
+            return tier
+
         try:
             return cls[tier_name.upper()]
         except KeyError:
-            valid_tiers = [t.name.lower() for t in cls]
-            logger.error(f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_tiers)}")
-            raise ValueError(f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_tiers)}")
+            pass
+
+        try:
+            return cls(tier_name)
+        except ValueError:
+            valid_inputs = sorted(
+                {
+                    *_MEMORY_TIER_NORMALIZED_MAP.keys(),
+                    *(member.storage_key for member in cls),
+                    *(member.canonical_label for member in cls),
+                }
+            )
+            logger.error(
+                "Invalid memory tier: '%s'. Valid tiers are: %s",
+                tier_name,
+                ", ".join(valid_inputs),
+            )
+            raise ValueError(
+                f"Invalid memory tier: '{tier_name}'. Valid tiers are: {', '.join(valid_inputs)}"
+            ) from None
+
+
+_MEMORY_TIER_CANONICAL_LABELS: dict[MemoryTier, str] = {
+    MemoryTier.WORKING: "working",
+    MemoryTier.EPISODIC: "episodic",
+    MemoryTier.SEMANTIC: "semantic",
+}
+
+_MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
+    MemoryTier.WORKING: (
+        "working",
+        "working_memory",
+        "short_term",
+        "short_term_memory",
+        "shortterm",
+        "shortterm_memory",
+        "stm",
+    ),
+    MemoryTier.EPISODIC: (
+        "episodic",
+        "episodic_memory",
+        "medium_term",
+        "medium_term_memory",
+        "mediumterm",
+        "mediumterm_memory",
+        "mtm",
+    ),
+    MemoryTier.SEMANTIC: (
+        "semantic",
+        "semantic_memory",
+        "long_term",
+        "long_term_memory",
+        "longterm",
+        "longterm_memory",
+        "ltm",
+    ),
+}
+
+_MEMORY_TIER_NORMALIZED_MAP: dict[str, MemoryTier] = {}
+for tier, aliases in _MEMORY_TIER_ALIASES.items():
+    augmented_aliases = set(aliases) | {
+        tier.storage_key,
+        tier.canonical_label,
+        tier.name,
+        tier.name.lower(),
+    }
+    for alias in augmented_aliases:
+        _MEMORY_TIER_NORMALIZED_MAP[MemoryTier._normalize_key(str(alias))] = tier
 
 
 @unique
@@ -83,7 +150,7 @@ class CognitiveState(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, state_name: str) -> 'CognitiveState':
+    def from_string(cls, state_name: str) -> CognitiveState:
         """
         Convert a string to a CognitiveState enum value.
         
@@ -98,10 +165,16 @@ class CognitiveState(Enum):
         """
         try:
             return cls[state_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_states = [s.name.lower() for s in cls]
-            logger.error(f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}")
-            raise ValueError(f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}")
+            logger.error(
+                "Invalid cognitive state: '%s'. Valid states are: %s",
+                state_name,
+                ", ".join(valid_states),
+            )
+            raise ValueError(
+                f"Invalid cognitive state: '{state_name}'. Valid states are: {', '.join(valid_states)}"
+            ) from err
 
 
 @unique
@@ -123,7 +196,7 @@ class HealthIndicator(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, indicator_name: str) -> 'HealthIndicator':
+    def from_string(cls, indicator_name: str) -> HealthIndicator:
         """
         Convert a string to a HealthIndicator enum value.
         
@@ -138,10 +211,16 @@ class HealthIndicator(Enum):
         """
         try:
             return cls[indicator_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_indicators = [i.name.lower() for i in cls]
-            logger.error(f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}")
-            raise ValueError(f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}")
+            logger.error(
+                "Invalid health indicator: '%s'. Valid indicators are: %s",
+                indicator_name,
+                ", ".join(valid_indicators),
+            )
+            raise ValueError(
+                f"Invalid health indicator: '{indicator_name}'. Valid indicators are: {', '.join(valid_indicators)}"
+            ) from err
 
 
 @unique
@@ -161,7 +240,7 @@ class ProcessingMode(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, mode_name: str) -> 'ProcessingMode':
+    def from_string(cls, mode_name: str) -> ProcessingMode:
         """
         Convert a string to a ProcessingMode enum value.
         
@@ -176,10 +255,16 @@ class ProcessingMode(Enum):
         """
         try:
             return cls[mode_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_modes = [m.name.lower() for m in cls]
-            logger.error(f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
-            raise ValueError(f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
+            logger.error(
+                "Invalid processing mode: '%s'. Valid modes are: %s",
+                mode_name,
+                ", ".join(valid_modes),
+            )
+            raise ValueError(
+                f"Invalid processing mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}"
+            ) from err
 
 
 @unique
@@ -201,7 +286,7 @@ class MemoryOperation(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, operation_name: str) -> 'MemoryOperation':
+    def from_string(cls, operation_name: str) -> MemoryOperation:
         """
         Convert a string to a MemoryOperation enum value.
         
@@ -216,10 +301,16 @@ class MemoryOperation(Enum):
         """
         try:
             return cls[operation_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_operations = [o.name.lower() for o in cls]
-            logger.error(f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}")
-            raise ValueError(f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}")
+            logger.error(
+                "Invalid memory operation: '%s'. Valid operations are: %s",
+                operation_name,
+                ", ".join(valid_operations),
+            )
+            raise ValueError(
+                f"Invalid memory operation: '{operation_name}'. Valid operations are: {', '.join(valid_operations)}"
+            ) from err
 
 
 @unique
@@ -240,7 +331,7 @@ class Priority(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, priority_name: str) -> 'Priority':
+    def from_string(cls, priority_name: str) -> Priority:
         """
         Convert a string to a Priority enum value.
         
@@ -255,13 +346,19 @@ class Priority(Enum):
         """
         try:
             return cls[priority_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_priorities = [p.name.lower() for p in cls]
-            logger.error(f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}")
-            raise ValueError(f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}")
+            logger.error(
+                "Invalid priority: '%s'. Valid priorities are: %s",
+                priority_name,
+                ", ".join(valid_priorities),
+            )
+            raise ValueError(
+                f"Invalid priority: '{priority_name}'. Valid priorities are: {', '.join(valid_priorities)}"
+            ) from err
     
     @classmethod
-    def from_int(cls, value: int) -> 'Priority':
+    def from_int(cls, value: int) -> Priority:
         """
         Convert an integer to a Priority enum value.
         
@@ -300,7 +397,7 @@ class IntegrationMode(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, mode_name: str) -> 'IntegrationMode':
+    def from_string(cls, mode_name: str) -> IntegrationMode:
         """
         Convert a string to an IntegrationMode enum value.
         
@@ -315,10 +412,16 @@ class IntegrationMode(Enum):
         """
         try:
             return cls[mode_name.upper()]
-        except KeyError:
+        except KeyError as err:
             valid_modes = [m.name.lower() for m in cls]
-            logger.error(f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
-            raise ValueError(f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}")
+            logger.error(
+                "Invalid integration mode: '%s'. Valid modes are: %s",
+                mode_name,
+                ", ".join(valid_modes),
+            )
+            raise ValueError(
+                f"Invalid integration mode: '{mode_name}'. Valid modes are: {', '.join(valid_modes)}"
+            ) from err
 
 
 @unique
@@ -339,7 +442,7 @@ class LogLevel(Enum):
         return self.name.lower()
     
     @classmethod
-    def from_string(cls, level_name: str) -> 'LogLevel':
+    def from_string(cls, level_name: str) -> LogLevel:
         """
         Convert a string to a LogLevel enum value.
         
@@ -354,10 +457,16 @@ class LogLevel(Enum):
         """
         try:
             return cls[level_name.upper()]
-        except KeyError:
-            valid_levels = [l.name.lower() for l in cls]
-            logger.error(f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}")
-            raise ValueError(f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}")
+        except KeyError as err:
+            valid_levels = [level.name.lower() for level in cls]
+            logger.error(
+                "Invalid log level: '%s'. Valid levels are: %s",
+                level_name,
+                ", ".join(valid_levels),
+            )
+            raise ValueError(
+                f"Invalid log level: '{level_name}'. Valid levels are: {', '.join(valid_levels)}"
+            ) from err
     
     def to_logging_level(self) -> int:
         """

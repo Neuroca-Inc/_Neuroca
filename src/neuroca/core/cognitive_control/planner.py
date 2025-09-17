@@ -1,329 +1,296 @@
-"""
-Task Planning Component for NeuroCognitive Architecture (NCA).
+"""Asynchronous planning routines for the cognitive-control system."""
 
-This module implements the planning capabilities within the executive functions.
-It is responsible for generating sequences of actions (plans) to achieve
-specified goals, considering the current state, available resources (including
-memory and health), and potential obstacles.
-
-Key functionalities:
-- Goal decomposition into sub-goals and tasks.
-- Action sequence generation.
-- Plan adaptation based on execution feedback and changing conditions.
-- Resource estimation for planned actions.
-"""
+from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional, Sequence
 
-from neuroca.core.health.dynamics import HealthState  # Example for context checking
+from neuroca.core.enums import MemoryTier
+from neuroca.core.health.dynamics import HealthState
 
-# Import necessary components for potential integration
-from neuroca.memory.manager import MemoryItem, MemoryType  # Example
+from ._async_utils import extract_content, search_memories
 
-# Configure logger
 logger = logging.getLogger(__name__)
 
+
+@dataclass(slots=True)
 class PlanStep:
     """Represents a single step within a larger plan."""
-    def __init__(self, action: str, parameters: Optional[dict[str, Any]] = None, estimated_cost: float = 0.1):
-        self.action = action
-        self.parameters = parameters or {}
-        self.estimated_cost = estimated_cost # e.g., estimated energy/time cost
-        self.status = "pending" # pending, executing, completed, failed
 
+    action: str
+    parameters: dict[str, Any] = field(default_factory=dict)
+    estimated_cost: float = 0.1
+    status: str = "pending"
+
+
+@dataclass
 class Plan:
     """Represents a sequence of actions to achieve a goal."""
-    def __init__(self, goal: str, steps: list[PlanStep]):
-        self.goal = goal
-        self.steps = steps
-        self.current_step_index = 0
-        self.status = "pending" # pending, executing, completed, failed, aborted
+
+    goal: str
+    steps: list[PlanStep]
+    current_step_index: int = 0
+    status: str = "pending"
 
     def get_next_step(self) -> Optional[PlanStep]:
-        """Get the next step to execute."""
-        if self.status not in ["pending", "executing"]:
+        if self.status not in {"pending", "executing"}:
             return None
-        if self.current_step_index < len(self.steps):
-            step = self.steps[self.current_step_index]
-            step.status = "executing"
-            self.status = "executing"
-            return step
-        else:
+        if self.current_step_index >= len(self.steps):
             self.status = "completed"
             return None
+        step = self.steps[self.current_step_index]
+        step.status = "executing"
+        self.status = "executing"
+        return step
 
-    def update_step_status(self, step_index: int, status: str, message: Optional[str] = None):
-        """Update the status of a specific step."""
-        if 0 <= step_index < len(self.steps):
-            self.steps[step_index].status = status
-            logger.info(f"Plan '{self.goal}': Step {step_index} ('{self.steps[step_index].action}') status updated to {status}. {message or ''}")
-            if status == "completed":
-                 self.current_step_index += 1
-                 if self.current_step_index >= len(self.steps):
-                     self.status = "completed"
-                     logger.info(f"Plan '{self.goal}' completed successfully.")
-            elif status == "failed":
-                 self.status = "failed"
-                 logger.error(f"Plan '{self.goal}' failed at step {step_index}: {message or 'Unknown reason'}")
-        else:
-             logger.warning(f"Attempted to update invalid step index {step_index} for plan '{self.goal}'")
+    def update_step_status(self, step_index: int, status: str, message: Optional[str] = None) -> None:
+        if not (0 <= step_index < len(self.steps)):
+            logger.warning("Attempted to update invalid step index %s for plan '%s'", step_index, self.goal)
+            return
+
+        step = self.steps[step_index]
+        step.status = status
+        logger.info(
+            "Plan '%s': Step %s ('%s') status updated to %s. %s",
+            self.goal,
+            step_index,
+            step.action,
+            status,
+            message or "",
+        )
+
+        if status == "completed":
+            self.current_step_index += 1
+            if self.current_step_index >= len(self.steps):
+                self.status = "completed"
+                logger.info("Plan '%s' completed successfully.", self.goal)
+        elif status == "failed":
+            self.status = "failed"
+            logger.error("Plan '%s' failed at step %s: %s", self.goal, step_index, message or "Unknown reason")
 
 
 class Planner:
-    """
-    Generates and manages plans for achieving goals.
+    """Generates and manages plans for achieving goals."""
 
-    Integrates with memory, health, and other cognitive components to create
-    realistic and adaptive plans.
-    """
-    def __init__(self, memory_manager=None, health_manager=None, goal_manager=None):
-        """
-        Initialize the Planner.
-
-        Args:
-            memory_manager: Instance of MemoryManager for memory access.
-            health_manager: Instance of HealthDynamicsManager for health status.
-            goal_manager: Instance of GoalManager for goal context.
-        """
+    def __init__(
+        self,
+        memory_manager: Any | None = None,
+        health_manager: Any | None = None,
+        goal_manager: Any | None = None,
+    ) -> None:
         logger.info("Planner initialized.")
         self.memory_manager = memory_manager
         self.health_manager = health_manager
         self.goal_manager = goal_manager
-        # NOTE: Consider implementing a proper dependency injection framework
-        # for managing manager instances instead of direct constructor passing.
 
-    def generate_plan(self, goal_description: str, context: Optional[dict[str, Any]] = None) -> Optional[Plan]:
-        """
-        Generate a plan to achieve the specified goal description given the context.
+    async def generate_plan(
+        self,
+        goal_description: str,
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[Plan]:
+        """Generate a plan to achieve the specified goal description."""
+        logger.info("Generating plan for goal: %s", goal_description)
+        context = dict(context or {})
 
-        Args:
-            goal: The objective to achieve.
-            context: Current situational information (e.g., state, resources).
+        health_state = context.get("health_state", HealthState.NORMAL)
+        if not isinstance(health_state, HealthState):
+            try:
+                normalized = str(health_state).split(".")[-1].upper()
+                health_state = HealthState[normalized]
+            except Exception:  # noqa: BLE001
+                health_state = HealthState.NORMAL
 
-        Returns:
-            A Plan object, or None if planning fails.
-        """
-        logger.info(f"Generating plan for goal: {goal_description}")
-        context = context or {} # Ensure context is a dict
+        if health_state in {HealthState.IMPAIRED, HealthState.CRITICAL}:
+            logger.warning(
+                "Cannot generate complex plan in %s state. Aborting planning for '%s'.",
+                health_state.value,
+                goal_description,
+            )
+            return None
 
-        # --- Enhanced Placeholder Planning Logic ---
-
-        # 0. Get Goal Details (if GoalManager is available)
-        context.get("goal_priority", 5) # Default priority
-        # if self.goal_manager:
-        #     active_goal = self.goal_manager.get_goal_by_description(goal_description) # Assumes such a method exists
-        #     if active_goal:
-        #         goal_priority = active_goal.priority
-        #     else:
-        #         logger.warning(f"Goal '{goal_description}' not found in GoalManager during planning.")
-
-        # 1. Check Health Status (Example)
-        # Assume health_manager provides component health, get overall or relevant component state
-        health_state = context.get("health_state", HealthState.NORMAL) # Get from context or default
-        # if self.health_manager:
-        #     planner_health = self.health_manager.get_component_health("planner_component") # Hypothetical ID
-        #     if planner_health: health_state = planner_health.state
-
-        if health_state in [HealthState.IMPAIRED, HealthState.CRITICAL]:
-            logger.warning(f"Cannot generate complex plan in {health_state.value} state. Aborting planning for '{goal_description}'.")
-            return None # Cannot plan in severely impaired state
-
-        # 2. Retrieve Relevant Knowledge
-        semantic_knowledge: list[MemoryItem] = []
-        episodic_knowledge: list[MemoryItem] = []
+        semantic_knowledge: list[Any] = []
+        episodic_knowledge: list[Any] = []
         if self.memory_manager:
             try:
-                # Search semantic memory for general plans/procedures
-                semantic_knowledge = self.memory_manager.retrieve(
-                    query=f"procedure for {goal_description}", 
-                    memory_type=MemoryType.SEMANTIC,
-                    limit=1 # Look for one good procedure first
+                semantic_knowledge = await search_memories(
+                    self.memory_manager,
+                    query=f"procedure for {goal_description}",
+                    limit=1,
+                    tiers=[MemoryTier.SEMANTIC],
                 )
-                # Search episodic memory for specific past attempts (successful or failed)
-                episodic_knowledge = self.memory_manager.retrieve(
-                    query=f"past plan {goal_description}", 
-                    memory_type=MemoryType.EPISODIC,
-                    limit=3 # Look at a few recent attempts
+                episodic_knowledge = await search_memories(
+                    self.memory_manager,
+                    query=f"past plan {goal_description}",
+                    limit=3,
+                    tiers=[MemoryTier.EPISODIC],
                 )
-                logger.debug(f"Retrieved {len(semantic_knowledge)} semantic, {len(episodic_knowledge)} episodic memories for planning.")
-            except Exception as e:
-                 logger.error(f"Error retrieving knowledge during planning: {e}")
-        else:
-            logger.debug("MemoryManager not available for planning knowledge retrieval.")
+                logger.debug(
+                    "Retrieved %s semantic and %s episodic memories for planning.",
+                    len(semantic_knowledge),
+                    len(episodic_knowledge),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Error retrieving knowledge during planning")
 
-        # 3. Decompose Goal & Select Actions (using knowledge or falling back)
-        plan = None
-        
-        # --- Try using retrieved knowledge first ---
+        plan: Plan | None = None
+
         if semantic_knowledge:
-            item = semantic_knowledge[0] # Use the first relevant procedure found
-            # Example expected structure for a procedure stored in memory content:
-            # { "type": "procedure", "steps": [ {"action": "...", "parameters": {...}, "cost": 0.1}, ... ] }
-            if isinstance(item.content, dict) and item.content.get("type") == "procedure":
-                known_procedure = item.content
-                logger.info(f"Attempting to use known procedure from semantic memory (ID: {item.id}) for goal '{goal_description}'.")
-                try:
-                    procedure_steps = known_procedure.get("steps")
-                    if isinstance(procedure_steps, list) and procedure_steps:
-                         # Validate and create PlanStep objects
-                         steps = []
-                         valid_procedure = True
-                         for i, step_info in enumerate(procedure_steps):
-                              if isinstance(step_info, dict) and "action" in step_info:
-                                   steps.append(PlanStep(action=step_info["action"], 
-                                                         parameters=step_info.get("parameters", {}), 
-                                                         estimated_cost=step_info.get("cost", 0.1)))
-                              else:
-                                   logger.warning(f"Invalid step format in known procedure (step {i}): {step_info}")
-                                   valid_procedure = False
-                                   break
-                         
-                         if valid_procedure and steps:
-                              plan = Plan(goal=goal_description, steps=steps)
-                              logger.info(f"Successfully constructed plan with {len(steps)} steps from semantic knowledge.")
-                         elif not steps:
-                              logger.warning("Known procedure found but contained no valid steps.")
-                    else:
-                         logger.warning("Known procedure found but 'steps' list was missing or empty.")
-                except Exception as e:
-                    logger.error(f"Error constructing plan from known procedure: {e}")
-                    plan = None # Failed to use the procedure
+            knowledge_item = semantic_knowledge[0]
+            content = extract_content(knowledge_item)
+            if isinstance(content, dict) and content.get("type") == "procedure":
+                steps_data = content.get("steps")
+                if isinstance(steps_data, Sequence) and steps_data:
+                    steps: list[PlanStep] = []
+                    for index, step_info in enumerate(steps_data):
+                        if isinstance(step_info, dict) and "action" in step_info:
+                            steps.append(
+                                PlanStep(
+                                    action=str(step_info["action"]),
+                                    parameters=dict(step_info.get("parameters", {})),
+                                    estimated_cost=float(step_info.get("cost", 0.1)),
+                                )
+                            )
+                        else:
+                            logger.warning(
+                                "Invalid step format in known procedure (step %s): %s",
+                                index,
+                                step_info,
+                            )
+                            steps = []
+                            break
+
+                    if steps:
+                        plan = Plan(goal=goal_description, steps=steps)
+                        logger.info(
+                            "Successfully constructed plan with %s steps from semantic knowledge.",
+                            len(steps),
+                        )
+                else:
+                    logger.warning("Known procedure found but contained no valid steps.")
             else:
-                 logger.warning(f"Retrieved semantic knowledge (ID: {item.id}) was not a valid procedure dictionary.")
-        # This block was duplicated and incorrectly indented, removing the duplicate part.
-        # The correct block starts below.
+                logger.warning("Retrieved semantic knowledge was not a valid procedure dictionary.")
 
         if not plan and episodic_knowledge:
-             # Attempt to adapt a plan from a similar past episode (more complex logic needed here)
-             # Placeholder: Just log that we found episodic memories
-             logger.info(f"Found {len(episodic_knowledge)} related past episodes. Adaptation logic not implemented.")
-             # plan = adapt_plan_from_episode(episodic_knowledge[0], context) # Hypothetical function
-        # --- End Knowledge Retrieval ---
+            logger.info(
+                "Found %s related past episodes. Adaptation logic not implemented.",
+                len(episodic_knowledge),
+            )
 
-        # Fallback to generic decomposition if no plan generated from knowledge
         if not plan:
-            logger.debug(f"No knowledge-based or rule-based plan found for '{goal_description}'. Attempting generic decomposition.")
-            steps = []
-            # --- Generic Decomposition Example ---
-            # Simple approach: treat words as potential actions/objects
-            words = goal_description.lower().split()
-            if len(words) > 0:
-                 # Assume first word is the primary action
-                 action_verb = words[0]
-                 action_object = " ".join(words[1:]) if len(words) > 1 else "default_target"
-                 
-                 # Create steps based on this simple parse
-                 steps.append(PlanStep(action=f"prepare_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2))
-                 steps.append(PlanStep(action=f"execute_{action_verb}", parameters={"target": action_object}, estimated_cost=0.6))
-                 steps.append(PlanStep(action=f"verify_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2))
-                 
-                 logger.info(f"Created generic 3-step plan based on goal words: {action_verb}, {action_object}")
-            else:
-                 logger.warning("Cannot decompose empty goal description.")
-                 
-            # --- Sub-goal Decomposition Placeholder (Could be integrated here) ---
-            # if self.goal_manager and len(steps) > 5: # Example: If plan is too long, try sub-goals
-            #     logger.info(f"Decomposing complex task '{goal_description}' into sub-goals.")
-            #     # ... (sub-goal logic as before) ...
-            # --- End Sub-goal Decomposition ---
-                 
-            # --- Rule-Based Decomposition (Now acts as refinement/alternative) ---
-            # Example: If generic decomposition seems too simple, try specific rules
-            if len(steps) <= 1: # If generic plan was very basic
-                 rule_based_steps = []
-                 if "make" in goal_description.lower() and "tea" in goal_description.lower():
-                     if health_state == HealthState.FATIGUED:
-                         logger.info("Applying simplified 'make tea' rule due to FATIGUED state.")
-                         rule_based_steps = [ PlanStep(action="boil_water", estimated_cost=0.4), PlanStep(action="make_tea_simple", estimated_cost=0.2) ]
-                     else:
-                         logger.info("Applying standard 'make tea' rule.")
-                         rule_based_steps = [
-                             PlanStep(action="find_kettle", estimated_cost=0.1), PlanStep(action="fill_kettle", parameters={"water_level": "full"}, estimated_cost=0.1),
-                             PlanStep(action="boil_water", estimated_cost=0.3), PlanStep(action="find_mug_and_tea_bag", estimated_cost=0.1),
-                             PlanStep(action="pour_water", estimated_cost=0.1), PlanStep(action="steep_tea", parameters={"duration_seconds": 180}, estimated_cost=0.05),
-                         ]
-                 elif "resolve" in goal_description.lower() and ("dependency" in goal_description.lower() or "conflict" in goal_description.lower()):
-                      logger.info("Applying 'resolve dependency/conflict' rule.")
-                      target = context.get("target_entity", "unknown")
-                      rule_based_steps = [
-                          PlanStep(action="analyze_situation", parameters={"target": target}, estimated_cost=0.5), PlanStep(action="identify_root_cause", estimated_cost=0.4),
-                          PlanStep(action="generate_solutions", estimated_cost=0.3), PlanStep(action="select_best_solution", estimated_cost=0.1),
-                          PlanStep(action="implement_solution", estimated_cost=0.4), PlanStep(action="verify_resolution", estimated_cost=0.2),
-                      ]
-                 # Add more rules...
-
-                 if rule_based_steps:
-                      logger.info("Replacing generic plan with rule-based plan.")
-                      steps = rule_based_steps
-            # --- End Rule-Based Decomposition ---
-
+            logger.debug(
+                "No knowledge-based plan found for '%s'. Attempting generic decomposition.",
+                goal_description,
+            )
+            steps = self._generic_decomposition(goal_description, context, health_state)
             if steps:
-                 plan = Plan(goal=goal_description, steps=steps)
+                plan = Plan(goal=goal_description, steps=steps)
             else:
-                 logger.error(f"Failed to generate any steps for goal: {goal_description}")
+                logger.error("Failed to generate any steps for goal: %s", goal_description)
 
-        # 4. Final Checks & Return (Resource validation, etc.)
         if plan:
-             # NOTE: Implement plan validation before returning.
-             # This should check estimated resource costs against available resources
-             # reported by the health_manager.
-             logger.info(f"Generated plan with {len(plan.steps)} steps for goal: {goal_description} (Health State: {health_state.value})")
-             return plan
+            logger.info(
+                "Generated plan with %s steps for goal: %s (Health State: %s)",
+                len(plan.steps),
+                goal_description,
+                health_state.value,
+            )
         else:
-             logger.warning(f"No planning strategy found for goal: {goal_description}")
-             return None
-        # --- End Enhanced Placeholder ---
+            logger.warning("No planning strategy found for goal: %s", goal_description)
 
-    def replan(self, failed_plan: Plan, reason: str, context: Optional[dict[str, Any]] = None) -> Optional[Plan]:
-        """
-        Generate a new plan after a previous plan failed.
+        return plan
 
-        Args:
-            failed_plan: The plan that failed.
-            reason: The reason for the failure.
-            context: Current situational information.
+    def _generic_decomposition(
+        self,
+        goal_description: str,
+        context: dict[str, Any],
+        health_state: HealthState,
+    ) -> list[PlanStep]:
+        steps: list[PlanStep] = []
+        words = goal_description.lower().split()
+        if words:
+            action_verb = words[0]
+            action_object = " ".join(words[1:]) if len(words) > 1 else "default_target"
+            steps.extend(
+                [
+                    PlanStep(action=f"prepare_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2),
+                    PlanStep(action=f"execute_{action_verb}", parameters={"target": action_object}, estimated_cost=0.6),
+                    PlanStep(action=f"verify_{action_verb}", parameters={"target": action_object}, estimated_cost=0.2),
+                ]
+            )
+            logger.info(
+                "Created generic 3-step plan based on goal words: %s, %s",
+                action_verb,
+                action_object,
+            )
+        else:
+            logger.warning("Cannot decompose empty goal description.")
 
-        Returns:
-            A new Plan object, or None if replanning fails.
-        """
-        logger.warning(f"Replanning required for goal '{failed_plan.goal}' due to failure: {reason}")
-        # --- Placeholder Replanning Logic ---
-        # 1. Analyze the failure reason and context.
-        # 2. Identify the problematic step(s).
-        # 3. Retrieve alternative strategies or knowledge from memory (placeholder).
-        # alternatives = self.memory_manager.retrieve(query=f"alternative for {failed_plan.steps[failed_plan.current_step_index].action}")
-        
-        # 4. Generate a revised or completely new plan.
-        
-        # Example: If the failure was resource-related, maybe try a less costly alternative step?
+        if len(steps) <= 1:
+            rule_based_steps: list[PlanStep] = []
+            goal_lower = goal_description.lower()
+            if "make" in goal_lower and "tea" in goal_lower:
+                if health_state == HealthState.FATIGUED:
+                    logger.info("Applying simplified 'make tea' rule due to FATIGUED state.")
+                    rule_based_steps = [
+                        PlanStep(action="boil_water", estimated_cost=0.4),
+                        PlanStep(action="make_tea_simple", estimated_cost=0.2),
+                    ]
+                else:
+                    logger.info("Applying standard 'make tea' rule.")
+                    rule_based_steps = [
+                        PlanStep(action="find_kettle", estimated_cost=0.1),
+                        PlanStep(action="fill_kettle", parameters={"water_level": "full"}, estimated_cost=0.1),
+                        PlanStep(action="boil_water", estimated_cost=0.3),
+                        PlanStep(action="find_mug_and_tea_bag", estimated_cost=0.1),
+                        PlanStep(action="pour_water", estimated_cost=0.1),
+                        PlanStep(action="steep_tea", parameters={"duration_seconds": 180}, estimated_cost=0.05),
+                    ]
+            elif "resolve" in goal_lower and ("dependency" in goal_lower or "conflict" in goal_lower):
+                logger.info("Applying 'resolve dependency/conflict' rule.")
+                target = context.get("target_entity", "unknown")
+                rule_based_steps = [
+                    PlanStep(action="analyze_situation", parameters={"target": target}, estimated_cost=0.5),
+                    PlanStep(action="identify_root_cause", estimated_cost=0.4),
+                    PlanStep(action="generate_solutions", estimated_cost=0.3),
+                    PlanStep(action="select_best_solution", estimated_cost=0.1),
+                    PlanStep(action="implement_solution", estimated_cost=0.4),
+                    PlanStep(action="verify_resolution", estimated_cost=0.2),
+                ]
+
+            if rule_based_steps:
+                logger.info("Replacing generic plan with rule-based plan.")
+                steps = rule_based_steps
+
+        return steps
+
+    async def replan(
+        self,
+        failed_plan: Plan,
+        reason: str,
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[Plan]:
+        """Generate a new plan after a previous plan failed."""
+        logger.warning("Replanning required for goal '%s' due to failure: %s", failed_plan.goal, reason)
+
         if "resource" in reason.lower() or "energy" in reason.lower():
-             logger.info("Replanning: Attempting less costly alternative due to resource failure.")
-             # Try generating a new plan, potentially with constraints or simpler steps
-             # This might involve passing modified context to generate_plan
-             modified_context = context.copy() if context else {}
-             modified_context["planning_constraint"] = "low_resource"
-             new_plan = self.generate_plan(failed_plan.goal, modified_context)
-             if new_plan:
-                 return new_plan
-             # Fallback if no low-resource plan generated: skip the step? (Risky)
+            logger.info("Replanning: Attempting less costly alternative due to resource failure.")
+            modified_context = dict(context or {})
+            modified_context["planning_constraint"] = "low_resource"
+            new_plan = await self.generate_plan(failed_plan.goal, modified_context)
+            if new_plan:
+                return new_plan
 
-        # Example: If a specific action failed (e.g., 'find_kettle'), try an alternative action?
         failed_step_index = failed_plan.current_step_index
         if 0 <= failed_step_index < len(failed_plan.steps):
-             failed_action = failed_plan.steps[failed_step_index].action
-             if failed_action == "find_kettle":
-                 logger.info("Replanning: Kettle not found, trying alternative 'use_microwave'.")
-                 new_steps = failed_plan.steps[:failed_step_index] # Steps before failure
-                 # Replace failed step and potentially subsequent steps
-                 new_steps.append(PlanStep(action="use_microwave", estimated_cost=0.2)) 
-                 # Need to adjust subsequent steps that depended on the kettle... complex!
-                 # For placeholder, just replace and hope subsequent steps still make sense or fail later.
-                 new_steps.extend(failed_plan.steps[failed_step_index+1:]) 
-                 if new_steps:
-                      return Plan(goal=failed_plan.goal, steps=new_steps)
+            failed_action = failed_plan.steps[failed_step_index].action
+            if failed_action == "find_kettle":
+                logger.info("Replanning: Kettle not found, trying alternative 'use_microwave'.")
+                new_steps = failed_plan.steps[:failed_step_index]
+                new_steps.append(PlanStep(action="use_microwave", estimated_cost=0.2))
+                new_steps.extend(failed_plan.steps[failed_step_index + 1 :])
+                if new_steps:
+                    return Plan(goal=failed_plan.goal, steps=new_steps)
 
-        # Default fallback: Try generating the plan from scratch again (original simplistic retry)
         logger.info("Replanning: Defaulting to generating plan from scratch.")
-        return self.generate_plan(failed_plan.goal, context) 
-        # --- End Enhanced Placeholder ---
+        return await self.generate_plan(failed_plan.goal, context)

@@ -66,7 +66,7 @@ docker run -p 8000:8000 -e API_KEY=your_api_key neuroca/neuroca:latest
 ```bash
 git clone https://github.com/neuroca/neuroca.git
 cd neuroca
-pip install -e .
+pip install -e ".[dev,test]"
 ```
 
 ## API Integration
