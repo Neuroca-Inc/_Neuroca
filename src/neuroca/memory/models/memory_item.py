@@ -7,7 +7,7 @@ for data validation, serialization, and documentation.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -123,7 +123,7 @@ class MemoryMetadata(BaseModel):
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Override dict() to handle empty fields and enum serialization."""
         result = super().dict(*args, **kwargs)
-        
+
         # Convert enum to string
         if "status" in result and isinstance(result["status"], MemoryStatus):
             result["status"] = result["status"].value
@@ -190,7 +190,7 @@ class MemoryItem(BaseModel):
     def mark_accessed(self) -> None:
         """Mark the memory as accessed, updating access metrics."""
         self.metadata.mark_accessed()
-
+    
     def get_text(self) -> str:
         """Get the main text representation of this memory."""
         if isinstance(self.content, MemoryContent):
@@ -201,27 +201,48 @@ class MemoryItem(BaseModel):
             return self.content["text"]
         else:
             return str(self.content)
-
-    def calculate_activation(self) -> float:
-        """Return a coarse activation score based on metadata."""
-
-        importance = getattr(self.metadata, "importance", 0.5)
-        return max(0.0, min(1.0, importance))
     
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Override dict() to handle custom fields."""
         result = super().dict(*args, **kwargs)
-        
+
         # Convert MemoryContent to dict
         if "content" in result and isinstance(result["content"], MemoryContent):
             result["content"] = result["content"].dict()
-        
+
         # Convert MemoryMetadata to dict
         if "metadata" in result and isinstance(result["metadata"], MemoryMetadata):
             result["metadata"] = result["metadata"].dict()
-        
+
         # Remove None values to save space
         return {k: v for k, v in result.items() if v is not None}
+
+    def calculate_activation(self, *, now: Optional[datetime] = None) -> float:
+        """Estimate activation strength based on metadata heuristics."""
+
+        meta = self.metadata
+        reference_time = now or datetime.now()
+
+        # Recency factor: 1.0 when accessed within the last hour, decays over a day.
+        time_since_access = reference_time - meta.last_accessed
+        recency_window = timedelta(hours=1)
+        decay_window = timedelta(hours=24)
+        if time_since_access <= recency_window:
+            recency_factor = 1.0
+        elif time_since_access >= decay_window:
+            recency_factor = 0.0
+        else:
+            span = (decay_window - recency_window).total_seconds()
+            recency_factor = 1.0 - ((time_since_access - recency_window).total_seconds() / span)
+
+        # Access frequency provides a small boost but caps quickly.
+        access_boost = min(1.0, meta.access_count * 0.05)
+
+        # Combine intrinsic strength and importance with recency/frequency factors.
+        intrinsic = 0.6 * meta.strength + 0.4 * meta.importance
+        activation = 0.7 * intrinsic + 0.2 * recency_factor + 0.1 * access_boost
+
+        return max(0.0, min(1.0, round(activation, 3)))
     
     @staticmethod
     def from_text(

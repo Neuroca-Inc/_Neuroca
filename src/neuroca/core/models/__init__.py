@@ -185,4 +185,4 @@ def register_models() -> None:
 # Version information
 __version__ = '0.1.0'
 
-logger.debug("Initialized core models package v%s", __version__)
+logger.debug(f"Initialized core models package v{__version__}")
