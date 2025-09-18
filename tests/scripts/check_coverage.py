@@ -6,12 +6,13 @@ This script runs the test suite with coverage tracking and verifies that coverag
 specified targets for different parts of the codebase.
 """
 
+import json
 import os
 import sys
-import json
-import subprocess
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
+
+import pytest
 
 
 # Coverage targets (percentage)
@@ -29,6 +30,72 @@ TARGETS = {
 }
 
 
+def _find_repo_root(marker: str = "pyproject.toml") -> Path:
+    """Locate the repository root by searching for a marker file."""
+
+    current = Path(__file__).resolve()
+
+    for parent in current.parents:
+        if (parent / marker).exists():
+            return parent
+
+    raise RuntimeError(f"Could not find repository root containing {marker}")
+
+
+REPO_ROOT = _find_repo_root()
+DEFAULT_TEST_TARGETS: Tuple[Path, ...] = (
+    REPO_ROOT / "tests" / "unit" / "memory",
+    REPO_ROOT / "tests" / "integration" / "memory",
+)
+DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "coverage"
+COVERAGE_MODULE = "neuroca.memory"
+
+
+def _ensure_within_repo(path: Path) -> Path:
+    """Ensure the provided path resides within the repository root."""
+
+    resolved = path.resolve()
+
+    if not resolved.is_relative_to(REPO_ROOT):
+        raise ValueError(f"Path '{path}' must be inside the repository directory")
+
+    return resolved
+
+
+def _validate_test_target(path: Path) -> Path:
+    """Validate that a test target exists inside the repository."""
+
+    resolved = _ensure_within_repo(path)
+
+    if not resolved.exists():
+        raise FileNotFoundError(f"Test target '{path}' does not exist")
+
+    return resolved
+
+
+def build_pytest_args(
+    report_dir: Path | None = None,
+    test_targets: Sequence[Path] | None = None,
+) -> List[str]:
+    """Construct a sanitized pytest argument list for running coverage."""
+
+    selected_targets = test_targets or DEFAULT_TEST_TARGETS
+    sanitized_targets = [
+        str(_validate_test_target(target)) for target in selected_targets
+    ]
+
+    reports_root = _ensure_within_repo(report_dir or DEFAULT_REPORT_DIR)
+    html_report_dir = reports_root / "html"
+    json_report_path = reports_root / "coverage.json"
+
+    return sanitized_targets + [
+        f"--cov={COVERAGE_MODULE}",
+        "--cov-report=term",
+        f"--cov-report=html:{html_report_dir.as_posix()}",
+        f"--cov-report=json:{json_report_path.as_posix()}",
+    ]
+
+
 def run_coverage() -> bool:
     """
     Run the test suite with coverage and generate reports.
@@ -38,28 +105,31 @@ def run_coverage() -> bool:
     """
     print("Running tests with coverage tracking...")
     
-    # Ensure coverage reports directory exists
-    os.makedirs("reports/coverage", exist_ok=True)
-    
-# Run pytest with coverage
-    cmd = [
-        "pytest",
-        "tests/unit/memory",
-        "tests/integration/memory",
-        "--cov=neuroca.memory",  # Use module path without src prefix since conftest.py handles paths
-        "--cov-report=term",
-        "--cov-report=html:reports/coverage/html",
-        "--cov-report=json:reports/coverage/coverage.json"
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print("Error running tests with coverage:")
-        print(result.stderr)
+    reports_root = _ensure_within_repo(DEFAULT_REPORT_DIR)
+    reports_root.mkdir(parents=True, exist_ok=True)
+    (reports_root / "html").mkdir(parents=True, exist_ok=True)
+
+    try:
+        pytest_args = build_pytest_args(reports_root, DEFAULT_TEST_TARGETS)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error preparing pytest command: {exc}")
         return False
-    
-    print(result.stdout)
+
+    previous_cwd = Path.cwd()
+
+    try:
+        os.chdir(REPO_ROOT)
+        try:
+            exit_code = pytest.main(pytest_args)
+        except SystemExit as exc:
+            exit_code = int(exc.code or 1)
+    finally:
+        os.chdir(previous_cwd)
+
+    if exit_code != 0:
+        print("Error running tests with coverage.")
+        return False
+
     return True
 
 
@@ -73,7 +143,7 @@ def load_coverage_data() -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If the coverage report doesn't exist
     """
-    report_path = Path("reports/coverage/coverage.json")
+    report_path = _ensure_within_repo(DEFAULT_REPORT_DIR / "coverage.json")
     
     if not report_path.exists():
         raise FileNotFoundError(f"Coverage report not found at {report_path}")

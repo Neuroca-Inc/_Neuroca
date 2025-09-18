@@ -26,6 +26,7 @@ Usage:
 
 import json
 import logging
+import re
 import ssl
 import time
 from dataclasses import dataclass
@@ -48,11 +49,71 @@ import psycopg2
 import psycopg2.extensions
 import psycopg2.extras
 import psycopg2.pool
+from psycopg2 import sql
 from psycopg2.errors import InterfaceError, OperationalError
 
 # Project imports
 from neuroca.config.settings import get_settings
 from neuroca.core.exceptions import ConnectionError, DatabaseError, QueryError
+
+
+_SCHEMA_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
+
+def _normalize_search_path(schema: str) -> list[str]:
+    """Parse and validate a comma-separated list of schema names."""
+    if schema is None:
+        raise ValueError("Schema name must not be None.")
+
+    normalized: list[str] = []
+    for raw_part in schema.split(','):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if part == "$user":
+            normalized.append(part)
+            continue
+        if not _SCHEMA_NAME_RE.match(part):
+            raise ValueError(f"Invalid schema name '{part}'.")
+        normalized.append(part)
+
+    if not normalized:
+        raise ValueError("At least one valid schema name is required.")
+
+    return normalized
+
+
+def _build_search_path_sql(schema: str) -> sql.Composable:
+    """Construct a safe SQL statement for configuring the search_path."""
+    identifiers: list[sql.Composable] = []
+    for part in _normalize_search_path(schema):
+        if part == "$user":
+            identifiers.append(sql.SQL("$user"))
+        else:
+            identifiers.append(sql.Identifier(part))
+
+    return sql.SQL("SET search_path TO {}").format(sql.SQL(", ").join(identifiers))
+
+
+def _validate_statement_timeout(timeout: Union[int, str]) -> int:
+    """Ensure the statement timeout value is a non-negative integer."""
+    try:
+        value = int(timeout)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
+        raise ValueError("Statement timeout must be an integer value.") from exc
+
+    if value < 0:
+        raise ValueError("Statement timeout must be zero or positive.")
+
+    return value
+
+
+def _build_connection_options(schema: str, statement_timeout: Union[int, str]) -> str:
+    """Create a safe libpq options string for search_path and statement_timeout."""
+    normalized_schema = _normalize_search_path(schema)
+    timeout_value = _validate_statement_timeout(statement_timeout)
+    schema_clause = ",".join(part for part in normalized_schema)
+    return f"-c search_path={schema_clause} -c statement_timeout={timeout_value}"
 
 
 class PostgresConnectionMode(str, Enum):
@@ -115,15 +176,17 @@ class PostgresConfig:
         """Generate a connection string from the configuration."""
         # Securely encode password to handle special characters
         encoded_password = quote_plus(self.password)
-        
+        timeout = _validate_statement_timeout(self.statement_timeout)
+
         return (
             f"postgresql://{self.user}:{encoded_password}@{self.host}:{self.port}/{self.database}"
             f"?application_name={self.application_name}"
-            f"&statement_timeout={self.statement_timeout}"
+            f"&statement_timeout={timeout}"
         )
-    
+
     def get_dsn(self) -> dict[str, Any]:
         """Generate a DSN dictionary for psycopg2."""
+        options = _build_connection_options(self.schema, self.statement_timeout)
         return {
             "host": self.host,
             "port": self.port,
@@ -131,7 +194,7 @@ class PostgresConfig:
             "user": self.user,
             "password": self.password,
             "application_name": self.application_name,
-            "options": f"-c search_path={self.schema} -c statement_timeout={self.statement_timeout}",
+            "options": options,
         }
 
 
@@ -205,7 +268,13 @@ class PostgresConnection:
         """
         retry_count = 0
         last_exception = None
-        
+
+        try:
+            search_path_sql = _build_search_path_sql(self.config.schema)
+            statement_timeout = _validate_statement_timeout(self.config.statement_timeout)
+        except ValueError as exc:
+            raise ConnectionError(f"Invalid session configuration: {exc}") from exc
+
         while retry_count <= self.config.retry_attempts:
             try:
                 if self._pool:
@@ -221,11 +290,11 @@ class PostgresConnection:
                 # Enable automatic conversion of Python dict to JSON
                 psycopg2.extras.register_json(conn)
                 
-                # Set session parameters
+                # Set session parameters using parameterized statements
                 with conn.cursor() as cursor:
-                    cursor.execute(f"SET search_path TO {self.config.schema}")
-                    cursor.execute(f"SET statement_timeout TO {self.config.statement_timeout}")
-                
+                    cursor.execute(search_path_sql)
+                    cursor.execute("SET statement_timeout TO %s", (statement_timeout,))
+
                 return conn
                 
             except (OperationalError, InterfaceError) as e:

@@ -35,10 +35,12 @@ import datetime
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 
@@ -225,23 +227,34 @@ def logs_command(level: Optional[str], component: Optional[str], tail: int,
                 click.echo("Error: Invalid timestamp format. Use YYYY-MM-DD[THH:MM:SS]")
                 sys.exit(1)
         
-        # Build the log filtering command
-        cmd = ["tail"]
-        if follow:
-            cmd.append("-f")
-        cmd.extend(["-n", str(tail), log_file])
-        
-        # Execute the command and filter the output
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
-        
+        if tail < 0:
+            click.echo("Error: Tail value must be non-negative")
+            sys.exit(1)
+
         try:
-            for line in process.stdout:
-                if _should_display_log_line(line, level, component, since_timestamp):
-                    click.echo(line.rstrip())
-                    
+            with open(log_file, "r", encoding="utf-8", errors="replace") as log_stream:
+                if tail == 0:
+                    log_stream.seek(0, os.SEEK_END)
+                    recent_lines = []
+                else:
+                    recent_lines = list(deque(log_stream, maxlen=tail))
+
+                for line in recent_lines:
+                    if _should_display_log_line(line, level, component, since_timestamp):
+                        click.echo(line.rstrip())
+
+                if follow:
+                    while True:
+                        line = log_stream.readline()
+                        if not line:
+                            time.sleep(0.5)
+                            continue
+
+                        if _should_display_log_line(line, level, component, since_timestamp):
+                            click.echo(line.rstrip())
+
         except KeyboardInterrupt:
-            process.terminate()
-            process.wait()
+            pass
             
     except Exception as e:
         logger.error(f"Error accessing logs: {str(e)}", exc_info=True)
@@ -1003,10 +1016,116 @@ def _restore_system_from_backup(backup_path: str) -> bool:
         raise BackupRestoreError(f"Failed to restore from backup: {str(e)}")
 
 
+_SAFE_PG_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]+$")
+_SAFE_PG_HOST_PATTERN = re.compile(r"^[A-Za-z0-9_.:@-]+$")
+
+
+def _coerce_to_string(value: Any, field_name: str) -> str:
+    if isinstance(value, os.PathLike):
+        candidate = os.fspath(value)
+    elif value is None:
+        raise BackupRestoreError(f"{field_name} must be provided for PostgreSQL operations.")
+    else:
+        candidate = str(value)
+
+    candidate = candidate.strip()
+    if not candidate:
+        raise BackupRestoreError(f"{field_name} must be a non-empty string.")
+    if any(ord(ch) < 32 for ch in candidate):
+        raise BackupRestoreError(f"{field_name} contains control characters and cannot be used safely.")
+
+    return candidate
+
+
+def _sanitize_postgres_host(host: Any) -> str:
+    candidate = _coerce_to_string(host, "PostgreSQL host")
+    if not _SAFE_PG_HOST_PATTERN.fullmatch(candidate):
+        raise BackupRestoreError("PostgreSQL host contains invalid characters.")
+    return candidate
+
+
+def _sanitize_postgres_identifier(value: Any, field_name: str) -> str:
+    candidate = _coerce_to_string(value, field_name)
+    if not _SAFE_PG_IDENTIFIER_PATTERN.fullmatch(candidate):
+        raise BackupRestoreError(f"{field_name} contains invalid characters.")
+    return candidate
+
+
+def _sanitize_postgres_port(port: Any) -> int:
+    try:
+        port_value = int(port)
+    except (TypeError, ValueError):
+        raise BackupRestoreError("PostgreSQL port must be an integer.")
+
+    if not 0 < port_value < 65536:
+        raise BackupRestoreError("PostgreSQL port must be between 1 and 65535.")
+
+    return port_value
+
+
+def _sanitize_file_argument(path: Any, field_name: str) -> str:
+    if isinstance(path, os.PathLike):
+        candidate = os.fspath(path)
+    elif isinstance(path, str):
+        candidate = path
+    else:
+        raise BackupRestoreError(f"{field_name} must be a valid filesystem path.")
+
+    if not candidate:
+        raise BackupRestoreError(f"{field_name} must not be empty.")
+    if "\x00" in candidate:
+        raise BackupRestoreError(f"{field_name} contains invalid null bytes.")
+
+    return candidate
+
+
+def _build_postgres_dump_command(db_config: Any, output_file: Any) -> list[str]:
+    host = _sanitize_postgres_host(getattr(db_config, "HOST", None))
+    port = _sanitize_postgres_port(getattr(db_config, "PORT", None))
+    username = _sanitize_postgres_identifier(getattr(db_config, "USER", None), "PostgreSQL username")
+    database = _sanitize_postgres_identifier(getattr(db_config, "NAME", None), "PostgreSQL database name")
+    dump_path = _sanitize_file_argument(output_file, "PostgreSQL dump output path")
+
+    return [
+        "pg_dump",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--username",
+        username,
+        "--file",
+        dump_path,
+        database,
+    ]
+
+
+def _build_postgres_restore_command(db_config: Any, input_file: Any) -> list[str]:
+    host = _sanitize_postgres_host(getattr(db_config, "HOST", None))
+    port = _sanitize_postgres_port(getattr(db_config, "PORT", None))
+    username = _sanitize_postgres_identifier(getattr(db_config, "USER", None), "PostgreSQL username")
+    database = _sanitize_postgres_identifier(getattr(db_config, "NAME", None), "PostgreSQL database name")
+    dump_path = _sanitize_file_argument(input_file, "PostgreSQL dump input path")
+
+    return [
+        "psql",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--username",
+        username,
+        "--dbname",
+        database,
+        "--file",
+        dump_path,
+    ]
+
+
 def _backup_database(output_file: str):
     """
     Create a backup of the database.
-    
+
     Args:
         output_file: Path where the database dump will be saved
     """
@@ -1014,24 +1133,17 @@ def _backup_database(output_file: str):
     # For example, for PostgreSQL:
     try:
         db_config = settings.DATABASE
-        
+
         if db_config.ENGINE.endswith('postgresql'):
             # PostgreSQL backup
-            cmd = [
-                "pg_dump",
-                f"--host={db_config.HOST}",
-                f"--port={db_config.PORT}",
-                f"--username={db_config.USER}",
-                f"--file={output_file}",
-                db_config.NAME
-            ]
-            
+            cmd = _build_postgres_dump_command(db_config, output_file)
+
             # Set PGPASSWORD environment variable
             env = os.environ.copy()
-            env["PGPASSWORD"] = db_config.PASSWORD
-            
+            env["PGPASSWORD"] = str(db_config.PASSWORD)
+
             subprocess.run(cmd, env=env, check=True)
-            
+
         elif db_config.ENGINE.endswith('sqlite3'):
             # SQLite backup - just copy the file
             db_path = db_config.NAME
@@ -1056,22 +1168,15 @@ def _restore_database(input_file: str):
     # This implementation would depend on the database being used
     try:
         db_config = settings.DATABASE
-        
+
         if db_config.ENGINE.endswith('postgresql'):
             # PostgreSQL restore
-            cmd = [
-                "psql",
-                f"--host={db_config.HOST}",
-                f"--port={db_config.PORT}",
-                f"--username={db_config.USER}",
-                f"--dbname={db_config.NAME}",
-                f"--file={input_file}"
-            ]
-            
+            cmd = _build_postgres_restore_command(db_config, input_file)
+
             # Set PGPASSWORD environment variable
             env = os.environ.copy()
-            env["PGPASSWORD"] = db_config.PASSWORD
-            
+            env["PGPASSWORD"] = str(db_config.PASSWORD)
+
             subprocess.run(cmd, env=env, check=True)
             
         elif db_config.ENGINE.endswith('sqlite3'):

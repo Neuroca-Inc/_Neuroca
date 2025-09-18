@@ -46,6 +46,33 @@ async def test_capacity_refresh_records_pressure_from_counts() -> None:
         await manager.shutdown()
 
 
+@pytest.mark.asyncio
+async def test_capacity_refresh_skips_non_callable_counters() -> None:
+    tiers = {
+        name: _StubTier(name, count=5, capacity=50)
+        for name in ("stm", "mtm", "ltm")
+    }
+    manager = MemoryManager(
+        config={"maintenance_interval": 0, "resource_limits": {}},
+        stm=tiers["stm"],
+        mtm=tiers["mtm"],
+        ltm=tiers["ltm"],
+    )
+
+    await manager.initialize()
+    try:
+        manager._capacity_adapter = TierCapacityPressureAdapter()
+        tiers["stm"].count = 42  # type: ignore[assignment]
+
+        await manager._refresh_capacity_pressure()
+
+        snapshot = manager._capacity_adapter.snapshot()
+        assert "stm" not in snapshot
+        assert "mtm" in snapshot and "ltm" in snapshot
+    finally:
+        await manager.shutdown()
+
+
 def test_pressure_adapter_scales_thresholds_and_batches() -> None:
     adapter = TierCapacityPressureAdapter(relief_ratio=0.5, saturation_ratio=0.8, smoothing=1.0)
     base_threshold = 0.6

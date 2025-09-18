@@ -294,8 +294,14 @@ class LegacyLTMStorageAdapter:
         try:
             return await self.backend.get_stats()
         except Exception as e:
-            logger.error(f"Failed to get stats: {str(e)}")
-            return StorageStats()
+            logger.error("Failed to get stats: %s", e, exc_info=True)
+            backend_name = type(self.backend).__name__ if self.backend else "UnknownBackend"
+            return StorageStats(
+                backend_type=backend_name,
+                item_count=0,
+                storage_size_bytes=0,
+                additional_info={"error": str(e)}
+            )
     
     async def archive_memory(self, memory_id: str) -> bool:
         """

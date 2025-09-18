@@ -160,11 +160,11 @@ class MemoryAccessDeniedError(MemoryError):
 
 class MemoryValidationError(MemoryError):
     """Raised when memory data fails validation."""
-    
+
     def __init__(self, field: str, value: Any, message: Optional[str] = None):
         """
         Initialize a memory validation error.
-        
+
         Args:
             field: The field that failed validation
             value: The invalid value
@@ -172,13 +172,76 @@ class MemoryValidationError(MemoryError):
         """
         self.field = field
         self.value = value
-        
+
         default_message = f"Validation failed for field '{field}' with value '{value}'"
-        
+
         super().__init__(
             message or default_message,
             error_code="MEMORY_VALIDATION_ERROR",
             context={"field": field, "value": str(value)}
+        )
+
+
+# Prompt Exceptions
+
+
+class PromptError(NeuroCAError):
+    """Base exception for prompt generation and validation errors."""
+
+
+class InvalidPromptParameterError(PromptError):
+    """Raised when a prompt parameter fails validation."""
+
+    def __init__(self, parameter: str, message: Optional[str] = None, value: Any = None):
+        """Initialise an invalid prompt parameter error."""
+
+        context = {"parameter": parameter}
+        if value is not None:
+            context["value"] = value
+
+        default_message = message or f"Invalid value for prompt parameter '{parameter}'"
+        super().__init__(
+            default_message,
+            error_code="PROMPT_PARAMETER_INVALID",
+            context=context,
+        )
+
+
+class PromptGenerationError(PromptError):
+    """Raised when a prompt cannot be generated."""
+
+    def __init__(self, message: str, cause: Optional[Exception] = None):
+        context = {"cause": str(cause) if cause else None}
+        if cause:
+            logger.error("Prompt generation failed", exc_info=cause)
+        super().__init__(
+            message,
+            error_code="PROMPT_GENERATION_ERROR",
+            context=context,
+        )
+
+
+class PromptValidationError(PromptError):
+    """Raised when prompt content fails validation checks."""
+
+    def __init__(self, message: str, field: Optional[str] = None):
+        context = {"field": field} if field else None
+        super().__init__(
+            message,
+            error_code="PROMPT_VALIDATION_ERROR",
+            context=context,
+        )
+
+
+class ReasoningError(PromptError):
+    """Raised when reasoning workflows fail."""
+
+    def __init__(self, message: str, cause: Optional[Exception] = None):
+        context = {"cause": str(cause) if cause else None}
+        super().__init__(
+            message,
+            error_code="PROMPT_REASONING_ERROR",
+            context=context,
         )
 
 
