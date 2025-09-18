@@ -6,7 +6,7 @@
  * and watches for unexpected scroll position changes.
  */
 
-;(function() {
+(function() {
   // 1) Turn off native scroll restoration (so browser won't override us)
   if ('scrollRestoration' in history) {
     history.scrollRestoration = 'manual';
@@ -17,7 +17,9 @@
 
   // 2) Track user scroll
   window.addEventListener('scroll', () => {
-    if (!isRestoring) lastY = window.scrollY;
+    if (!isRestoring) {
+      lastY = window.scrollY;
+    }
   }, { passive: true });
 
   // 3) When the page "settles" (e.g. on load), jump back if we've been yanked
@@ -38,7 +40,7 @@
       isRestoring = true;
       window.scrollTo(0, lastY);
       // unlock after a tick so user can scroll again
-      setTimeout(() => { isRestoring = false; }, 100);
+      setTimeout(function() { isRestoring = false; }, 100);
     }
   }).observe(document.documentElement, {
     childList: true,
