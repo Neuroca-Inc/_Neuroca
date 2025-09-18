@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 
@@ -225,23 +226,34 @@ def logs_command(level: Optional[str], component: Optional[str], tail: int,
                 click.echo("Error: Invalid timestamp format. Use YYYY-MM-DD[THH:MM:SS]")
                 sys.exit(1)
         
-        # Build the log filtering command
-        cmd = ["tail"]
-        if follow:
-            cmd.append("-f")
-        cmd.extend(["-n", str(tail), log_file])
-        
-        # Execute the command and filter the output
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
-        
+        if tail < 0:
+            click.echo("Error: Tail value must be non-negative")
+            sys.exit(1)
+
         try:
-            for line in process.stdout:
-                if _should_display_log_line(line, level, component, since_timestamp):
-                    click.echo(line.rstrip())
-                    
+            with open(log_file, "r", encoding="utf-8", errors="replace") as log_stream:
+                if tail == 0:
+                    log_stream.seek(0, os.SEEK_END)
+                    recent_lines = []
+                else:
+                    recent_lines = list(deque(log_stream, maxlen=tail))
+
+                for line in recent_lines:
+                    if _should_display_log_line(line, level, component, since_timestamp):
+                        click.echo(line.rstrip())
+
+                if follow:
+                    while True:
+                        line = log_stream.readline()
+                        if not line:
+                            time.sleep(0.5)
+                            continue
+
+                        if _should_display_log_line(line, level, component, since_timestamp):
+                            click.echo(line.rstrip())
+
         except KeyboardInterrupt:
-            process.terminate()
-            process.wait()
+            pass
             
     except Exception as e:
         logger.error(f"Error accessing logs: {str(e)}", exc_info=True)
