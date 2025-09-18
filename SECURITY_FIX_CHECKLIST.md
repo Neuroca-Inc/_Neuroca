@@ -16,7 +16,7 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Parameterize competitor query at line 217 in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py`.
 
 ## Secrets Management
-- [ ] Remove hardcoded `SECRET_KEY` from `src/neuroca/config/default.py`.
+- [x] Remove hardcoded `SECRET_KEY` from `src/neuroca/config/default.py`.
 - [ ] Remove hardcoded `DEFAULT_PASSWORD` from `tests/factories/users.py`.
 
 ## Serialization Risks
