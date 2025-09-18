@@ -32,12 +32,14 @@ import datetime
 import ipaddress
 import logging
 import math
+import os
 import platform
 import shutil
 import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from enum import Enum
 from typing import Any, Optional
 
@@ -658,7 +660,23 @@ class NetworkHealthProbe(HealthProbe):
                 "error": "ping executable not available"
             }
 
-        command = [ping_executable, param, str(self.packet_count), timeout_flag, timeout_value, safe_target]
+        try:
+            command = self._build_ping_command(
+                ping_executable,
+                param,
+                self.packet_count,
+                timeout_flag,
+                timeout_value,
+                safe_target,
+            )
+        except ValueError as err:
+            logger.warning("Rejected ping command for target %s: %s", safe_target, err)
+            return {
+                "reachable": False,
+                "avg_latency_ms": None,
+                "packet_loss_percent": 100.0,
+                "error": str(err),
+            }
 
         try:
             # Execute ping command
@@ -760,6 +778,72 @@ class NetworkHealthProbe(HealthProbe):
                     return False
 
         return True
+
+    @classmethod
+    def _build_ping_command(
+        cls,
+        executable: str,
+        param: str,
+        packet_count: int,
+        timeout_flag: str,
+        timeout_value: str,
+        target: str,
+    ) -> list[str]:
+        """Return a sanitized ping command suitable for ``subprocess.run``."""
+
+        sanitized_executable = cls._validate_ping_executable(executable)
+        sanitized_param, sanitized_timeout_flag = cls._sanitize_ping_flags(param, timeout_flag)
+        sanitized_count = cls._sanitize_packet_count(packet_count)
+        sanitized_timeout_value = cls._sanitize_timeout_value(timeout_value)
+
+        return [
+            sanitized_executable,
+            sanitized_param,
+            str(sanitized_count),
+            sanitized_timeout_flag,
+            sanitized_timeout_value,
+            target,
+        ]
+
+    @staticmethod
+    def _validate_ping_executable(executable: str) -> str:
+        if not isinstance(executable, str):
+            raise ValueError("Ping executable path must be a string")
+        if "\x00" in executable or any(control in executable for control in ("\r", "\n")):
+            raise ValueError("Ping executable path contains control characters")
+
+        executable_path = Path(executable)
+        if not executable_path.is_absolute():
+            raise ValueError("Ping executable must resolve to an absolute path")
+        if not executable_path.exists():
+            raise ValueError("Ping executable does not exist")
+        return os.fspath(executable_path)
+
+    @staticmethod
+    def _sanitize_ping_flags(param: str, timeout_flag: str) -> tuple[str, str]:
+        allowed_params = {"-c", "-n"}
+        allowed_timeout_flags = {"-W", "-w"}
+        if param not in allowed_params:
+            raise ValueError("Unsupported ping parameter flag")
+        if timeout_flag not in allowed_timeout_flags:
+            raise ValueError("Unsupported ping timeout flag")
+        return param, timeout_flag
+
+    @staticmethod
+    def _sanitize_packet_count(packet_count: int) -> int:
+        if not isinstance(packet_count, int):
+            raise ValueError("Packet count must be an integer")
+        if packet_count <= 0 or packet_count > 100:
+            raise ValueError("Packet count must be between 1 and 100")
+        return packet_count
+
+    @staticmethod
+    def _sanitize_timeout_value(timeout_value: str) -> str:
+        if not timeout_value.isdigit():
+            raise ValueError("Ping timeout must be expressed as a whole number of seconds")
+        if int(timeout_value) <= 0:
+            raise ValueError("Ping timeout must be greater than zero")
+        return timeout_value
 
 
 # Factory function to create a standard set of health probes

@@ -27,6 +27,8 @@ import typer
 import yaml
 from rich.console import Console
 
+_UNSAFE_EDITOR_ARGUMENT_CHARS = frozenset({"&", ";", "|", ">", "<", "`", "$", "!"})
+
 # Import dependencies with graceful fallback for missing components
 try:
     from neuroca.core.cognitive_control.goal_manager import GoalManager
@@ -75,6 +77,8 @@ def _validate_editor_arguments(arguments: Iterable[str]) -> list[str]:
             raise ValueError("Editor command contains null bytes")
         if any(control in argument for control in ("\r", "\n")):
             raise ValueError("Editor command contains control characters")
+        if any(char in _UNSAFE_EDITOR_ARGUMENT_CHARS for char in argument):
+            raise ValueError("Editor command contains potentially unsafe shell metacharacters")
         safe_arguments.append(argument)
     return safe_arguments
 
@@ -85,9 +89,52 @@ def _build_editor_command(editor_cmd: Sequence[str], config_path: Path) -> list[
     if not editor_cmd:
         raise ValueError("Editor command must not be empty")
 
+    executable = _validate_editor_executable(editor_cmd[0])
     safe_arguments = _validate_editor_arguments(editor_cmd[1:])
-    command = [editor_cmd[0], *safe_arguments, str(config_path)]
+    safe_config_path = _sanitize_editor_config_path(config_path)
+    command = [executable, *safe_arguments, safe_config_path]
     return command
+
+
+def _validate_editor_executable(executable: str) -> str:
+    """Ensure the resolved editor path is absolute and safe for execution."""
+
+    if not isinstance(executable, str):
+        raise ValueError("Editor executable must be a string")
+    if "\x00" in executable or any(control in executable for control in ("\r", "\n")):
+        raise ValueError("Editor executable contains control characters")
+
+    executable_path = Path(executable)
+    if not executable_path.is_absolute():
+        raise ValueError("Editor executable path must be absolute")
+    if not executable_path.exists():
+        raise ValueError("Editor executable path does not exist")
+    return os.fspath(executable_path)
+
+
+def _sanitize_editor_config_path(config_path: Path) -> str:
+    """Return a normalised absolute filesystem path for the config file."""
+
+    expanded = config_path.expanduser()
+    absolute = os.path.abspath(os.fspath(expanded))
+    if "\x00" in absolute or any(control in absolute for control in ("\r", "\n")):
+        raise ValueError("Configuration path contains invalid control characters")
+    return absolute
+
+
+def _launch_editor(command: Sequence[str]) -> None:
+    """Execute the configured editor with hardening applied."""
+
+    if not command:
+        raise ValueError("Editor command must not be empty")
+
+    executable, *arguments = command
+    sanitized_command = [
+        _validate_editor_executable(executable),
+        *_validate_editor_arguments(arguments),
+    ]
+
+    subprocess.run(sanitized_command, check=True, shell=False)
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
@@ -427,7 +474,7 @@ def manage_config(
             raise typer.Exit(code=1)
 
         try:
-            subprocess.run(safe_editor_cmd, check=True, shell=False)
+            _launch_editor(safe_editor_cmd)
         except FileNotFoundError:
             console.print(
                 "[red]Editor executable not found. Set the EDITOR environment variable"
@@ -440,6 +487,12 @@ def manage_config(
                 f" (code: {err.returncode})[/red]"
             )
             raise typer.Exit(code=err.returncode or 1)
+        except ValueError as err:
+            console.print(
+                "[red]Unsafe editor command prevented execution:",
+                f" {err}. Please update your EDITOR setting.[/red]",
+            )
+            raise typer.Exit(code=1)
         return
     
     # Handle view option

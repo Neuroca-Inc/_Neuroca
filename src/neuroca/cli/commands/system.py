@@ -42,7 +42,7 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import click
 import psutil
@@ -1088,6 +1088,39 @@ def _resolve_database_executable(executable: str, description: str) -> str:
     return resolved
 
 
+def _execute_database_command(
+    command: Sequence[str], *, env: Mapping[str, str] | None = None
+) -> None:
+    """Execute a database utility command with strict argument validation."""
+
+    if not command:
+        raise BackupRestoreError("Database command must not be empty.")
+
+    sanitized: list[str] = []
+    for index, component in enumerate(command):
+        if not isinstance(component, str):
+            raise BackupRestoreError("Database command components must be strings.")
+        if "\x00" in component or any(control in component for control in ("\r", "\n")):
+            raise BackupRestoreError("Database command contains invalid control characters.")
+
+        if index == 0:
+            executable_path = Path(component)
+            if not executable_path.is_absolute():
+                raise BackupRestoreError("Database utility must resolve to an absolute path.")
+            if not executable_path.exists():
+                raise BackupRestoreError("Database utility does not exist on disk.")
+            sanitized.append(os.fspath(executable_path))
+        else:
+            sanitized.append(component)
+
+    try:
+        subprocess.run(sanitized, check=True, shell=False, env=env)
+    except subprocess.CalledProcessError as exc:  # pragma: no cover - subprocess failure path
+        raise BackupRestoreError(
+            f"Database utility exited with status {exc.returncode}."
+        ) from exc
+
+
 def _build_postgres_dump_command(db_config: Any, output_file: Any) -> list[str]:
     host = _sanitize_postgres_host(getattr(db_config, "HOST", None))
     port = _sanitize_postgres_port(getattr(db_config, "PORT", None))
@@ -1153,7 +1186,7 @@ def _backup_database(output_file: str):
             env = os.environ.copy()
             env["PGPASSWORD"] = str(db_config.PASSWORD)
 
-            subprocess.run(cmd, env=env, check=True, shell=False)
+            _execute_database_command(cmd, env=env)
 
         elif db_config.ENGINE.endswith('sqlite3'):
             # SQLite backup - just copy the file
@@ -1188,7 +1221,7 @@ def _restore_database(input_file: str):
             env = os.environ.copy()
             env["PGPASSWORD"] = str(db_config.PASSWORD)
 
-            subprocess.run(cmd, env=env, check=True, shell=False)
+            _execute_database_command(cmd, env=env)
             
         elif db_config.ENGINE.endswith('sqlite3'):
             # SQLite restore - just copy the file

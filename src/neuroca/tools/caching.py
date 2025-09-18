@@ -729,16 +729,19 @@ class RedisCache(CacheBackend):
             return None
 
         try:
-            # Deserialize the value
+            # Deserialize the value using the restricted cache loader
             payload = _verify_and_extract(self._signing_key, value)
-            entry = pickle.loads(payload)
+            entry = _loads_cache_entry(payload)
 
-            # No need to check expiration, Redis handles that
+            if entry.is_expired():
+                self._redis.delete(redis_key)
+                self._redis.hincrby(self._stats_key, "misses", 1)
+                return None
 
             # Increment hit counter
             self._redis.hincrby(self._stats_key, "hits", 1)
 
-            return entry
+            return entry.value
         except (pickle.UnpicklingError, ValueError, TypeError) as e:
             logger.warning(f"Failed to deserialize cache entry {key}: {e}")
             self._redis.hincrby(self._stats_key, "misses", 1)
@@ -760,16 +763,17 @@ class RedisCache(CacheBackend):
         redis_key = self._get_redis_key(key)
 
         try:
-            # Serialize the value
-            serialized = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+            expires_at = None if ttl is None else time.time() + float(ttl)
+            entry = CacheEntry(key=key, value=value, expires_at=expires_at)
+            serialized = pickle.dumps(entry, protocol=pickle.HIGHEST_PROTOCOL)
             signed_payload = _sign_payload(self._signing_key, serialized)
 
             # Store in Redis
             if ttl is not None:
-                self._redis.setex(redis_key, int(ttl), signed_payload)
+                self._redis.setex(redis_key, int(max(1, float(ttl))), signed_payload)
             else:
                 self._redis.set(redis_key, signed_payload)
-        except (pickle.PicklingError, redis.RedisError, ValueError) as e:
+        except (pickle.PicklingError, redis.RedisError, ValueError, TypeError) as e:
             logger.warning(f"Failed to store cache entry {key}: {e}")
 
     def delete(self, key: str) -> bool:

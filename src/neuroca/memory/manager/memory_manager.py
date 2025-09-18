@@ -853,6 +853,92 @@ class MemoryManager(MemoryManagerInterface):
 
         return dict(result)
 
+    @staticmethod
+    def _safe_signature(callable_obj: Any) -> inspect.Signature | None:
+        """Return a best-effort signature for ``callable_obj`` or ``None`` if unavailable."""
+
+        if not callable(callable_obj):
+            return None
+
+        try:
+            return inspect.signature(callable_obj)
+        except (TypeError, ValueError):  # pragma: no cover - CPython implementation detail
+            return None
+
+    @staticmethod
+    def _is_signature_compatible(
+        signature: inspect.Signature | None,
+        args: tuple[Any, ...],
+        kwargs: Mapping[str, Any],
+    ) -> bool:
+        """Return ``True`` when ``args``/``kwargs`` can be bound against ``signature``."""
+
+        if signature is None:
+            return True
+
+        try:
+            signature.bind_partial(*args, **kwargs)
+        except TypeError:
+            return False
+        return True
+
+    @staticmethod
+    def _can_call_without_arguments(signature: inspect.Signature | None) -> bool:
+        """Return ``True`` when ``signature`` can be invoked without supplying arguments."""
+
+        if signature is None:
+            return True
+
+        for parameter in signature.parameters.values():
+            if parameter.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            ) and parameter.default is inspect._empty:
+                return False
+        return True
+
+    async def _resolve_counter_value(
+        self, counter: Callable[[], Any], tier_name: str
+    ) -> float | None:
+        """Invoke ``counter`` safely and coerce the result into a ``float`` if possible."""
+
+        try:
+            current = counter()
+        except TypeError as exc:
+            message = str(exc)
+            if "not callable" in message:
+                logger.debug(
+                    "Skipping non-callable count handler for %s tier: %s",
+                    tier_name,
+                    message,
+                )
+            else:
+                logger.debug(
+                    "Count handler for %s tier rejected invocation: %s",
+                    tier_name,
+                    message,
+                    exc_info=True,
+                )
+            return None
+        except Exception:
+            logger.debug(
+                "Count handler for %s tier raised an unexpected exception", tier_name, exc_info=True
+            )
+            return None
+
+        try:
+            if asyncio.iscoroutine(current):
+                current = await current
+            return float(current)
+        except Exception:
+            logger.debug(
+                "Unable to coerce utilisation count for %s tier into a float",
+                tier_name,
+                exc_info=True,
+            )
+            return None
+
     async def _collect_ltm_memories(self, limit: int | None = None) -> List[Any]:
         """Gather a snapshot of LTM memories for quality analysis."""
 
@@ -873,6 +959,7 @@ class MemoryManager(MemoryManagerInterface):
 
             result: Any = None
             attempted = False
+            signature = self._safe_signature(handler)
             call_specs: List[tuple[tuple[Any, ...], Dict[str, Any]]] = [
                 ((), {})
             ]
@@ -881,6 +968,8 @@ class MemoryManager(MemoryManagerInterface):
                 call_specs.append(((), {"limit": limit}))
 
             for args, kwargs in call_specs:
+                if not self._is_signature_compatible(signature, args, kwargs):
+                    continue
                 try:
                     result = handler(*args, **kwargs)  # type: ignore[misc]
                 except TypeError as exc:
@@ -894,7 +983,22 @@ class MemoryManager(MemoryManagerInterface):
                         attempted = False
                         result = None
                         break
+                    logger.debug(
+                        "LTM retrieval handler %s rejected invocation with args=%s kwargs=%s: %s",
+                        method_name,
+                        args,
+                        kwargs,
+                        message,
+                        exc_info=True,
+                    )
                     continue
+                except Exception:
+                    logger.exception(
+                        "Failed to invoke LTM retrieval via %s", method_name
+                    )
+                    attempted = False
+                    result = None
+                    break
                 attempted = True
                 break
 
@@ -1140,34 +1244,24 @@ class MemoryManager(MemoryManagerInterface):
                 )
                 continue
 
+            signature = self._safe_signature(counter)
+            if not self._can_call_without_arguments(signature):
+                logger.debug(
+                    "Skipping count handler for %s tier due to unsupported signature: %s",
+                    tier_name,
+                    signature,
+                )
+                continue
+
             capacity = self._resolve_tier_capacity(tier_name, tier)
             if not capacity:
                 adapter.observe(tier_name, 0.0)
                 continue
 
             try:
-                try:
-                    current = counter()
-                except TypeError as exc:
-                    message = str(exc)
-                    if "not callable" in message:
-                        logger.debug(
-                            "Skipping non-callable count handler for %s tier: %s",
-                            tier_name,
-                            message,
-                        )
-                        continue
-                    try:
-                        current = counter({})
-                    except TypeError:
-                        logger.debug(
-                            "Count handler for %s tier rejected provided arguments", tier_name, exc_info=True
-                        )
-                        continue
-
-                if asyncio.iscoroutine(current):
-                    current = await current
-                current_value = float(current)
+                current_value = await self._resolve_counter_value(counter, tier_name)
+                if current_value is None:
+                    continue
             except Exception:  # noqa: BLE001 - best effort metric
                 logger.debug(
                     "Unable to collect utilisation for %s tier", tier_name, exc_info=True

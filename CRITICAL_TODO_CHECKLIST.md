@@ -14,6 +14,17 @@ Here are the actionable checklist items:
 - [x] Address SQL Injection vulnerability in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py` (line 220).
 - [x] Replace or secure usage of `pickle` module in `src/neuroca/tools/caching.py` (line 568) to mitigate deserialization attacks.
 - [x] Remove or secure possible hardcoded password (`DEFAULT_PASSWORD_ENV_VAR`) in `tests/factories/passwords.py` (line 9).
+- [x] Address "counter is not callable" error (src/neuroca/memory/manager/memory_manager.py:1161)
+- [x] Mitigate Command Injection: `subprocess.run` detected with user-controlled data (src/neuroca/cli/commands/llm.py:430)
+- [x] Investigate and remediate possible hardcoded password (`_PASSWORD_ENV_VAR_NAME_OVERRIDE`) (tests/factories/passwords.py:9)
+- [x] Address "handler is not callable" error (src/neuroca/memory/manager/memory_manager.py:885)
+- [x] Investigate and remediate possible hardcoded password (`_DEFAULT_PASSWORD_ENV_VAR_NAME`) (tests/factories/passwords.py:10)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/cli/commands/llm.py:430)
+- [x] Address "counter is not callable" error (src/neuroca/memory/manager/memory_manager.py:1150)
+- [x] Resolve "No value for argument 'user_id' in constructor call" (src/neuroca/api/routes/memory_v1.py:146)
+- [x] Address Insecure Modules Libraries: `pickle` vulnerable to deserialization attacks (src/neuroca/tools/caching.py:734)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/monitoring/health/probes.py:665)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/cli/commands/system.py:1156)
 
 ## Key Highlights
 
