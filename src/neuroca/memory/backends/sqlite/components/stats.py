@@ -95,24 +95,53 @@ class SQLiteStats:
         last_access_time = self._stats.get("last_access_time") or self._get_last_access_time()
         last_write_time = self._stats.get("last_write_time") or self._get_last_write_time()
         
-        # Create stats object
+        operation_counts = {
+            "create": self._stats.get("create_count", 0),
+            "read": self._stats.get("read_count", 0),
+            "update": self._stats.get("update_count", 0),
+            "delete": self._stats.get("delete_count", 0),
+        }
+
+        additional_info = {
+            "active_memories": active_memories,
+            "archived_memories": archived_memories,
+            "last_access_time": self._format_timestamp(last_access_time),
+            "last_write_time": self._format_timestamp(last_write_time),
+            "operation_counts": operation_counts,
+            "query_count": self._stats.get("query_count", 0),
+        }
+
+        # Create stats object using the unified interface
         stats = StorageStats(
-            total_memories=total_memories,
-            active_memories=active_memories,
-            archived_memories=archived_memories,
-            total_size_bytes=db_size,
-            last_access_time=last_access_time,
-            last_write_time=last_write_time,
-            # Include operation counts
-            create_count=self._stats.get("create_count", 0),
-            read_count=self._stats.get("read_count", 0),
-            update_count=self._stats.get("update_count", 0),
-            delete_count=self._stats.get("delete_count", 0),
-            query_count=self._stats.get("query_count", 0)
+            backend_type="SQLiteBackend",
+            item_count=total_memories,
+            storage_size_bytes=db_size,
+            metadata_size_bytes=0,
+            average_item_age_seconds=0.0,
+            oldest_item_age_seconds=0.0,
+            newest_item_age_seconds=0.0,
+            max_capacity=-1,
+            capacity_used_percent=0.0,
+            additional_info=additional_info,
         )
         
-        logger.debug(f"Retrieved storage stats: {stats.total_memories} memories")
+        logger.debug("Retrieved storage stats: %s memories", stats.item_count)
         return stats
+
+    @staticmethod
+    def _format_timestamp(value: Optional[Union[float, datetime]]) -> Optional[str]:
+        """Return timestamps in ISO 8601 format when available."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        try:
+            return datetime.fromtimestamp(float(value)).isoformat()
+        except (TypeError, ValueError, OSError):
+            return str(value)
     
     def _get_total_count(self) -> int:
         """

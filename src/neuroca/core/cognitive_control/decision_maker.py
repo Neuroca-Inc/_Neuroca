@@ -70,14 +70,20 @@ class DecisionMaker:
         current_goal_description = context.get("current_goal_description")
         if not current_goal_description and self.goal_manager:
             getter = getattr(self.goal_manager, "get_highest_priority_active_goal", None)
-            if callable(getter):  # pragma: no cover - defensive branch
+            if not callable(getter):
+                logger.debug(
+                    "Goal manager getter is not callable: %r", getter
+                )
+            else:
                 try:
-                    highest_goal = getter()
+                    highest_goal = await maybe_await_callable(getter)
                 except Exception:  # noqa: BLE001
                     logger.debug("Goal manager lookup failed", exc_info=True)
                 else:
                     if highest_goal is not None:
-                        current_goal_description = getattr(highest_goal, "description", None)
+                        current_goal_description = getattr(
+                            highest_goal, "description", None
+                        )
 
         if not current_goal_description:
             current_goal_description = "default_goal"

@@ -1,5 +1,6 @@
 """Unit tests for the DecisionMaker component in cognitive control."""
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -190,6 +191,60 @@ class TestDecisionMaker:
 
         assert choice is not None
         assert choice.description == "Option Neutral History"
+
+    @pytest.mark.asyncio
+    async def test_choose_action_handles_non_callable_goal_getter(
+        self,
+        decision_maker: DecisionMaker,
+        sample_options: list[DecisionOption],
+    ) -> None:
+        """Non-callable goal manager attributes should be ignored safely."""
+
+        decision_maker.goal_manager = SimpleNamespace(
+            get_highest_priority_active_goal="not-callable"
+        )
+
+        context = create_context(HealthState.NORMAL)
+        choice = await decision_maker.choose_action(sample_options, context)
+
+        assert choice is not None
+
+    @pytest.mark.asyncio
+    async def test_choose_action_supports_async_goal_getter(
+        self,
+        decision_maker: DecisionMaker,
+    ) -> None:
+        """Async goal lookups should be awaited when populating context."""
+
+        class _Goal:
+            description = "Launch satellite"
+
+        class _AsyncGoalManager:
+            async def get_highest_priority_active_goal(self) -> _Goal:
+                return _Goal()
+
+        decision_maker.goal_manager = _AsyncGoalManager()
+
+        options = [
+            DecisionOption(
+                description="Launch satellite mission",
+                action="mission",
+                estimated_utility=0.4,
+                risk=0.2,
+            ),
+            DecisionOption(
+                description="Perform diagnostics",
+                action="diagnostics",
+                estimated_utility=0.5,
+                risk=0.2,
+            ),
+        ]
+
+        context = create_context(HealthState.NORMAL)
+        choice = await decision_maker.choose_action(options, context)
+
+        assert choice is not None
+        assert choice.description == "Launch satellite mission"
 
 
 class TestDecisionOption:

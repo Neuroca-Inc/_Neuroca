@@ -865,6 +865,12 @@ class MemoryManager(MemoryManagerInterface):
             if handler is None:
                 continue
 
+            if not callable(handler):
+                logger.debug(
+                    "Skipping non-callable LTM retrieval handler %s", method_name
+                )
+                continue
+
             result: Any = None
             attempted = False
             call_kwargs: List[Dict[str, Any]] = [{}]
@@ -1113,6 +1119,12 @@ class MemoryManager(MemoryManagerInterface):
 
             counter = getattr(tier, "count", None)
             if counter is None:
+                continue
+
+            if not callable(counter):
+                logger.debug(
+                    "Skipping non-callable count handler for %s tier", tier_name
+                )
                 continue
 
             capacity = self._resolve_tier_capacity(tier_name, tier)
