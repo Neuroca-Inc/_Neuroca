@@ -13,8 +13,7 @@ DEFAULT_PASSWORD_ENV_VAR = "NEUROCA_TEST_USER_PASSWORD"
 def get_default_user_password() -> str:
     """Return the default password for generated test users."""
 
-    env_password = os.getenv(DEFAULT_PASSWORD_ENV_VAR)
-    if env_password:
+    if (env_password := os.getenv(DEFAULT_PASSWORD_ENV_VAR)) and env_password.strip():
         return env_password
     return secrets.token_urlsafe(32)
 
