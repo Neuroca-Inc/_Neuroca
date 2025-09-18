@@ -45,6 +45,8 @@ from typing import Any, Optional, Sequence
 
 import psutil
 
+from neuroca.utils.safe_subprocess import run_validated_command
+
 # Configure module logger
 logger = logging.getLogger(__name__)
 
@@ -850,12 +852,11 @@ class NetworkHealthProbe(HealthProbe):
 
         sanitized_command = cls._validate_prepared_ping_command(command)
         safe_command = cls._finalize_ping_command(sanitized_command)
-        return subprocess.run(
+        return run_validated_command(
             safe_command,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=False,
         )
 
     @staticmethod

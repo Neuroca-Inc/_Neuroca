@@ -27,6 +27,8 @@ import typer
 import yaml
 from rich.console import Console
 
+from neuroca.utils.safe_subprocess import run_validated_command
+
 _UNSAFE_EDITOR_ARGUMENT_CHARS = frozenset({"&", ";", "|", ">", "<", "`", "$", "!"})
 
 
@@ -218,7 +220,7 @@ def _launch_editor(command: Sequence[str]) -> None:
     sanitized_command = [executable_path, *safe_arguments, safe_config_path]
     safe_command = _finalize_editor_command(sanitized_command)
 
-    subprocess.run(safe_command, check=True, shell=False)
+    run_validated_command(safe_command, check=True)
 
 
 def _finalize_editor_command(command: Sequence[str]) -> tuple[str, ...]:

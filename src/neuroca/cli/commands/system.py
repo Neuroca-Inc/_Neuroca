@@ -54,6 +54,7 @@ from neuroca.core.exceptions import BackupRestoreError, ConfigurationError
 from neuroca.core.utils.logging import configure_logger
 from neuroca.memory import memory_manager
 from neuroca.monitoring.health import HealthStatus, run_health_checks
+from neuroca.utils.safe_subprocess import run_validated_command
 
 # Configure logger for this module
 logger = configure_logger(__name__)
@@ -1238,7 +1239,7 @@ def _execute_database_command(
     safe_command = _finalize_database_command(sanitized)
 
     try:
-        subprocess.run(safe_command, check=True, shell=False, env=env)
+        run_validated_command(safe_command, check=True, env=env)
     except subprocess.CalledProcessError as exc:  # pragma: no cover - subprocess failure path
         raise BackupRestoreError(
             f"Database utility exited with status {exc.returncode}."

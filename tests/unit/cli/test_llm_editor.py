@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -43,19 +44,33 @@ def test_launch_editor_sanitizes_command(monkeypatch: pytest.MonkeyPatch, tmp_pa
     editor_path = _touch_executable(tmp_path / "nano")
     config_path = tmp_path / "llm config.yaml"
     sanitized_command = [editor_path, "+1", os.fspath(config_path)]
-    recorded: dict[str, list[str]] = {}
+    recorded: dict[str, object] = {}
 
-    def fake_run(command, *, check, shell):  # type: ignore[no-untyped-def]
+    def fake_run(
+        command, *, check, capture_output=None, text=None, timeout=None, env=None
+    ):  # type: ignore[no-untyped-def]
         recorded["command"] = command
+        recorded["kwargs"] = {
+            "capture_output": capture_output,
+            "text": text,
+            "timeout": timeout,
+            "env": env,
+        }
         assert check is True
-        assert shell is False
+        return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    monkeypatch.setattr(llm, "run_validated_command", fake_run)
 
     llm._launch_editor(sanitized_command)
 
     expected_path = os.path.abspath(os.fspath(config_path))
     assert recorded["command"] == (editor_path, "+1", expected_path)
+    assert recorded["kwargs"] == {
+        "capture_output": None,
+        "text": None,
+        "timeout": None,
+        "env": None,
+    }
 
 
 def test_launch_editor_rejects_unsafe_argument(tmp_path: Path) -> None:

@@ -2,6 +2,10 @@
 
 Here are the actionable checklist items:
 
+- [x] Investigate and fix 'No value for argument user_id in constructor call' in `src/neuroca/api/routes/memory_v1.py` (line 146).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/cli/commands/llm.py` (line 221).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/cli/commands/system.py` (line 1241).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/monitoring/health/probes.py` (line 853).
 - [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/cli/commands/llm.py` (line 137).
 - [x] Address Command Injection vulnerability (subprocess.run with user controlled data) in `src/neuroca/cli/commands/llm.py` (line 137).
 - [x] Fix "No value for argument 'user_id' in constructor call" in `src/neuroca/api/routes/memory_v1.py` (line 146).
