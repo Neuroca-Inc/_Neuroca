@@ -7,7 +7,7 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Refactor `os.system` call in `src/neuroca/cli/commands/llm.py` to ensure user data cannot influence shell evaluation.
 - [x] Refactor `subprocess.run` call in `src/neuroca/monitoring/health/probes.py` to avoid command injection vectors.
 - [x] Refactor `subprocess.run` call in `src/neuroca/cli/commands/system.py` to prevent injection through dynamically constructed commands.
-- [ ] Refactor `subprocess.run` call in `tests/scripts/check_coverage.py` to guard against command injection.
+- [x] Refactor `subprocess.run` call in `tests/scripts/check_coverage.py` to guard against command injection.
 
 ## SQL Injection Vulnerabilities
 - [ ] Replace dynamic `search_path` assignment with parameterized query in `src/neuroca/db/connections/postgres.py`.
