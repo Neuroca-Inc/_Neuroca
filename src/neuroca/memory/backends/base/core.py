@@ -6,23 +6,36 @@ components to implement the StorageBackendInterface and provides common
 functionality for all specific storage backend implementations.
 """
 
+from __future__ import annotations
+
 import abc
+import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar, Union
 
 from neuroca.memory.backends.base.batch import BatchOperations
 from neuroca.memory.backends.base.operations import CoreOperations
 from neuroca.memory.backends.base.stats import BackendStats
+from neuroca.memory.backends.policies import (
+    BackendOperationPolicy,
+    DEFAULT_OPERATION_POLICY,
+)
 from neuroca.memory.exceptions import (
+    ConfigurationError,
+    ItemExistsError,
+    ItemNotFoundError,
     StorageInitializationError,
     StorageOperationError,
-    ConfigurationError,
 )
 from neuroca.memory.interfaces.storage_backend import StorageBackendInterface
 
 
 logger = logging.getLogger(__name__)
+
+
+_NonRetryableExceptions = (ConfigurationError, ItemExistsError, ItemNotFoundError)
+_ResultT = TypeVar("_ResultT")
 
 
 class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperations, abc.ABC):
@@ -46,9 +59,19 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
         """
         CoreOperations.__init__(self)
         BatchOperations.__init__(self)
-        
+
         self.config = config or {}
         self.stats = BackendStats()
+        policy_config = None
+        if isinstance(self.config, dict):
+            policy_config = self.config.get("operation_policy")
+            if "operation_policy" in self.config:
+                # Prevent downstream components from receiving policy-only config entries.
+                self.config = {k: v for k, v in self.config.items() if k != "operation_policy"}
+        self.operation_policy: BackendOperationPolicy = BackendOperationPolicy.from_mapping(
+            policy_config,
+            fallback=DEFAULT_OPERATION_POLICY,
+        )
     
     async def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -101,7 +124,70 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
                 backend_type=self.__class__.__name__,
                 message=f"Failed to shutdown storage backend: {str(e)}"
             ) from e
-    
+
+    #-----------------------------------------------------------------------
+    # Policy orchestration
+    #-----------------------------------------------------------------------
+
+    def configure_operation_policy(self, policy: Optional[BackendOperationPolicy]) -> None:
+        """Configure timeout and retry behaviour for storage operations."""
+
+        self.operation_policy = policy or DEFAULT_OPERATION_POLICY
+
+    async def _execute_with_policy(
+        self,
+        operation: str,
+        action: Callable[[], Awaitable[_ResultT]],
+    ) -> _ResultT:
+        """Execute *action* with the configured timeout and retry rules."""
+
+        policy = self.operation_policy or DEFAULT_OPERATION_POLICY
+        attempts = policy.retry.normalized_attempts()
+        attempt = 0
+        last_error: Optional[Exception] = None
+
+        while attempt < attempts:
+            attempt += 1
+            try:
+                coroutine = action()
+                if policy.timeout_seconds and policy.timeout_seconds > 0:
+                    return await asyncio.wait_for(coroutine, timeout=policy.timeout_seconds)
+                return await coroutine
+            except _NonRetryableExceptions:
+                raise
+            except Exception as exc:  # pragma: no cover - retry path exercised in tests
+                last_error = exc
+                logger.warning(
+                    "Backend %s operation %s attempt %d/%d failed: %s",
+                    self.__class__.__name__,
+                    operation,
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                if attempt >= attempts:
+                    break
+
+                delay = policy.retry.compute_delay(attempt)
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+        if last_error is None:
+            return await action()
+
+        if isinstance(last_error, asyncio.TimeoutError):
+            raise StorageOperationError(
+                f"{self.__class__.__name__}.{operation} timed out after "
+                f"{policy.timeout_seconds}s (attempts={policy.retry.normalized_attempts()})"
+            ) from last_error
+
+        if isinstance(last_error, StorageOperationError):
+            raise last_error
+
+        raise StorageOperationError(
+            f"{self.__class__.__name__}.{operation} failed after {attempts} attempts: {last_error}"
+        ) from last_error
+
     #-----------------------------------------------------------------------
     # Methods that update statistics
     #-----------------------------------------------------------------------
@@ -118,7 +204,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             bool: True if the operation was successful
         """
         self.stats.update_stat("create_count")
-        result = await CoreOperations.create(self, item_id, data)
+
+        def _call() -> Awaitable[bool]:
+            return CoreOperations.create(self, item_id, data)
+
+        result = await self._execute_with_policy("create", _call)
         if result:
             self.stats.increment_items_count()
         return result
@@ -134,7 +224,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             The item data if found, None otherwise
         """
         self.stats.update_stat("read_count")
-        return await CoreOperations.read(self, item_id)
+
+        def _call() -> Awaitable[Optional[Dict[str, Any]]]:
+            return CoreOperations.read(self, item_id)
+
+        return await self._execute_with_policy("read", _call)
     
     async def update(self, item_id: str, data: Dict[str, Any]) -> bool:
         """
@@ -148,7 +242,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             bool: True if the operation was successful
         """
         self.stats.update_stat("update_count")
-        return await CoreOperations.update(self, item_id, data)
+
+        def _call() -> Awaitable[bool]:
+            return CoreOperations.update(self, item_id, data)
+
+        return await self._execute_with_policy("update", _call)
     
     async def delete(self, item_id: str) -> bool:
         """
@@ -161,11 +259,23 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             bool: True if the operation was successful
         """
         self.stats.update_stat("delete_count")
-        result = await CoreOperations.delete(self, item_id)
+
+        def _call() -> Awaitable[bool]:
+            return CoreOperations.delete(self, item_id)
+
+        result = await self._execute_with_policy("delete", _call)
         if result:
             self.stats.decrement_items_count()
         return result
-    
+
+    async def exists(self, item_id: str) -> bool:  # type: ignore[override]
+        """Check item existence via the resiliency executor."""
+
+        def _call() -> Awaitable[bool]:
+            return CoreOperations.exists(self, item_id)
+
+        return await self._execute_with_policy("exists", _call)
+
     async def batch_create(self, items: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
         """
         Create multiple items in a batch operation with statistics tracking.
@@ -177,7 +287,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             Dictionary mapping item IDs to success status
         """
         self.stats.update_stat("create_count", len(items))
-        result = await BatchOperations.batch_create(self, items)
+
+        def _call() -> Awaitable[Dict[str, bool]]:
+            return BatchOperations.batch_create(self, items)
+
+        result = await self._execute_with_policy("batch_create", _call)
         created_count = sum(1 for success in result.values() if success)
         if created_count > 0:
             self.stats.increment_items_count(created_count)
@@ -194,7 +308,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             Dictionary mapping item IDs to their data (or None if not found)
         """
         self.stats.update_stat("read_count", len(item_ids))
-        return await BatchOperations.batch_read(self, item_ids)
+
+        def _call() -> Awaitable[Dict[str, Optional[Dict[str, Any]]]]:
+            return BatchOperations.batch_read(self, item_ids)
+
+        return await self._execute_with_policy("batch_read", _call)
     
     async def batch_update(self, items: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
         """
@@ -207,7 +325,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             Dictionary mapping item IDs to success status
         """
         self.stats.update_stat("update_count", len(items))
-        return await BatchOperations.batch_update(self, items)
+
+        def _call() -> Awaitable[Dict[str, bool]]:
+            return BatchOperations.batch_update(self, items)
+
+        return await self._execute_with_policy("batch_update", _call)
     
     async def batch_delete(self, item_ids: List[str]) -> Dict[str, bool]:
         """
@@ -220,7 +342,11 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             Dictionary mapping item IDs to success status
         """
         self.stats.update_stat("delete_count", len(item_ids))
-        result = await BatchOperations.batch_delete(self, item_ids)
+
+        def _call() -> Awaitable[Dict[str, bool]]:
+            return BatchOperations.batch_delete(self, item_ids)
+
+        result = await self._execute_with_policy("batch_delete", _call)
         deleted_count = sum(1 for success in result.values() if success)
         if deleted_count > 0:
             self.stats.decrement_items_count(deleted_count)
@@ -248,15 +374,27 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             List of items matching the query criteria
         """
         self.stats.update_stat("query_count")
-        return await CoreOperations.query(
-            self, 
-            filters=filters, 
-            sort_by=sort_by, 
-            ascending=ascending, 
-            limit=limit, 
-            offset=offset
-        )
-    
+
+        def _call() -> Awaitable[List[Dict[str, Any]]]:
+            return CoreOperations.query(
+                self,
+                filters=filters,
+                sort_by=sort_by,
+                ascending=ascending,
+                limit=limit,
+                offset=offset,
+            )
+
+        return await self._execute_with_policy("query", _call)
+
+    async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:  # type: ignore[override]
+        """Count items while respecting the configured policy."""
+
+        def _call() -> Awaitable[int]:
+            return CoreOperations.count(self, filters)
+
+        return await self._execute_with_policy("count", _call)
+
     async def clear(self) -> bool:
         """
         Clear all items from storage with statistics tracking.
@@ -264,7 +402,10 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
         Returns:
             bool: True if the operation was successful
         """
-        result = await CoreOperations.clear(self)
+        def _call() -> Awaitable[bool]:
+            return CoreOperations.clear(self)
+
+        result = await self._execute_with_policy("clear", _call)
         if result:
             self.stats.set_items_count(0)
         return result

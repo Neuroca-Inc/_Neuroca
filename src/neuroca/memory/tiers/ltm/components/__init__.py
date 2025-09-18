@@ -13,6 +13,7 @@ from neuroca.memory.tiers.ltm.components.maintenance import LTMMaintenance
 from neuroca.memory.tiers.ltm.components.strength import LTMStrengthCalculator
 from neuroca.memory.tiers.ltm.components.operations import LTMOperations
 from neuroca.memory.tiers.ltm.components.category import LTMCategory
+from neuroca.memory.tiers.ltm.components.snapshot import LTMSnapshotExporter
 
 __all__ = [
     "LTMLifecycle",
@@ -21,4 +22,5 @@ __all__ = [
     "LTMStrengthCalculator",
     "LTMOperations",
     "LTMCategory",
+    "LTMSnapshotExporter",
 ]

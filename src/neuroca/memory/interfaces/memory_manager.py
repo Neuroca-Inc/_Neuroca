@@ -17,7 +17,7 @@ this interface, without direct access to the underlying tiers or backends.
 
 import abc
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 
 class MemoryManagerInterface(abc.ABC):
@@ -107,6 +107,7 @@ class MemoryManagerInterface(abc.ABC):
         self,
         memory_id: str,
         tier: Optional[str] = None,
+        scope: Any | None = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Retrieve a specific memory by ID.
@@ -114,6 +115,7 @@ class MemoryManagerInterface(abc.ABC):
         Args:
             memory_id: Memory ID
             tier: Optional tier to search in (searches all tiers if not specified)
+            scope: Optional access scope details for enforcing RBAC
             
         Returns:
             Memory data as a dictionary, or None if not found
@@ -198,6 +200,7 @@ class MemoryManagerInterface(abc.ABC):
         limit: int = 10,
         min_relevance: float = 0.0,
         tiers: Optional[List[str]] = None,
+        scope: Any | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for memories across all tiers.
@@ -210,6 +213,7 @@ class MemoryManagerInterface(abc.ABC):
             limit: Maximum number of results
             min_relevance: Minimum relevance score (0.0 to 1.0)
             tiers: Optional list of tiers to search in
+            scope: Optional access scope details for enforcing RBAC
             
         Returns:
             List of relevant memories
@@ -385,7 +389,7 @@ class MemoryManagerInterface(abc.ABC):
     async def run_maintenance(self) -> Dict[str, Any]:
         """
         Run maintenance tasks on the memory system.
-        
+
         This includes tasks like:
         - Consolidating memories between tiers
         - Decaying memories
@@ -394,8 +398,40 @@ class MemoryManagerInterface(abc.ABC):
         
         Returns:
             Dictionary of maintenance results
-            
+
         Raises:
             MemoryManagerOperationError: If the maintenance fails
         """
+        pass
+
+    @abc.abstractmethod
+    async def evaluate_memory_quality(self, *, limit: Optional[int] = None) -> Dict[str, Any]:
+        """Evaluate long-term memory quality metrics and drift alerts."""
+
+        pass
+
+    @abc.abstractmethod
+    async def detect_embedding_drift(
+        self,
+        *,
+        quality_report: Optional[Mapping[str, Any]] = None,
+        force: bool = False,
+        sample_size: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate embedding drift and surface integrity metrics."""
+
+        pass
+
+    @property
+    @abc.abstractmethod
+    def last_quality_report(self) -> Optional[Dict[str, Any]]:
+        """Return the most recently cached memory quality report."""
+
+        pass
+
+    @property
+    @abc.abstractmethod
+    def last_drift_report(self) -> Optional[Dict[str, Any]]:
+        """Return the most recently cached embedding drift report."""
+
         pass

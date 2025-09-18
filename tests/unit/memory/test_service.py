@@ -6,6 +6,7 @@ import pytest
 from neuroca.core.enums import MemoryTier
 from neuroca.core.exceptions import MemoryNotFoundError
 from neuroca.memory.models.memory_item import MemoryItem
+from neuroca.memory.manager.scoping import MemoryRetrievalScope
 from neuroca.memory.service import MemoryResponse, MemorySearchParams, MemoryService
 
 
@@ -30,7 +31,11 @@ async def test_create_memory_uses_async_manager():
     response = await service.create_memory(payload)
 
     service.memory_manager.add_memory.assert_awaited_once()
-    service.memory_manager.retrieve_memory.assert_awaited_once_with("memory-id")
+    assert service.memory_manager.retrieve_memory.await_count == 1
+    args, kwargs = service.memory_manager.retrieve_memory.await_args
+    assert args[0] == "memory-id"
+    assert isinstance(kwargs["scope"], MemoryRetrievalScope)
+    assert kwargs["scope"].user_id == "user-123"
     assert isinstance(response, MemoryResponse)
     assert response.id == fake_item.id
     assert response.tier == MemoryTier.STM.storage_key
@@ -62,6 +67,8 @@ async def test_list_memories_passes_filters():
     call_kwargs = service.memory_manager.search_memories.await_args.kwargs
     assert call_kwargs["metadata_filters"] == {"metadata.user_id": "user-1"}
     assert call_kwargs["tiers"] == [MemoryTier.MTM.storage_key]
+    assert isinstance(call_kwargs["scope"], MemoryRetrievalScope)
+    assert call_kwargs["scope"].user_id == "user-1"
 
 
 @pytest.mark.asyncio
@@ -79,7 +86,9 @@ async def test_update_memory_returns_refreshed_item():
     response = await service.update_memory(UUID("12345678-1234-5678-1234-567812345678"), {"content": "updated"})
 
     service.memory_manager.update_memory.assert_awaited()
-    service.memory_manager.retrieve_memory.assert_awaited()
+    assert service.memory_manager.retrieve_memory.await_count == 1
+    _, kwargs = service.memory_manager.retrieve_memory.await_args
+    assert isinstance(kwargs["scope"], MemoryRetrievalScope)
     assert response.content["text"] == "updated"
     assert response.tier == MemoryTier.LTM.storage_key
 
@@ -131,4 +140,7 @@ async def test_create_memory_initializes_manager_if_needed():
     response = await service.create_memory(payload)
 
     service.memory_manager.initialize.assert_awaited_once()
+    assert service.memory_manager.retrieve_memory.await_count == 1
+    _, kwargs = service.memory_manager.retrieve_memory.await_args
+    assert isinstance(kwargs["scope"], MemoryRetrievalScope)
     assert response.tier == MemoryTier.STM.storage_key

@@ -26,6 +26,8 @@ from neuroca.config.settings import get_settings
 from neuroca.memory.backends.factory import StorageBackendFactory
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.memory_tier import MemoryTier
+from neuroca.memory.config import ensure_embedding_dimension_fields, resolve_embedding_dimension
+from neuroca.memory.config.validation import validate_memory_manager_configuration
 from neuroca.memory.manager.memory_manager import MemoryManager
 from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
 from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
@@ -98,6 +100,18 @@ def create_memory_system(
         }
 
         merged_config = _deep_merge_dicts(base_config, config or {})
+
+        embedding_override = kwargs.pop("embedding_dimension", None)
+        embedding_dimension = resolve_embedding_dimension(
+            explicit_override=embedding_override,
+            manager_config=merged_config,
+            settings_config=settings_config,
+        )
+        ensure_embedding_dimension_fields(merged_config, dimension=embedding_dimension)
+        validate_memory_manager_configuration(
+            merged_config,
+            settings_config=settings_config if isinstance(settings_config, dict) else None,
+        )
 
         def _normalize_backend(value: Optional[str | BackendType]) -> Optional[BackendType]:
             if value is None:
@@ -195,6 +209,7 @@ def create_memory_system(
             stm_storage_type=stm_backend_type,
             mtm_storage_type=mtm_backend_type,
             ltm_storage_type=ltm_backend_type,
+            embedding_dimension=embedding_dimension,
             **kwargs,
         )
 

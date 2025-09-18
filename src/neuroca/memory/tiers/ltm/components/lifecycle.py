@@ -8,7 +8,7 @@ shutdown, and related lifecycle operations for the Long-Term Memory tier.
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional, Set, Callable, List
+from typing import Any, Dict, Optional, Set, Callable, List, Iterable, Mapping
 
 from neuroca.memory.backends import BaseStorageBackend
 
@@ -234,7 +234,7 @@ class LTMLifecycle:
     def remove_memory(self, memory_id: str) -> None:
         """
         Remove a memory from all category and relationship maps.
-        
+
         Args:
             memory_id: The ID of the memory
         """
@@ -242,12 +242,47 @@ class LTMLifecycle:
         for category, memory_ids in self._category_map.items():
             if memory_id in memory_ids:
                 memory_ids.remove(memory_id)
-        
+
         # Remove from relationships
         if memory_id in self._relationship_map:
             del self._relationship_map[memory_id]
-        
+
         # Remove from related memories
         for related_id, relationships in self._relationship_map.items():
             if memory_id in relationships:
                 del relationships[memory_id]
+
+    def apply_snapshot_state(
+        self,
+        *,
+        categories: Mapping[str, Iterable[str]] | None = None,
+        relationships: Mapping[str, Mapping[str, float]] | None = None,
+    ) -> None:
+        """Apply category and relationship state sourced from a snapshot."""
+
+        self._category_map = {}
+        if categories:
+            for category, memory_ids in categories.items():
+                if category is None:
+                    continue
+                sanitized = {str(memory_id) for memory_id in memory_ids if memory_id}
+                if sanitized:
+                    self._category_map[str(category)] = sanitized
+
+        self._relationship_map = {}
+        if relationships:
+            for memory_id, related in relationships.items():
+                if memory_id is None or not isinstance(related, Mapping):
+                    continue
+                sanitized: Dict[str, float] = {}
+                for related_id, strength in related.items():
+                    if related_id is None:
+                        continue
+                    try:
+                        value = float(strength)
+                    except (TypeError, ValueError):
+                        continue
+                    value = max(0.0, min(1.0, value))
+                    sanitized[str(related_id)] = value
+                if sanitized:
+                    self._relationship_map[str(memory_id)] = sanitized

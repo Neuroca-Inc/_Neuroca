@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 class MemoryCapacityError(Exception):
     """Exception raised when memory capacity is exceeded."""
+
+    pass
+
+
+class MemoryBackpressureError(Exception):
+    """Exception raised when ingestion is throttled due to back-pressure."""
+
     pass
 
 

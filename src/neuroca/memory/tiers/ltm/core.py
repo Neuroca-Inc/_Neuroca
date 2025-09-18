@@ -8,7 +8,7 @@ handle different aspects of the LTM functionality.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union, Callable, Iterable, Mapping
 
 from neuroca.memory.backends import BackendType
 from neuroca.memory.backends.factory import StorageBackendFactory
@@ -21,6 +21,7 @@ from neuroca.memory.tiers.ltm.components import (
     LTMMaintenance,
     LTMStrengthCalculator,
     LTMOperations,
+    LTMSnapshotExporter,
 )
 
 
@@ -91,6 +92,7 @@ class LongTermMemoryTier(BaseMemoryTier):
         self.config.setdefault("relationship_types", self.DEFAULT_RELATIONSHIP_TYPES)
         self.config.setdefault("maintenance_interval", self.DEFAULT_MAINTENANCE_INTERVAL)
         self.config.setdefault("min_relationship_strength", self.DEFAULT_MIN_RELATIONSHIP_STRENGTH)
+        self.config.setdefault("snapshot_batch_size", LTMSnapshotExporter.DEFAULT_BATCH_SIZE)
         
         # Create components
         self._lifecycle = LTMLifecycle(self._tier_name)
@@ -99,6 +101,7 @@ class LongTermMemoryTier(BaseMemoryTier):
         self._maintenance = LTMMaintenance(self._tier_name)
         self._strength_calculator = LTMStrengthCalculator(self._tier_name)
         self._operations = LTMOperations(self._tier_name)
+        self._snapshot = LTMSnapshotExporter(self._tier_name)
     
     async def _initialize_tier(self) -> None:
         """Initialize tier-specific components."""
@@ -151,6 +154,12 @@ class LongTermMemoryTier(BaseMemoryTier):
             strength_calculator=self._strength_calculator,
             config=self.config,
         )
+
+        self._snapshot.configure(
+            backend=self._backend,
+            lifecycle=self._lifecycle,
+            batch_size=self.config.get("snapshot_batch_size"),
+        )
         
         logger.info("LTM tier initialization complete")
     
@@ -195,18 +204,48 @@ class LongTermMemoryTier(BaseMemoryTier):
     async def _pre_delete(self, memory_id: str) -> None:
         """
         Apply tier-specific behavior before deleting a memory.
-        
+
         Args:
             memory_id: The ID of the memory to be deleted
         """
         # Delegate to operations component
         self._operations.process_pre_delete(memory_id)
-        
+
         # Delegate to relationship component
         self._relationship.process_pre_delete(memory_id)
-        
+
         # Delegate to category component
         self._category.process_pre_delete(memory_id)
+
+    async def export_snapshot(
+        self,
+        *,
+        statuses: Iterable[MemoryStatus | str] | None = None,
+        limit: int | None = None,
+        batch_size: int | None = None,
+    ) -> Dict[str, Any]:
+        """Export a redundancy snapshot of stored LTM memories."""
+
+        self._ensure_initialized()
+        return await self._snapshot.export_snapshot(
+            statuses=statuses,
+            limit=limit,
+            batch_size=batch_size,
+        )
+
+    async def restore_snapshot(
+        self,
+        snapshot: Mapping[str, Any],
+        *,
+        overwrite: bool = False,
+    ) -> Dict[str, int]:
+        """Restore LTM memories from a redundancy snapshot."""
+
+        self._ensure_initialized()
+        return await self._snapshot.restore_snapshot(
+            snapshot,
+            overwrite=overwrite,
+        )
     
     async def _post_delete(self, memory_id: str) -> None:
         """

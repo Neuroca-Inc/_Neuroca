@@ -2,10 +2,11 @@
 
 from enum import Enum
 
-from neuroca.memory.manager.memory_manager import MemoryManager as AsyncMemoryManager
+from neuroca.memory.manager.memory_manager import MemoryManager
 from neuroca.memory.manager.core import MemoryManager as LegacyMemoryManager
 from neuroca.memory.manager.models import RankedMemory
 from neuroca.memory.models import MemoryItem
+from neuroca.memory.manager.scoping import MemoryRetrievalScope
 
 
 class MemoryType(str, Enum):
@@ -26,4 +27,5 @@ __all__ = [
     "RankedMemory",
     "MemoryItem",
     "MemoryType",
+    "MemoryRetrievalScope",
 ]

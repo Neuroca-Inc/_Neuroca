@@ -14,6 +14,15 @@ from typing import Any, Dict, List, Optional
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.vector.components.crud import VectorCRUD
 from neuroca.memory.backends.vector.components.index import VectorIndex
+from neuroca.memory.backends.vector.components.integrity import (
+    VectorIndexIntegrityReport,
+    VectorIndexMaintenance,
+)
+from neuroca.memory.backends.vector.components.model_swap import (
+    EmbedderCallable,
+    EmbeddingModelSwapCoordinator,
+    EmbeddingModelSwapPlan,
+)
 from neuroca.memory.backends.vector.components.stats import VectorStats
 from neuroca.memory.backends.vector.components.storage import VectorStorage
 from neuroca.memory.exceptions import (
@@ -64,6 +73,16 @@ class VectorBackend(BaseStorageBackend):
         self.storage = VectorStorage(index=self.index, index_path=self.index_path)
         self.crud = VectorCRUD(index=self.index, storage=self.storage)
         self.stats_component = VectorStats(index=self.index, storage=self.storage)
+        self.integrity = VectorIndexMaintenance(
+            index=self.index,
+            storage=self.storage,
+            dimension=self.dimension,
+        )
+        self.model_swap = EmbeddingModelSwapCoordinator(
+            crud=self.crud,
+            storage=self.storage,
+            dimension=self.dimension,
+        )
 
     # ------------------------------------------------------------------
     # BaseStorageBackend contract
@@ -312,6 +331,73 @@ class VectorBackend(BaseStorageBackend):
             results.append(memory_dict)
 
         return results
+
+    # ------------------------------------------------------------------
+    # Integrity helpers
+    # ------------------------------------------------------------------
+    async def check_index_integrity(
+        self,
+        *,
+        drift_threshold: float = 0.1,
+        sample_size: Optional[int] = None,
+    ) -> VectorIndexIntegrityReport:
+        """Run integrity checks against the vector index and metadata store."""
+
+        return self.integrity.check_integrity(
+            drift_threshold=drift_threshold,
+            sample_size=sample_size,
+        )
+
+    async def reindex(
+        self,
+        target_ids: Optional[List[str]] = None,
+        *,
+        full_refresh: bool = False,
+        drift_threshold: float = 0.1,
+    ) -> VectorIndexIntegrityReport:
+        """Rebuild index entries from stored metadata payloads."""
+
+        return await self.integrity.rebuild_index(
+            target_ids=target_ids,
+            full_refresh=full_refresh,
+            drift_threshold=drift_threshold,
+        )
+
+    async def plan_embedding_model_swap(
+        self,
+        target_model: str,
+        embedder: EmbedderCallable,
+        *,
+        batch_size: int = 64,
+        sample_size: Optional[int] = None,
+        expected_dimension: Optional[int] = None,
+        drift_threshold: float = 0.2,
+    ) -> EmbeddingModelSwapPlan:
+        """Stage a safe embedding model swap and validate compatibility."""
+
+        return await self.model_swap.plan_swap(
+            target_model=target_model,
+            embedder=embedder,
+            batch_size=batch_size,
+            sample_size=sample_size,
+            expected_dimension=expected_dimension,
+            drift_threshold=drift_threshold,
+        )
+
+    async def execute_embedding_model_swap(
+        self,
+        plan: EmbeddingModelSwapPlan,
+        *,
+        batch_size: int = 64,
+        dry_run: bool = False,
+    ) -> EmbeddingModelSwapPlan:
+        """Commit a previously staged embedding model swap plan."""
+
+        return await self.model_swap.execute_swap(
+            plan,
+            batch_size=batch_size,
+            dry_run=dry_run,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -7,21 +7,49 @@ operations across all memory tiers (STM, MTM, LTM) and providing a unified API.
 """
 
 import asyncio
+import inspect
 import logging
 import time
 from datetime import datetime, timezone
+from time import perf_counter
 from types import SimpleNamespace
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, Union
 
 from neuroca.core.enums import MemoryTier
+from neuroca.core.exceptions import MemoryAccessDeniedError, MemoryValidationError
 from neuroca.memory.backends import BackendType
 from neuroca.memory.exceptions import (
+    MemoryBackpressureError,
+    MemoryCapacityError,
     MemoryManagerInitializationError,
     MemoryManagerOperationError,
     MemoryNotFoundError,
     InvalidTierError,
 )
 from neuroca.memory.interfaces.memory_manager import MemoryManagerInterface
+from neuroca.memory.manager.audit import MemoryAuditTrail
+from neuroca.memory.manager.consolidation_pipeline import (
+    ConsolidationSkip,
+    ConsolidationTransaction,
+    TransactionalConsolidationPipeline,
+)
+from neuroca.memory.manager.consolidation_guard import (
+    ConsolidationInFlightGuard,
+)
+from neuroca.memory.manager.backpressure import BackpressureController
+from neuroca.memory.manager.capacity_pressure import TierCapacityPressureAdapter
+from neuroca.memory.manager.circuit_breaker import (
+    CircuitBreakerDecision,
+    MaintenanceCircuitBreaker,
+)
+from neuroca.memory.manager.events import MaintenanceEventPublisher
+from neuroca.memory.manager.maintenance import MaintenanceOrchestrator
+from neuroca.memory.manager.metrics import MemoryMetricsPublisher
+from neuroca.memory.manager.resource_limits import ResourceLimitWatchdog
+from neuroca.memory.manager.quality import MemoryQualityAnalyzer
+from neuroca.memory.manager.sanitization import MemorySanitizer
+from neuroca.memory.manager.scoping import MemoryRetrievalScope
+from neuroca.memory.manager.drift_monitor import EmbeddingDriftMonitor
 from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
 from neuroca.memory.models.working_memory import WorkingMemoryBuffer, WorkingMemoryItem
 from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
@@ -114,13 +142,145 @@ class MemoryManager(MemoryManagerInterface):
         
         # Background tasks
         self._maintenance_task = None
-        
+        self._maintenance_orchestrator: MaintenanceOrchestrator | None = None
+        self._shutdown_event = asyncio.Event()
+        drain_timeout = self._config.get("shutdown_drain_timeout_seconds", 30.0)
+        try:
+            self._shutdown_drain_timeout = max(0.0, float(drain_timeout))
+        except (TypeError, ValueError):
+            self._shutdown_drain_timeout = 30.0
+
         # Context related
         self._current_context = {}
         self._current_context_embedding = None
-        
+
         # Maintenance interval
         self._maintenance_interval = self._config.get("maintenance_interval", 3600)  # Default: 1 hour
+        if self._maintenance_interval and self._maintenance_interval > 0:
+            default_retry = max(5.0, float(self._maintenance_interval) / 4.0)
+        else:
+            default_retry = 60.0
+        try:
+            configured_retry = float(
+                self._config.get("maintenance_retry_interval_seconds", default_retry)
+            )
+        except (TypeError, ValueError):
+            configured_retry = default_retry
+        self._maintenance_retry_interval = max(5.0, configured_retry)
+
+        # Transactional consolidation pipeline
+        self._consolidation_pipeline = TransactionalConsolidationPipeline(
+            log=logger.getChild("manager.pipeline")
+        )
+
+        dedupe_window = self._config.get(
+            "consolidation_dedupe_window_seconds", 30.0
+        )
+        try:
+            dedupe_window_value = float(dedupe_window)
+        except (TypeError, ValueError):
+            dedupe_window_value = 30.0
+
+        self._consolidation_guard = ConsolidationInFlightGuard(
+            dedupe_window_seconds=dedupe_window_value
+        )
+
+        resource_limits_config = self._config.get("resource_limits")
+        if not isinstance(resource_limits_config, dict):
+            resource_limits_config = {}
+        self._resource_watchdog = ResourceLimitWatchdog.from_config(
+            resource_limits_config,
+            log=logger.getChild("manager.resources"),
+        )
+
+        backpressure_config = self._config.get("backpressure")
+        if not isinstance(backpressure_config, dict):
+            backpressure_config = {}
+        self._backpressure = BackpressureController.from_config(
+            backpressure_config,
+            log=logger.getChild("manager.backpressure"),
+        )
+
+        self._capacity_adapter = TierCapacityPressureAdapter(
+            log=logger.getChild("manager.capacity")
+        )
+
+        self._sanitizer = MemorySanitizer(
+            log=logger.getChild("manager.sanitizer")
+        )
+        self._audit_trail = MemoryAuditTrail(
+            log=logger.getChild("manager.audit")
+        )
+        quality_config = self._config.get("quality_monitoring")
+        if not isinstance(quality_config, dict):
+            quality_config = {}
+        self._quality_analyzer = MemoryQualityAnalyzer.from_config(
+            quality_config,
+            log=logger.getChild("manager.quality"),
+        )
+        self._quality_state = SimpleNamespace(
+            last_report=None,
+            last_evaluated_at=None,
+        )
+
+        monitoring_config = self._config.get("monitoring")
+        metrics_config: dict[str, Any]
+        events_config: dict[str, Any]
+        if isinstance(monitoring_config, dict):
+            metrics_candidate = monitoring_config.get("metrics")
+            metrics_config = metrics_candidate if isinstance(metrics_candidate, dict) else {}
+            events_candidate = monitoring_config.get("events")
+            events_config = events_candidate if isinstance(events_candidate, dict) else {}
+        else:
+            metrics_config = {}
+            events_config = {}
+        self._metrics = MemoryMetricsPublisher(
+            metrics_config,
+            log=logger.getChild("manager.metrics"),
+        )
+        self._event_publisher = MaintenanceEventPublisher(
+            events_config,
+            log=logger.getChild("manager.events"),
+        )
+        drift_config = self._config.get("drift_monitoring")
+        if not isinstance(drift_config, dict):
+            drift_config = {}
+        self._drift_monitor = EmbeddingDriftMonitor.from_config(
+            drift_config,
+            log=logger.getChild("manager.drift"),
+        )
+        self._drift_monitor.configure(
+            vector_backend=None,
+            metrics=self._metrics,
+            event_publisher=self._event_publisher,
+            quality_provider=self.evaluate_memory_quality,
+        )
+        self._drift_state = SimpleNamespace(last_report=None, last_checked_at=None)
+
+        breaker_defaults: dict[str, Any] = {
+            "queued_backlog_threshold": 64,
+            "failure_threshold": 3,
+            "cooldown_seconds": 180.0,
+        }
+        maintenance_section = self._config.get("maintenance")
+        breaker_config: dict[str, Any] | None = None
+        if isinstance(maintenance_section, dict):
+            candidate = maintenance_section.get("circuit_breaker")
+            if isinstance(candidate, dict):
+                breaker_config = dict(candidate)
+            elif candidate is False:
+                breaker_config = {"enabled": False}
+        if breaker_config is None:
+            breaker_config = breaker_defaults
+        else:
+            merged = dict(breaker_defaults)
+            merged.update(breaker_config)
+            breaker_config = merged
+
+        self._consolidation_breaker = MaintenanceCircuitBreaker.from_config(
+            breaker_config,
+            log=logger.getChild("manager.circuit_breaker"),
+        )
 
     # ------------------------------------------------------------------
     # Legacy compatibility helpers
@@ -157,6 +317,22 @@ class MemoryManager(MemoryManagerInterface):
             base["emotional_salience"] = emotional_salience
 
         return base
+
+    @staticmethod
+    async def _delete_if_supported(tier: Any, memory_id: Any, *, context: str) -> None:
+        """Delete ``memory_id`` from ``tier`` if the tier exposes a delete method."""
+
+        if not memory_id:
+            return
+
+        delete_handler = getattr(tier, "delete", None)
+        if delete_handler is None:
+            return
+
+        try:
+            await delete_handler(memory_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Rollback delete failed for %s during %s", memory_id, context)
 
     @staticmethod
     def _extract_content_payload(content: Any) -> Any:
@@ -351,7 +527,9 @@ class MemoryManager(MemoryManagerInterface):
         
         try:
             logger.info("Initializing Memory Manager")
-            
+
+            self._shutdown_event.clear()
+
             # Initialize STM tier (use direct instance if provided, otherwise create new)
             logger.debug("Initializing STM tier")
             if self._stm_instance:
@@ -393,11 +571,15 @@ class MemoryManager(MemoryManagerInterface):
                     config=self._ltm_config,
                 )
                 await self._ltm.initialize()
-            
+
+            await self._refresh_capacity_pressure()
+            self._configure_drift_monitor()
+            self._ensure_maintenance_orchestrator()
+
             # Start maintenance task if interval > 0
             if self._maintenance_interval > 0:
                 self._start_maintenance_task()
-            
+
             self._initialized = True
             logger.info("Memory Manager initialization complete")
         except Exception as e:
@@ -422,20 +604,47 @@ class MemoryManager(MemoryManagerInterface):
         
         try:
             logger.info("Shutting down Memory Manager")
-            
+
+            self._shutdown_event.set()
+
+            drain_timeout = self._shutdown_drain_timeout
+            wait_timeout = drain_timeout if drain_timeout > 0 else None
+
             # Stop maintenance task
             if self._maintenance_task:
-                self._maintenance_task.cancel()
                 try:
-                    await self._maintenance_task
+                    if wait_timeout is None:
+                        await self._maintenance_task
+                    else:
+                        await asyncio.wait_for(self._maintenance_task, timeout=wait_timeout)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Timed out waiting for maintenance task to finish; cancelling",
+                    )
+                    self._maintenance_task.cancel()
+                    try:
+                        await self._maintenance_task
+                    except asyncio.CancelledError:
+                        pass
                 except asyncio.CancelledError:
                     pass
-                self._maintenance_task = None
-            
+                except Exception:
+                    logger.exception("Maintenance task raised during shutdown")
+                finally:
+                    self._maintenance_task = None
+            self._maintenance_orchestrator = None
+
+            try:
+                await self._consolidation_guard.wait_for_all(timeout=wait_timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timed out waiting for in-flight consolidations to finish during shutdown",
+                )
+
             # Shutdown tiers
             if self._stm:
                 await self._stm.shutdown()
-            
+
             if self._mtm:
                 await self._mtm.shutdown()
             
@@ -493,6 +702,12 @@ class MemoryManager(MemoryManagerInterface):
             raise MemoryManagerOperationError("LTM storage tier not available")
         return self._ltm
 
+    @property
+    def embedding_dimension(self) -> int:
+        """Return the configured embedding dimensionality."""
+
+        return self._embedding_dimension
+
     def get_tier(
         self, tier_name: str
     ) -> ShortTermMemoryTier | MediumTermMemoryTier | LongTermMemoryTier:
@@ -500,33 +715,431 @@ class MemoryManager(MemoryManagerInterface):
 
         self._ensure_initialized()
         return self._get_tier_by_name(tier_name)
-    
+
+    def _ensure_maintenance_orchestrator(self) -> MaintenanceOrchestrator:
+        """Initialise the maintenance orchestrator if it has not been created."""
+
+        if self._maintenance_orchestrator is None:
+            telemetry_sink = (
+                self._metrics.handle_cycle_report
+                if getattr(self, "_metrics", None) and self._metrics.enabled
+                else None
+            )
+            self._maintenance_orchestrator = MaintenanceOrchestrator(
+                self,
+                min_interval=self._maintenance_retry_interval,
+                telemetry_sink=telemetry_sink,
+                event_publisher=self._event_publisher,
+                log=logger.getChild("manager.maintenance"),
+            )
+        return self._maintenance_orchestrator
+
+    def _capture_backpressure_snapshot(self) -> dict[str, dict[str, int]] | None:
+        """Return a snapshot of back-pressure state used for degradation guards."""
+
+        controller = getattr(self, "_backpressure", None)
+        if controller is None:
+            return None
+
+        try:
+            return controller.snapshot()
+        except Exception:  # pragma: no cover - defensive logging
+            logger.debug(
+                "Failed capturing back-pressure snapshot for circuit breaker",
+                exc_info=True,
+            )
+            return None
+
+    def _evaluate_consolidation_breaker(
+        self,
+        telemetry: Any,
+    ) -> CircuitBreakerDecision | None:
+        """Evaluate the consolidation circuit breaker against ``telemetry``."""
+
+        breaker = getattr(self, "_consolidation_breaker", None)
+        if breaker is None:
+            return None
+
+        snapshot = self._capture_backpressure_snapshot()
+
+        try:
+            decision = breaker.evaluate(
+                backlog_snapshot=snapshot,
+                telemetry=telemetry,
+            )
+        except Exception:  # pragma: no cover - breaker must not disrupt maintenance
+            logger.exception("Maintenance circuit breaker evaluation failed")
+            return None
+
+        return decision
+
+    @property
+    def consolidation_breaker_status(self) -> dict[str, Any] | None:
+        """Expose the breaker status for monitoring surfaces."""
+
+        breaker = getattr(self, "_consolidation_breaker", None)
+        if breaker is None:
+            return None
+        return breaker.status()
+
+    @property
+    def last_quality_report(self) -> Optional[Dict[str, Any]]:
+        """Return the cached quality report from the most recent evaluation."""
+
+        report = getattr(self._quality_state, "last_report", None)
+        if isinstance(report, dict):
+            return dict(report)
+        return None
+
+    @property
+    def last_drift_report(self) -> Optional[Dict[str, Any]]:
+        """Return the cached embedding drift evaluation report."""
+
+        report = getattr(self._drift_state, "last_report", None)
+        if isinstance(report, dict):
+            return dict(report)
+        return None
+
+    async def evaluate_memory_quality(self, *, limit: int | None = None) -> Dict[str, Any]:
+        """Evaluate LTM quality and return structured metrics."""
+
+        self._ensure_initialized()
+
+        snapshot = await self._collect_ltm_memories(limit=limit)
+        report = self._quality_analyzer.evaluate(snapshot)
+        self._quality_state.last_report = report
+        evaluated_at = report.get("evaluated_at") if isinstance(report, dict) else None
+        if isinstance(evaluated_at, str):
+            try:
+                self._quality_state.last_evaluated_at = datetime.fromisoformat(evaluated_at).timestamp()
+            except ValueError:
+                self._quality_state.last_evaluated_at = time.time()
+        else:
+            self._quality_state.last_evaluated_at = time.time()
+        return report
+
+    async def detect_embedding_drift(
+        self,
+        *,
+        quality_report: Mapping[str, Any] | None = None,
+        force: bool = False,
+        sample_size: int | None = None,
+    ) -> Dict[str, Any]:
+        """Evaluate embedding drift and return a structured summary."""
+
+        self._ensure_initialized()
+
+        monitor = self._drift_monitor
+        if monitor is None:
+            return {}
+
+        result = await monitor.run_checks(
+            quality_report=quality_report,
+            force=force,
+            sample_size=sample_size,
+        )
+        if not result:
+            return {}
+
+        self._drift_state.last_report = dict(result)
+        checked_at = result.get("checked_at")
+        if isinstance(checked_at, str):
+            try:
+                self._drift_state.last_checked_at = datetime.fromisoformat(checked_at).timestamp()
+            except ValueError:
+                self._drift_state.last_checked_at = time.time()
+        else:
+            self._drift_state.last_checked_at = time.time()
+
+        return dict(result)
+
+    async def _collect_ltm_memories(self, limit: int | None = None) -> List[Any]:
+        """Gather a snapshot of LTM memories for quality analysis."""
+
+        if self._ltm is None:
+            return []
+
+        retrieval_methods = ("list_all", "retrieve_all", "list")
+        for method_name in retrieval_methods:
+            handler = getattr(self._ltm, method_name, None)
+            if handler is None:
+                continue
+
+            result: Any = None
+            attempted = False
+            call_kwargs: List[Dict[str, Any]] = [{}]
+            if limit is not None:
+                call_kwargs.append({"limit": limit})
+
+            for kwargs in call_kwargs:
+                try:
+                    result = handler(**kwargs)  # type: ignore[misc]
+                except TypeError:
+                    continue
+                attempted = True
+                break
+
+            if result is None and not attempted:
+                continue
+
+            try:
+                if inspect.isawaitable(result):
+                    result = await result
+            except Exception:
+                logger.exception(
+                    "Failed to await LTM retrieval via %s", method_name
+                )
+                continue
+
+            if result is None:
+                continue
+
+            try:
+                if hasattr(result, "__aiter__"):
+                    collected: List[Any] = []
+                    async for item in result:  # type: ignore[assignment]
+                        collected.append(item)
+                        if limit is not None and len(collected) >= limit:
+                            break
+                    return collected
+                if isinstance(result, dict):
+                    sequence = list(result.values())
+                elif isinstance(result, (list, tuple, set)):
+                    sequence = list(result)
+                elif isinstance(result, Iterable) and not isinstance(result, (str, bytes)):
+                    sequence = list(result)
+                else:
+                    continue
+            except Exception:
+                logger.exception("Failed to coerce LTM snapshot from %s", method_name)
+                continue
+
+            if limit is not None:
+                return sequence[: limit]
+            return sequence
+
+        logger.debug("LTM storage does not expose bulk retrieval; skipping quality analysis")
+        return []
+
+    def _configure_drift_monitor(self) -> None:
+        backend = None
+        if self._ltm is not None:
+            backend = getattr(self._ltm, "_backend", None)
+        self._drift_monitor.configure(
+            vector_backend=backend,
+            metrics=self._metrics,
+            event_publisher=self._event_publisher,
+            quality_provider=self.evaluate_memory_quality,
+        )
+
     def _start_maintenance_task(self) -> None:
         """
         Start the background maintenance task.
         """
+        self._ensure_maintenance_orchestrator()
         if self._maintenance_task is None or self._maintenance_task.done():
+            self._shutdown_event.clear()
             self._maintenance_task = asyncio.create_task(self._maintenance_loop())
     
     async def _maintenance_loop(self) -> None:
         """
         Background task for periodically running maintenance on all tiers.
         """
+        orchestrator = self._ensure_maintenance_orchestrator()
+        base_interval = float(self._maintenance_interval)
+        if base_interval <= 0:
+            base_interval = orchestrator.min_interval
+
+        delay = max(base_interval, orchestrator.min_interval)
+
         try:
-            while True:
-                # Wait for the next maintenance interval
-                await asyncio.sleep(self._maintenance_interval)
-                
-                # Run maintenance
+            while not self._shutdown_event.is_set():
                 try:
-                    await self.run_maintenance()
-                except Exception as e:
-                    logger.error(f"Error in maintenance loop: {str(e)}")
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(),
+                        timeout=delay,
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    pass
+
+                result = await orchestrator.run_cycle(triggered_by="scheduler")
+                if result.get("status") == "error":
+                    logger.error(
+                        "Background maintenance cycle completed with errors: %s",
+                        result.get("errors", []),
+                    )
+                else:
+                    logger.debug(
+                        "Background maintenance cycle completed successfully"
+                    )
+
+                try:
+                    await self._refresh_capacity_pressure()
+                except Exception:  # noqa: BLE001 - adaptation must not break loop
+                    logger.debug(
+                        "Capacity pressure refresh failed after maintenance cycle",
+                        exc_info=True,
+                    )
+
+                if self._shutdown_event.is_set():
+                    break
+
+                delay = orchestrator.compute_next_delay(base_interval)
         except asyncio.CancelledError:
             logger.info("Maintenance task cancelled")
             raise
         except Exception as e:
             logger.exception(f"Unexpected error in maintenance loop: {str(e)}")
+
+    def _resolve_tier_capacity(self, tier_name: str, tier: Any) -> int | None:
+        """Best effort resolution of capacity for ``tier``."""
+
+        limit = self._resource_watchdog.limit_for(tier_name)
+        if limit and limit.max_items:
+            return limit.max_items
+
+        config = getattr(tier, "config", None)
+        if isinstance(config, dict):
+            candidate = config.get("max_capacity")
+            try:
+                if candidate is not None:
+                    capacity = int(candidate)
+                    if capacity > 0:
+                        return capacity
+            except (TypeError, ValueError):
+                logger.debug(
+                    "Ignoring invalid max_capacity %r for %s tier", candidate, tier_name
+                )
+
+        candidate = getattr(tier, "capacity", None)
+        try:
+            if candidate is not None:
+                capacity = int(candidate)
+                if capacity > 0:
+                    return capacity
+        except (TypeError, ValueError):
+            logger.debug(
+                "Ignoring invalid capacity %r for %s tier", candidate, tier_name
+            )
+        return None
+
+    def _normalize_scope(
+        self, scope: MemoryRetrievalScope | None
+    ) -> MemoryRetrievalScope:
+        """Return a usable scope instance."""
+
+        return scope or MemoryRetrievalScope.system()
+
+    def _extract_metadata_dict(self, memory: Any) -> dict[str, Any]:
+        """Return a metadata dictionary from ``memory``."""
+
+        if isinstance(memory, MemoryItem):
+            try:
+                metadata = memory.metadata.model_dump()
+            except Exception:  # noqa: BLE001 - defensive conversion
+                metadata = {}
+            return metadata if isinstance(metadata, dict) else {}
+
+        if isinstance(memory, Mapping):
+            metadata = memory.get("metadata")
+            if isinstance(metadata, MemoryMetadata):
+                try:
+                    metadata = metadata.model_dump()
+                except Exception:  # noqa: BLE001 - defensive conversion
+                    metadata = {}
+            return metadata if isinstance(metadata, dict) else {}
+
+        return {}
+
+    def _partition_metadata_fields(
+        self, metadata: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Split metadata into recognised and additional mappings."""
+
+        allowed = {
+            key
+            for key in MemoryMetadata.model_fields.keys()
+            if key not in {"tags", "additional_metadata"}
+        }
+
+        recognised: dict[str, Any] = {}
+        extras: dict[str, Any] = {}
+
+        for key, value in metadata.items():
+            if key in allowed:
+                recognised[key] = value
+            else:
+                extras[key] = value
+
+        return recognised, extras
+
+    def _assert_memory_access(
+        self,
+        memory_id: str,
+        metadata: Mapping[str, Any],
+        scope: MemoryRetrievalScope,
+        operation: str,
+    ) -> None:
+        """Raise when ``metadata`` falls outside ``scope``."""
+
+        if scope.allows_metadata(metadata):
+            return
+
+        principal = scope.principal_id or "unknown"
+        raise MemoryAccessDeniedError(memory_id, principal, operation)
+
+    def _is_memory_visible(
+        self,
+        memory: Any,
+        scope: MemoryRetrievalScope,
+    ) -> bool:
+        """Return True when ``memory`` is accessible within ``scope``."""
+
+        metadata = self._extract_metadata_dict(memory)
+        return scope.allows_metadata(metadata)
+
+    async def _refresh_capacity_pressure(self) -> None:
+        """Collect utilisation snapshots and update the pressure adapter."""
+
+        adapter = self._capacity_adapter
+        if adapter is None:
+            return
+
+        for tier_name in (self.STM_TIER, self.MTM_TIER, self.LTM_TIER):
+            tier = getattr(self, f"_{tier_name}", None)
+            if tier is None:
+                continue
+
+            counter = getattr(tier, "count", None)
+            if counter is None:
+                continue
+
+            capacity = self._resolve_tier_capacity(tier_name, tier)
+            if not capacity:
+                adapter.observe(tier_name, 0.0)
+                continue
+
+            try:
+                current = counter({})
+                if asyncio.iscoroutine(current):
+                    current = await current
+                current_value = float(current)
+            except Exception:  # noqa: BLE001 - best effort metric
+                logger.debug(
+                    "Unable to collect utilisation for %s tier", tier_name, exc_info=True
+                )
+                continue
+
+            try:
+                ratio = max(0.0, min(1.0, current_value / float(capacity)))
+            except ZeroDivisionError:
+                ratio = 1.0
+
+            adapter.observe(tier_name, ratio)
+
+        if getattr(self, "_metrics", None) and self._metrics.enabled:
+            self._metrics.update_capacity_snapshot(adapter.snapshot())
     
     def _get_tier_by_name(self, tier_name: str):
         """
@@ -583,6 +1196,7 @@ class MemoryManager(MemoryManagerInterface):
             Memory ID
             
         Raises:
+            MemoryCapacityError: If the target tier is at capacity and cannot accept more items
             MemoryManagerOperationError: If the add operation fails
         """
         self._ensure_initialized()
@@ -593,34 +1207,66 @@ class MemoryManager(MemoryManagerInterface):
         # Get tier instance
         tier = self._get_tier_by_name(initial_tier)
         
-        # Create memory item
-        memory_content = MemoryContent(
-            text=content if isinstance(content, str) else None,
-            data=content if not isinstance(content, str) else None,
-            summary=summary,
-            embedding=embedding,
+        # Sanitize core payload
+        sanitized_summary = self._sanitizer.sanitize_optional_text(
+            "summary", summary
         )
-        
-        # Process metadata and tags
-        tags = tags or []
+
+        if isinstance(content, str):
+            sanitized_text = self._sanitizer.sanitize_text("content", content)
+            sanitized_json: dict[str, Any] | None = None
+            sanitized_raw: Any | None = None
+        else:
+            sanitized_payload = self._sanitizer.sanitize_value("content", content)
+            sanitized_text = None
+            sanitized_json = sanitized_payload if isinstance(sanitized_payload, dict) else None
+            sanitized_raw = None if sanitized_json is not None else sanitized_payload
+
+        memory_content = MemoryContent(
+            text=sanitized_text,
+            summary=sanitized_summary,
+            json_data=sanitized_json if sanitized_text is None else None,
+            raw_content=sanitized_raw if sanitized_text is None else None,
+        )
+
         metadata_dict = metadata or {}
         if not isinstance(metadata_dict, dict):
             metadata_dict = {"data": metadata_dict}
-        
-        # Add tier-specific tags
-        tags_dict = metadata_dict.get("tags", {})
-        if not isinstance(tags_dict, dict):
-            tags_dict = {}
-            
-        for tag in tags:
-            tags_dict[tag] = True
-            
-        # Create memory metadata
+
+        sanitized_metadata, metadata_tags = self._sanitizer.sanitize_metadata(
+            metadata_dict
+        )
+        core_metadata, extra_metadata = self._partition_metadata_fields(
+            sanitized_metadata
+        )
+        sanitized_tag_map = self._sanitizer.merge_tag_maps(
+            metadata_tags,
+            self._sanitizer.sanitize_tag_list(tags or []),
+        )
+
         memory_metadata = MemoryMetadata(
             importance=importance,
-            tags=tags_dict,
-            **metadata_dict,
+            tags=sanitized_tag_map,
+            **core_metadata,
         )
+
+        if extra_metadata:
+            extra_dict = dict(extra_metadata)
+            nested_additional = extra_dict.pop("additional_metadata", None)
+
+            if isinstance(nested_additional, Mapping):
+                try:
+                    memory_metadata.additional_metadata.update(nested_additional)
+                except Exception:  # noqa: BLE001 - defensive fallback
+                    for key, value in nested_additional.items():
+                        memory_metadata.additional_metadata[key] = value
+            elif nested_additional is not None:
+                memory_metadata.additional_metadata["additional_metadata"] = (
+                    nested_additional
+                )
+
+            for key, value in extra_dict.items():
+                memory_metadata.additional_metadata[key] = value
         
         # Create memory item
         memory_item = MemoryItem(
@@ -628,20 +1274,34 @@ class MemoryManager(MemoryManagerInterface):
             metadata=memory_metadata,
         )
         
+        serialized_memory = memory_item.model_dump()
+
+        memory_id: str | None = None
         try:
-            # Store in tier
-            memory_id = await tier.store(memory_item.model_dump())
-            
+            async with self._backpressure.slot(initial_tier):
+                await self._resource_watchdog.ensure_capacity(initial_tier, tier)
+
+                # Store in tier with watchdog-enforced timeout limits
+                memory_id = await self._resource_watchdog.store(
+                    initial_tier,
+                    tier,
+                    serialized_memory,
+                )
+
             # Update working memory with new memory if it's relevant to current context
             # This would require calculating relevance, which we're keeping simple for now
-            if self._current_context:
+            if self._current_context and memory_id is not None:
                 # For demonstration, we'll add any memory with importance > 0.7 to working memory
                 if importance > 0.7:
                     memory_data = await tier.retrieve(memory_id)
                     if memory_data:
                         # Convert to MemoryItem if needed
-                        memory_item = memory_data if isinstance(memory_data, MemoryItem) else MemoryItem.model_validate(memory_data)
-                        
+                        memory_item = (
+                            memory_data
+                            if isinstance(memory_data, MemoryItem)
+                            else MemoryItem.model_validate(memory_data)
+                        )
+
                         self._working_memory.add_item(
                             WorkingMemoryItem(
                                 memory=memory_item,
@@ -649,9 +1309,41 @@ class MemoryManager(MemoryManagerInterface):
                                 relevance=0.9,  # High relevance for highly important memories
                             )
                         )
-            
+
+            if memory_id is None:
+                raise MemoryManagerOperationError(
+                    f"Failed to store memory in {initial_tier} tier"
+                )
+
             logger.debug(f"Added memory {memory_id} to {initial_tier} tier")
+
+            await self._audit_trail.record_creation(
+                {**serialized_memory, "id": str(memory_id)},
+                tier=initial_tier,
+            )
             return memory_id
+        except MemoryBackpressureError as exc:
+            logger.warning(
+                "Back-pressure rejected memory write to %s tier: %s",
+                initial_tier,
+                exc,
+            )
+            raise
+        except MemoryCapacityError as exc:
+            logger.warning(
+                "Rejected memory write to %s tier due to capacity limits: %s",
+                initial_tier,
+                exc,
+            )
+            raise
+        except asyncio.TimeoutError as exc:
+            logger.exception(
+                "Timed out storing memory in %s tier after watchdog enforcement",
+                initial_tier,
+            )
+            raise MemoryManagerOperationError(
+                f"Timed out storing memory in {initial_tier} tier"
+            ) from exc
         except Exception as e:
             logger.exception(f"Failed to add memory to {initial_tier} tier")
             raise MemoryManagerOperationError(
@@ -662,6 +1354,7 @@ class MemoryManager(MemoryManagerInterface):
         self,
         memory_id: str,
         tier: Optional[str] = None,
+        scope: MemoryRetrievalScope | None = None,
     ) -> Optional[MemoryItem]:
         """
         Retrieve a specific memory by ID.
@@ -677,24 +1370,38 @@ class MemoryManager(MemoryManagerInterface):
             MemoryManagerOperationError: If the retrieve operation fails
         """
         self._ensure_initialized()
-        
+
+        scope_obj = self._normalize_scope(scope)
+
         try:
             # If tier is specified, search only that tier
             if tier:
                 tier_instance = self._get_tier_by_name(tier)
-                return await tier_instance.retrieve(memory_id)
-            
+                memory_data = await tier_instance.retrieve(memory_id)
+                if not memory_data:
+                    return None
+
+                metadata = self._extract_metadata_dict(memory_data)
+                self._assert_memory_access(memory_id, metadata, scope_obj, "retrieve")
+                await tier_instance.access(memory_id)
+                return memory_data
+
             # Otherwise, search all tiers starting from STM (most recent)
             for tier_name in [self.STM_TIER, self.MTM_TIER, self.LTM_TIER]:
                 tier_instance = self._get_tier_by_name(tier_name)
                 memory_data = await tier_instance.retrieve(memory_id)
                 if memory_data:
-                    # Access the memory to update its statistics
+                    metadata = self._extract_metadata_dict(memory_data)
+                    self._assert_memory_access(
+                        memory_id, metadata, scope_obj, "retrieve"
+                    )
                     await tier_instance.access(memory_id)
                     return memory_data
-            
+
             # Memory not found in any tier
             return None
+        except MemoryAccessDeniedError:
+            raise
         except InvalidTierError as e:
             # Re-raise with more specific error
             raise e
@@ -749,66 +1456,76 @@ class MemoryManager(MemoryManagerInterface):
             raise MemoryNotFoundError(f"Memory {memory_id} not found in any tier")
         
         try:
-            # Prepare content updates
-            content_updates = {}
+            content_updates: dict[str, Any] = {}
             if content is not None:
                 if isinstance(content, str):
-                    content_updates["text"] = content
-                    content_updates["data"] = None
+                    sanitized_text = self._sanitizer.sanitize_text("content", content)
+                    content_updates["text"] = sanitized_text
                 else:
-                    content_updates["text"] = None
-                    content_updates["data"] = content
-            
+                    sanitized_payload = self._sanitizer.sanitize_value("content", content)
+                    if isinstance(sanitized_payload, dict):
+                        content_updates["json_data"] = sanitized_payload
+                    elif sanitized_payload is not None:
+                        content_updates["text"] = str(sanitized_payload)
+
             if summary is not None:
-                content_updates["summary"] = summary
-            
-            # Prepare metadata updates
-            metadata_updates = {}
+                sanitized_summary = self._sanitizer.sanitize_text("summary", summary)
+                content_updates["summary"] = sanitized_summary
+
+            metadata_updates: dict[str, Any] = {}
             if importance is not None:
                 metadata_updates["importance"] = importance
-            
-            # Process tags
-            if tags is not None:
-                metadata_source: dict[str, Any] = {}
-                if isinstance(memory_data, dict):
-                    raw_metadata = memory_data.get("metadata")
-                    if isinstance(raw_metadata, dict):
-                        metadata_source = dict(raw_metadata)
-                else:
-                    existing_metadata = getattr(memory_data, "metadata", None)
-                    if existing_metadata is not None:
-                        if hasattr(existing_metadata, "model_dump"):
-                            try:
-                                dumped = existing_metadata.model_dump()  # type: ignore[call-arg]
-                            except Exception:  # noqa: BLE001
-                                dumped = {}
-                            metadata_source = dumped if isinstance(dumped, dict) else {}
-                        elif hasattr(existing_metadata, "dict"):
-                            try:
-                                dumped = existing_metadata.dict()  # type: ignore[call-arg]
-                            except Exception:  # noqa: BLE001
-                                dumped = {}
-                            metadata_source = dumped if isinstance(dumped, dict) else {}
 
-                existing_tags = metadata_source.get("tags", {}) if metadata_source else {}
-                if not isinstance(existing_tags, dict):
-                    existing_tags = {}
-
-                for tag in tags:
-                    existing_tags[tag] = True
-
-                metadata_updates["tags"] = existing_tags
-            
-            # Merge with additional metadata
+            metadata_payload: dict[str, Any] | None = None
             if metadata is not None:
-                for key, value in metadata.items():
-                    if key != "tags":  # Tags handled separately
-                        metadata_updates[key] = value
-            
-            # Get the tier instance
+                metadata_payload = metadata if isinstance(metadata, dict) else {"data": metadata}
+
+            sanitized_metadata: dict[str, Any] = {}
+            metadata_tag_map: dict[str, Any] = {}
+            if metadata_payload is not None:
+                sanitized_metadata, metadata_tag_map = self._sanitizer.sanitize_metadata(
+                    metadata_payload
+                )
+                for key, value in sanitized_metadata.items():
+                    metadata_updates[key] = value
+
+            metadata_source: dict[str, Any] = {}
+            if isinstance(memory_data, dict):
+                raw_metadata = memory_data.get("metadata")
+                if isinstance(raw_metadata, dict):
+                    metadata_source = dict(raw_metadata)
+            else:
+                existing_metadata = getattr(memory_data, "metadata", None)
+                if existing_metadata is not None:
+                    if hasattr(existing_metadata, "model_dump"):
+                        try:
+                            dumped = existing_metadata.model_dump()  # type: ignore[call-arg]
+                        except Exception:  # noqa: BLE001
+                            dumped = {}
+                        metadata_source = dumped if isinstance(dumped, dict) else {}
+                    elif hasattr(existing_metadata, "dict"):
+                        try:
+                            dumped = existing_metadata.dict()  # type: ignore[call-arg]
+                        except Exception:  # noqa: BLE001
+                            dumped = {}
+                        metadata_source = dumped if isinstance(dumped, dict) else {}
+
+            raw_existing_tags = metadata_source.get("tags", {}) if metadata_source else {}
+            existing_tags = self._sanitizer.sanitize_tag_map(raw_existing_tags)
+
+            explicit_tags = self._sanitizer.sanitize_tag_list(tags) if tags is not None else {}
+
+            combined_tags = self._sanitizer.merge_tag_maps(
+                existing_tags,
+                metadata_tag_map,
+                explicit_tags,
+            )
+
+            if tags is not None or metadata_tag_map or combined_tags != existing_tags:
+                metadata_updates["tags"] = combined_tags
+
             tier_instance = self._get_tier_by_name(memory_tier)
-            
-            # Update the memory
+
             success = await tier_instance.update(
                 memory_id,
                 content=content_updates if content_updates else None,
@@ -819,6 +1536,8 @@ class MemoryManager(MemoryManagerInterface):
             # Currently WorkingMemoryBuffer doesn't have update_item method
             
             return success
+        except MemoryValidationError:
+            raise
         except Exception as e:
             logger.exception(f"Failed to update memory {memory_id}")
             raise MemoryManagerOperationError(
@@ -965,6 +1684,7 @@ class MemoryManager(MemoryManagerInterface):
         limit: int = 10,
         min_relevance: float = 0.0,
         tiers: Optional[List[str]] = None,
+        scope: MemoryRetrievalScope | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for memories across all tiers.
@@ -985,6 +1705,8 @@ class MemoryManager(MemoryManagerInterface):
             MemoryManagerOperationError: If the search operation fails
         """
         self._ensure_initialized()
+
+        scope_obj = self._normalize_scope(scope)
         
         try:
             # Determine which tiers to search
@@ -1013,6 +1735,11 @@ class MemoryManager(MemoryManagerInterface):
                     
                     # Extract results from MemorySearchResults and convert to dicts
                     for search_result in tier_search_results.results:
+                        if not self._is_memory_visible(
+                            search_result.memory, scope_obj
+                        ):
+                            continue
+
                         result_dict = search_result.memory.model_dump()
                         result_dict["tier"] = tier_name
                         # Add relevance score from search result
@@ -1254,54 +1981,170 @@ class MemoryManager(MemoryManagerInterface):
         source_tier_instance = self._get_tier_by_name(source_tier)
         target_tier_instance = self._get_tier_by_name(target_tier)
         
+        pipeline_key = f"{source_tier}:{memory_id}->{target_tier}"
+
+        metrics = getattr(self, "_metrics", None)
+        event_publisher = getattr(self, "_event_publisher", None)
+
         try:
-            # Retrieve memory from source tier
-            memory_data = await source_tier_instance.retrieve(memory_id)
-            if not memory_data:
-                raise MemoryNotFoundError(
-                    f"Memory {memory_id} not found in {source_tier} tier"
-                )
-            
-            # Apply additional metadata if provided
-            if additional_metadata:
-                # Update existing metadata
-                if isinstance(memory_data, MemoryItem):
-                    metadata = memory_data.metadata
-                    # Store additional metadata in tags since MemoryMetadata has strict fields
-                    tags = metadata.tags
-                    for key, value in additional_metadata.items():
-                        if key == "tags" and isinstance(value, dict):
-                            # Merge with existing tags
-                            tags.update(value)
+            while True:
+                decision = await self._consolidation_guard.reserve(pipeline_key)
+                if not decision.proceed:
+                    if decision.result is None:
+                        continue
+                    if event_publisher is not None:
+                        await event_publisher.consolidation_completed(
+                            memory_id=memory_id,
+                            source_tier=source_tier,
+                            target_tier=target_tier,
+                            status="cached",
+                            duration_seconds=None,
+                            result_id=str(decision.result),
+                        )
+                    return decision.result
+
+                reservation = decision.reservation
+                if reservation is None:
+                    if decision.result is not None and event_publisher is not None:
+                        await event_publisher.consolidation_completed(
+                            memory_id=memory_id,
+                            source_tier=source_tier,
+                            target_tier=target_tier,
+                            status="cached",
+                            duration_seconds=None,
+                            result_id=str(decision.result),
+                        )
+                    return decision.result
+
+                async with reservation:
+                    started = perf_counter()
+                    memory_data = await source_tier_instance.retrieve(memory_id)
+                    if not memory_data:
+                        raise MemoryNotFoundError(
+                            f"Memory {memory_id} not found in {source_tier} tier"
+                        )
+
+                    if additional_metadata:
+                        if isinstance(memory_data, MemoryItem):
+                            metadata = memory_data.metadata
+                            tags = metadata.tags
+                            for key, value in additional_metadata.items():
+                                if key == "tags" and isinstance(value, dict):
+                                    tags.update(value)
+                                else:
+                                    tags[f"_meta_{key}"] = value
+                            metadata.tags = tags
                         else:
-                            # Store other metadata as tags with a prefix
-                            tags[f"_meta_{key}"] = value
-                    metadata.tags = tags
-                else:
-                    # Legacy dict handling
-                    metadata = memory_data.get("metadata", {})
-                    for key, value in additional_metadata.items():
-                        if key == "tags":
-                            # Special handling for tags
-                            tags = metadata.get("tags", {})
-                            tags.update(value)
-                            metadata["tags"] = tags
-                        else:
-                            metadata[key] = value
-                    
-                    memory_data["metadata"] = metadata
-            
-            # Add to target tier
-            new_id = await target_tier_instance.store(memory_data)
-            
-            # If source and target tiers are different, delete from source tier
-            if source_tier != target_tier:
-                await source_tier_instance.delete(memory_id)
-                
-                # Note: Working memory tier update would be handled here if needed
-                # Currently WorkingMemoryBuffer doesn't have update_item_tier method
-            
-            return new_id
+                            metadata = memory_data.get("metadata", {})
+                            for key, value in additional_metadata.items():
+                                if key == "tags":
+                                    tags = metadata.get("tags", {})
+                                    tags.update(value)
+                                    metadata["tags"] = tags
+                                else:
+                                    metadata[key] = value
+
+                            memory_data["metadata"] = metadata
+
+                    async def runner(transaction: ConsolidationTransaction) -> Any:
+                        stored_id = await transaction.stage(
+                            lambda: target_tier_instance.store(memory_data),
+                            rollback=lambda new_id: self._delete_if_supported(
+                                target_tier_instance,
+                                new_id,
+                                context=f"consolidation {pipeline_key}",
+                            ),
+                            description="store_target",
+                        )
+
+                        if not stored_id:
+                            raise ConsolidationSkip(
+                                f"Target tier {target_tier} did not return an identifier"
+                            )
+
+                        if source_tier != target_tier:
+                            await transaction.stage(
+                                lambda: source_tier_instance.delete(memory_id),
+                                description="delete_source",
+                            )
+
+                        return stored_id
+
+                    try:
+                        new_id = await self._consolidation_pipeline.run(
+                            pipeline_key, runner
+                        )
+                        duration = perf_counter() - started
+                    except ConsolidationSkip as exc:
+                        duration = perf_counter() - started
+                        if metrics is not None:
+                            metrics.record_consolidation(
+                                source=source_tier,
+                                target=target_tier,
+                                duration_seconds=duration,
+                                succeeded=False,
+                            )
+                        if event_publisher is not None:
+                            await event_publisher.consolidation_completed(
+                                memory_id=memory_id,
+                                source_tier=source_tier,
+                                target_tier=target_tier,
+                                status="skipped",
+                                duration_seconds=duration,
+                                result_id=None,
+                                error=str(exc),
+                            )
+                        raise MemoryManagerOperationError(
+                            f"Failed to consolidate memory {memory_id}: {exc}"
+                        ) from exc
+                    except Exception as exc:
+                        duration = perf_counter() - started
+                        if metrics is not None:
+                            metrics.record_consolidation(
+                                source=source_tier,
+                                target=target_tier,
+                                duration_seconds=duration,
+                                succeeded=False,
+                            )
+                        if event_publisher is not None:
+                            await event_publisher.consolidation_completed(
+                                memory_id=memory_id,
+                                source_tier=source_tier,
+                                target_tier=target_tier,
+                                status="error",
+                                duration_seconds=duration,
+                                result_id=None,
+                                error=str(exc),
+                            )
+                        logger.exception("Failed to consolidate memory %s", memory_id)
+                        raise MemoryManagerOperationError(
+                            f"Failed to consolidate memory: {str(exc)}"
+                        ) from exc
+
+                    reservation.commit(new_id)
+                    if metrics is not None:
+                        metrics.record_consolidation(
+                            source=source_tier,
+                            target=target_tier,
+                            duration_seconds=duration,
+                            succeeded=True,
+                        )
+                    if event_publisher is not None:
+                        await event_publisher.consolidation_completed(
+                            memory_id=memory_id,
+                            source_tier=source_tier,
+                            target_tier=target_tier,
+                            status="success",
+                            duration_seconds=duration,
+                            result_id=str(new_id) if new_id is not None else None,
+                        )
+                    await self._audit_trail.record_consolidation(
+                        memory_data,
+                        source_tier=source_tier,
+                        target_tier=target_tier,
+                        new_memory_id=str(new_id) if new_id is not None else None,
+                    )
+                    return new_id
         except Exception as e:
             if isinstance(e, (MemoryNotFoundError, InvalidTierError)):
                 raise
@@ -1468,94 +2311,34 @@ class MemoryManager(MemoryManagerInterface):
     async def run_maintenance(self) -> Dict[str, Any]:
         """
         Run maintenance tasks on the memory system.
-        
+
         This includes tasks like:
         - Consolidating memories between tiers
         - Decaying memories
         - Cleaning up expired memories
         - Optimizing storage
-        
+
         Returns:
             Dictionary of maintenance results
-            
+
         Raises:
             MemoryManagerOperationError: If the maintenance fails
         """
         self._ensure_initialized()
-        
+
+        orchestrator = self._ensure_maintenance_orchestrator()
+
+        result = await orchestrator.run_cycle(triggered_by="manual")
+        if result.get("status") == "error":
+            errors = result.get("errors", [])
+            message = "Maintenance cycle reported errors"
+            if errors:
+                message = f"Maintenance cycle reported errors: {', '.join(errors)}"
+            raise MemoryManagerOperationError(message)
+
         try:
-            results = {
-                "timestamp": time.time(),
-                "tiers": {},
-                "consolidated_memories": 0,
-            }
-            
-            # Run maintenance on each tier
-            for tier_name, tier_instance in [
-                (self.STM_TIER, self._stm),
-                (self.MTM_TIER, self._mtm),
-                (self.LTM_TIER, self._ltm),
-            ]:
-                tier_results = await tier_instance.run_maintenance()
-                results["tiers"][tier_name] = tier_results
-            
-            # Check for STM → MTM promotion candidates
-            # For memories that have been accessed frequently or are important
-            if self._stm and self._mtm:
-                stm_memories = await self._stm.query(
-                    filters={
-                        "metadata.importance": {"$gt": 0.7},  # High importance memories
-                        "metadata.access_count": {"$gt": 5},  # Frequently accessed memories
-                    },
-                    limit=10,
-                )
-                
-                # Consolidate these memories to MTM
-                for memory in stm_memories:
-                    memory_id = memory.get("id")
-                    if memory_id:
-                        try:
-                            new_id = await self.consolidate_memory(
-                                memory_id=memory_id,
-                                source_tier=self.STM_TIER,
-                                target_tier=self.MTM_TIER,
-                                additional_metadata={
-                                    "consolidated": True,
-                                    "consolidation_timestamp": time.time(),
-                                }
-                            )
-                            if new_id:
-                                results["consolidated_memories"] += 1
-                        except Exception as e:
-                            logger.error(f"Error consolidating memory {memory_id}: {str(e)}")
-            
-            # Check for MTM → LTM promotion candidates
-            if self._mtm and self._ltm:
-                # Get promotion candidates from MTM tier
-                mtm_candidates = await self._mtm.get_promotion_candidates(limit=10)
-                
-                # Consolidate these memories to LTM
-                for memory in mtm_candidates:
-                    memory_id = memory.get("id")
-                    if memory_id:
-                        try:
-                            new_id = await self.consolidate_memory(
-                                memory_id=memory_id,
-                                source_tier=self.MTM_TIER,
-                                target_tier=self.LTM_TIER,
-                                additional_metadata={
-                                    "consolidated": True,
-                                    "consolidation_timestamp": time.time(),
-                                }
-                            )
-                            if new_id:
-                                results["consolidated_memories"] += 1
-                        except Exception as e:
-                            logger.error(f"Error consolidating memory {memory_id}: {str(e)}")
-            
-            return results
-        except Exception as e:
-            logger.exception("Failed to run maintenance")
-            raise MemoryManagerOperationError(
-                f"Failed to run maintenance: {str(e)}"
-            ) from e
+            await self._refresh_capacity_pressure()
+        except Exception as exc:  # noqa: BLE001 - surface as debug noise only
+            logger.debug("Capacity pressure refresh failed after manual maintenance", exc_info=True)
+
+        return result

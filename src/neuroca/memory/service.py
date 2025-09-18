@@ -6,9 +6,11 @@ API routes and the core MemoryManager. It encapsulates business logic,
 user-specific operations, and error handling.
 """
 
+from __future__ import annotations
+
 import logging
 from uuid import UUID
-from typing import Any
+from typing import Any, Iterable
 
 # Import the memory models from the memory system
 try:
@@ -71,7 +73,12 @@ except ImportError:
             self._memories[memory_id] = stored
             return memory_id
 
-        async def retrieve_memory(self, memory_id: str, tier: str | None = None) -> dict[str, Any] | None:
+        async def retrieve_memory(
+            self,
+            memory_id: str,
+            tier: str | None = None,
+            scope: Any | None = None,
+        ) -> dict[str, Any] | None:
             return self._memories.get(str(memory_id))
 
         async def search_memories(
@@ -83,6 +90,7 @@ except ImportError:
             limit: int = 10,
             min_relevance: float = 0.0,
             tiers: list[str] | None = None,
+            scope: Any | None = None,
         ) -> list[dict[str, Any]]:
             if embedding:
                 logging.getLogger(__name__).warning(
@@ -164,6 +172,27 @@ except ImportError:
                 tier_stats = stats["tiers"].setdefault(tier, {"total_memories": 0})
                 tier_stats["total_memories"] += 1
             return stats
+
+try:
+    from neuroca.memory.manager.scoping import MemoryRetrievalScope
+except ImportError:  # pragma: no cover - fallback for environments without scope helpers
+    class MemoryRetrievalScope:  # type: ignore[override]
+        @classmethod
+        def system(cls) -> "MemoryRetrievalScope":
+            return cls()
+
+        @classmethod
+        def for_user(
+            cls,
+            user_id: str,
+            *,
+            session_id: str | None = None,
+            roles: list[str] | None = None,
+            allow_admin: bool = False,
+            shared_user_ids: list[str] | None = None,
+            shared_session_ids: list[str] | None = None,
+        ) -> "MemoryRetrievalScope":
+            return cls()
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +306,100 @@ class MemoryService:
             await self.memory_manager.initialize()
             self._initialized = True
 
+    @staticmethod
+    def _coerce_optional_str(value: Any | None) -> str | None:
+        """Return ``value`` as a trimmed string when possible."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            candidate = value.strip()
+            return candidate or None
+
+        try:
+            candidate = str(value)
+        except Exception:  # noqa: BLE001 - defensive conversion
+            return None
+
+        candidate = candidate.strip()
+        return candidate or None
+
+    def _build_scope(
+        self,
+        *,
+        user: "User" | None = None,
+        user_id: Any | None = None,
+        session_id: Any | None = None,
+        roles: Iterable[str] | None = None,
+        allow_admin: bool | None = None,
+        shared_user_ids: Iterable[str] | None = None,
+        shared_session_ids: Iterable[str] | None = None,
+    ) -> MemoryRetrievalScope:
+        """Construct a retrieval scope for downstream manager calls."""
+
+        resolved_user_id = self._coerce_optional_str(user_id)
+        if resolved_user_id is None and user is not None:
+            resolved_user_id = self._coerce_optional_str(getattr(user, "id", None))
+            if resolved_user_id is None:
+                resolved_user_id = self._coerce_optional_str(
+                    getattr(user, "user_id", None)
+                )
+
+        resolved_session = self._coerce_optional_str(session_id)
+        if resolved_session is None and user is not None:
+            resolved_session = self._coerce_optional_str(
+                getattr(user, "session_id", None)
+            )
+
+        resolved_roles = [
+            self._coerce_optional_str(role)  # type: ignore[arg-type]
+            for role in (roles or [])
+        ]
+        resolved_roles = [role for role in resolved_roles if role]
+
+        if user is not None and getattr(user, "roles", None):
+            for role in getattr(user, "roles", []):
+                candidate = self._coerce_optional_str(role)
+                if candidate and candidate not in resolved_roles:
+                    resolved_roles.append(candidate)
+
+        resolved_admin = (
+            bool(allow_admin)
+            if allow_admin is not None
+            else bool(getattr(user, "is_admin", False))
+        )
+
+        shared_users = [
+            candidate
+            for candidate in (
+                self._coerce_optional_str(value)
+                for value in (shared_user_ids or [])
+            )
+            if candidate
+        ]
+
+        shared_sessions = [
+            candidate
+            for candidate in (
+                self._coerce_optional_str(value)
+                for value in (shared_session_ids or [])
+            )
+            if candidate
+        ]
+
+        if resolved_user_id is None:
+            return MemoryRetrievalScope.system()
+
+        return MemoryRetrievalScope.for_user(
+            resolved_user_id,
+            session_id=resolved_session,
+            roles=resolved_roles,
+            allow_admin=resolved_admin,
+            shared_user_ids=shared_users,
+            shared_session_ids=shared_sessions,
+        )
+
     async def create_memory(self, memory_data: dict) -> MemoryResponse:
         """
         Creates a new memory for a user.
@@ -301,10 +424,27 @@ class MemoryService:
         )
         
         # Retrieve the stored memory to return it
-        stored_item = await self.memory_manager.retrieve_memory(memory_id)
+        scope = self._build_scope(
+            user_id=memory_data.get("user_id"),
+            session_id=memory_data.get("session_id"),
+        )
+
+        stored_item = await self.memory_manager.retrieve_memory(
+            memory_id,
+            scope=scope,
+        )
         return MemoryResponse.from_orm(stored_item)
 
-    async def get_memory(self, memory_id: UUID) -> MemoryResponse:
+    async def get_memory(
+        self,
+        memory_id: UUID,
+        *,
+        user: "User" | None = None,
+        user_id: Any | None = None,
+        session_id: Any | None = None,
+        roles: Iterable[str] | None = None,
+        allow_admin: bool | None = None,
+    ) -> MemoryResponse:
         """
         Retrieves a specific memory by its ID.
         
@@ -319,12 +459,30 @@ class MemoryService:
         """
         await self._ensure_initialized()
         logger.debug(f"Service: Retrieving memory {memory_id}")
-        memory = await self.memory_manager.retrieve_memory(str(memory_id))
+        scope = self._build_scope(
+            user=user,
+            user_id=user_id,
+            session_id=session_id,
+            roles=roles,
+            allow_admin=allow_admin,
+        )
+
+        memory = await self.memory_manager.retrieve_memory(
+            str(memory_id),
+            scope=scope,
+        )
         if not memory:
             raise MemoryNotFoundError(f"Memory with ID {memory_id} not found.")
         return MemoryResponse.from_orm(memory)
 
-    async def list_memories(self, search_params: MemorySearchParams) -> list[MemoryResponse]:
+    async def list_memories(
+        self,
+        search_params: MemorySearchParams,
+        *,
+        user: "User" | None = None,
+        roles: Iterable[str] | None = None,
+        allow_admin: bool | None = None,
+    ) -> list[MemoryResponse]:
         """
         Lists memories based on search parameters.
         
@@ -338,8 +496,9 @@ class MemoryService:
         logger.debug(f"Service: Listing memories for user {search_params.user_id}")
 
         metadata_filters: dict[str, Any] | None = None
-        if search_params.user_id is not None:
-            metadata_filters = {"metadata.user_id": search_params.user_id}
+        resolved_user_id = self._coerce_optional_str(search_params.user_id)
+        if resolved_user_id is not None:
+            metadata_filters = {"metadata.user_id": resolved_user_id}
 
         tiers: list[str] | None = None
         if search_params.tier:
@@ -348,11 +507,19 @@ class MemoryService:
             except ValueError:
                 tiers = [str(search_params.tier)]
 
+        scope = self._build_scope(
+            user=user,
+            user_id=resolved_user_id,
+            roles=roles,
+            allow_admin=allow_admin,
+        )
+
         results = await self.memory_manager.search_memories(
             query=search_params.query,
             limit=search_params.limit,
             metadata_filters=metadata_filters,
             tiers=tiers,
+            scope=scope,
         )
         return [MemoryResponse.from_orm(res) for res in results]
 
@@ -371,7 +538,17 @@ class MemoryService:
             )
             return MemoryTier.STM.storage_key
 
-    async def update_memory(self, memory_id: UUID, update_data: dict) -> MemoryResponse:
+    async def update_memory(
+        self,
+        memory_id: UUID,
+        update_data: dict,
+        *,
+        user: "User" | None = None,
+        user_id: Any | None = None,
+        session_id: Any | None = None,
+        roles: Iterable[str] | None = None,
+        allow_admin: bool | None = None,
+    ) -> MemoryResponse:
         """
         Updates an existing memory.
         
@@ -396,7 +573,18 @@ class MemoryService:
         if not success:
             raise MemoryNotFoundError(f"Memory with ID {memory_id} not found for update.")
 
-        updated = await self.memory_manager.retrieve_memory(str(memory_id))
+        scope = self._build_scope(
+            user=user,
+            user_id=user_id,
+            session_id=session_id,
+            roles=roles,
+            allow_admin=allow_admin,
+        )
+
+        updated = await self.memory_manager.retrieve_memory(
+            str(memory_id),
+            scope=scope,
+        )
         if not updated:
             raise MemoryNotFoundError(f"Memory with ID {memory_id} not found after update.")
 
@@ -474,11 +662,19 @@ class MemoryService:
             initial_tier=MemoryTier.SEMANTIC.storage_key,
         )
 
-        consolidated = await self.memory_manager.retrieve_memory(new_memory_id)
+        scope = self._build_scope(user_id=str(user_id))
+
+        consolidated = await self.memory_manager.retrieve_memory(
+            new_memory_id,
+            scope=scope,
+        )
 
         original_memories: list[Any] = []
         for mid in memory_ids:
-            existing = await self.memory_manager.retrieve_memory(str(mid))
+            existing = await self.memory_manager.retrieve_memory(
+                str(mid),
+                scope=scope,
+            )
             if existing:
                 original_memories.append(existing)
 
