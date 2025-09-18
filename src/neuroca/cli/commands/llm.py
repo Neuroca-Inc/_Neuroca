@@ -21,7 +21,7 @@ import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional, Any
+from typing import Annotated, Optional, Any, Iterable, Sequence
 
 import typer
 import yaml
@@ -62,6 +62,32 @@ llm_app = typer.Typer(name="llm", help="Commands for interacting with LLMs throu
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "neuroca" / "llm_config.yaml"
+
+
+def _validate_editor_arguments(arguments: Iterable[str]) -> list[str]:
+    """Validate that the supplied editor arguments are safe to pass to subprocess."""
+
+    safe_arguments: list[str] = []
+    for argument in arguments:
+        if not isinstance(argument, str):
+            raise ValueError("Editor command arguments must be strings")
+        if "\x00" in argument:
+            raise ValueError("Editor command contains null bytes")
+        if any(control in argument for control in ("\r", "\n")):
+            raise ValueError("Editor command contains control characters")
+        safe_arguments.append(argument)
+    return safe_arguments
+
+
+def _build_editor_command(editor_cmd: Sequence[str], config_path: Path) -> list[str]:
+    """Return a sanitized command sequence for launching the editor."""
+
+    if not editor_cmd:
+        raise ValueError("Editor command must not be empty")
+
+    safe_arguments = _validate_editor_arguments(editor_cmd[1:])
+    command = [editor_cmd[0], *safe_arguments, str(config_path)]
+    return command
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
@@ -391,10 +417,17 @@ def manage_config(
             )
             raise typer.Exit(code=1)
 
-        safe_editor_cmd = [resolved_editor, *editor_cmd[1:], str(conf_path)]
+        try:
+            safe_editor_cmd = _build_editor_command([resolved_editor, *editor_cmd[1:]], conf_path)
+        except ValueError as err:
+            console.print(
+                "[red]Unsafe editor command resolved from EDITOR environment variable:",
+                f" {err}. Aborting launch.[/red]",
+            )
+            raise typer.Exit(code=1)
 
         try:
-            subprocess.run(safe_editor_cmd, check=True)
+            subprocess.run(safe_editor_cmd, check=True, shell=False)
         except FileNotFoundError:
             console.print(
                 "[red]Editor executable not found. Set the EDITOR environment variable"

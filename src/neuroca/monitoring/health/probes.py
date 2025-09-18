@@ -33,6 +33,7 @@ import ipaddress
 import logging
 import math
 import platform
+import shutil
 import socket
 import subprocess
 import time
@@ -647,7 +648,17 @@ class NetworkHealthProbe(HealthProbe):
         else:
             timeout_value = str(max(1, math.ceil(self.timeout_seconds)))
 
-        command = ["ping", param, str(self.packet_count), timeout_flag, timeout_value, safe_target]
+        ping_executable = shutil.which("ping")
+        if ping_executable is None:
+            logger.warning("Ping executable not found on system PATH.")
+            return {
+                "reachable": False,
+                "avg_latency_ms": None,
+                "packet_loss_percent": 100.0,
+                "error": "ping executable not available"
+            }
+
+        command = [ping_executable, param, str(self.packet_count), timeout_flag, timeout_value, safe_target]
 
         try:
             # Execute ping command
@@ -655,7 +666,8 @@ class NetworkHealthProbe(HealthProbe):
                 command,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout_seconds * self.packet_count + 1
+                timeout=self.timeout_seconds * self.packet_count + 1,
+                shell=False,
             )
         except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
             logger.warning(f"Ping to {safe_target} failed: {str(e)}")

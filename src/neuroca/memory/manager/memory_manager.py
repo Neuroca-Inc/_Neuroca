@@ -873,14 +873,27 @@ class MemoryManager(MemoryManagerInterface):
 
             result: Any = None
             attempted = False
-            call_kwargs: List[Dict[str, Any]] = [{}]
+            call_specs: List[tuple[tuple[Any, ...], Dict[str, Any]]] = [
+                ((), {})
+            ]
             if limit is not None:
-                call_kwargs.append({"limit": limit})
+                call_specs.append(((limit,), {}))
+                call_specs.append(((), {"limit": limit}))
 
-            for kwargs in call_kwargs:
+            for args, kwargs in call_specs:
                 try:
-                    result = handler(**kwargs)  # type: ignore[misc]
-                except TypeError:
+                    result = handler(*args, **kwargs)  # type: ignore[misc]
+                except TypeError as exc:
+                    message = str(exc)
+                    if "not callable" in message:
+                        logger.debug(
+                            "Skipping LTM retrieval handler %s because it is not callable: %s",
+                            method_name,
+                            message,
+                        )
+                        attempted = False
+                        result = None
+                        break
                     continue
                 attempted = True
                 break
@@ -1133,7 +1146,25 @@ class MemoryManager(MemoryManagerInterface):
                 continue
 
             try:
-                current = counter({})
+                try:
+                    current = counter()
+                except TypeError as exc:
+                    message = str(exc)
+                    if "not callable" in message:
+                        logger.debug(
+                            "Skipping non-callable count handler for %s tier: %s",
+                            tier_name,
+                            message,
+                        )
+                        continue
+                    try:
+                        current = counter({})
+                    except TypeError:
+                        logger.debug(
+                            "Count handler for %s tier rejected provided arguments", tier_name, exc_info=True
+                        )
+                        continue
+
                 if asyncio.iscoroutine(current):
                     current = await current
                 current_value = float(current)

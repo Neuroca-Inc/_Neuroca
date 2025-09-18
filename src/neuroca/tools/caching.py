@@ -12,9 +12,12 @@ frequently used neural pathways and reuses recently computed results.
 
 import base64
 import binascii
+import builtins
+import datetime
 import functools
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -130,6 +133,52 @@ class CacheEntry:
         """Mark the entry as accessed."""
         self.last_accessed_at = time.time()
         self.access_count += 1
+
+
+_SAFE_PICKLE_BUILTINS = {
+    "bool",
+    "bytes",
+    "bytearray",
+    "complex",
+    "dict",
+    "float",
+    "frozenset",
+    "int",
+    "list",
+    "set",
+    "str",
+    "tuple",
+    "NoneType",
+}
+
+_SAFE_PICKLE_EXTERNALS = {
+    ("datetime", "datetime"): datetime.datetime,
+    ("datetime", "timedelta"): datetime.timedelta,
+}
+
+
+class _RestrictedCacheEntryUnpickler(pickle.Unpickler):
+    """Unpickler that restricts which globals can be loaded from cache entries."""
+
+    def find_class(self, module: str, name: str) -> Any:  # noqa: D401 - override behaviour
+        if module == "builtins" and name in _SAFE_PICKLE_BUILTINS:
+            return getattr(builtins, name)
+        external = _SAFE_PICKLE_EXTERNALS.get((module, name))
+        if external is not None:
+            return external
+        if module == CacheEntry.__module__ and name == CacheEntry.__name__:
+            return CacheEntry
+        raise pickle.UnpicklingError(
+            f"Attempted to load disallowed object '{module}.{name}' from cache."
+        )
+
+
+def _loads_cache_entry(payload: bytes) -> CacheEntry:
+    buffer = io.BytesIO(payload)
+    entry = _RestrictedCacheEntryUnpickler(buffer).load()
+    if not isinstance(entry, CacheEntry):
+        raise TypeError("Unexpected cache entry type")
+    return entry
 
 
 class CacheBackend(ABC):
@@ -565,9 +614,10 @@ class FileCache(CacheBackend):
     def _read_entry(self, cache_path: Path) -> CacheEntry:
         data = cache_path.read_bytes()
         payload = _verify_and_extract(self._signing_key, data)
-        entry = pickle.loads(payload)
-        if not isinstance(entry, CacheEntry):
-            raise TypeError("Unexpected cache entry type")
+        try:
+            entry = _loads_cache_entry(payload)
+        except (pickle.UnpicklingError, TypeError, ValueError) as exc:
+            raise ValueError("Cache payload could not be safely deserialized") from exc
         return entry
 
     def _write_entry(self, cache_path: Path, entry: CacheEntry) -> None:

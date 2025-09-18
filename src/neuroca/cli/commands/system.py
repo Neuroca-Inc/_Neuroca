@@ -1079,15 +1079,25 @@ def _sanitize_file_argument(path: Any, field_name: str) -> str:
     return candidate
 
 
+def _resolve_database_executable(executable: str, description: str) -> str:
+    """Return an absolute path to the requested database utility."""
+
+    resolved = shutil.which(executable)
+    if resolved is None:
+        raise BackupRestoreError(f"{description} '{executable}' not found on PATH.")
+    return resolved
+
+
 def _build_postgres_dump_command(db_config: Any, output_file: Any) -> list[str]:
     host = _sanitize_postgres_host(getattr(db_config, "HOST", None))
     port = _sanitize_postgres_port(getattr(db_config, "PORT", None))
     username = _sanitize_postgres_identifier(getattr(db_config, "USER", None), "PostgreSQL username")
     database = _sanitize_postgres_identifier(getattr(db_config, "NAME", None), "PostgreSQL database name")
     dump_path = _sanitize_file_argument(output_file, "PostgreSQL dump output path")
+    pg_dump_path = _resolve_database_executable("pg_dump", "PostgreSQL dump utility")
 
     return [
-        "pg_dump",
+        pg_dump_path,
         "--host",
         host,
         "--port",
@@ -1106,9 +1116,10 @@ def _build_postgres_restore_command(db_config: Any, input_file: Any) -> list[str
     username = _sanitize_postgres_identifier(getattr(db_config, "USER", None), "PostgreSQL username")
     database = _sanitize_postgres_identifier(getattr(db_config, "NAME", None), "PostgreSQL database name")
     dump_path = _sanitize_file_argument(input_file, "PostgreSQL dump input path")
+    psql_path = _resolve_database_executable("psql", "PostgreSQL restore utility")
 
     return [
-        "psql",
+        psql_path,
         "--host",
         host,
         "--port",
@@ -1142,7 +1153,7 @@ def _backup_database(output_file: str):
             env = os.environ.copy()
             env["PGPASSWORD"] = str(db_config.PASSWORD)
 
-            subprocess.run(cmd, env=env, check=True)
+            subprocess.run(cmd, env=env, check=True, shell=False)
 
         elif db_config.ENGINE.endswith('sqlite3'):
             # SQLite backup - just copy the file
@@ -1177,7 +1188,7 @@ def _restore_database(input_file: str):
             env = os.environ.copy()
             env["PGPASSWORD"] = str(db_config.PASSWORD)
 
-            subprocess.run(cmd, env=env, check=True)
+            subprocess.run(cmd, env=env, check=True, shell=False)
             
         elif db_config.ENGINE.endswith('sqlite3'):
             # SQLite restore - just copy the file
