@@ -38,6 +38,7 @@ Usage:
     ```
 """
 
+import html
 import json
 import logging
 import time
@@ -163,6 +164,13 @@ def sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
         else:
             sanitized[key] = value
     return sanitized
+
+
+def _format_placeholder(label: str, value: Optional[str]) -> str:
+    """Create an HTML-safe placeholder string for log output."""
+
+    safe_value = html.escape(value or "unknown", quote=True)
+    return f"<{label}: {safe_value}>"
 
 
 def sanitize_body(body: Union[dict[str, Any], list[Any], str, None]) -> Union[dict[str, Any], list[Any], str, None]:
@@ -331,8 +339,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     request_info["body"] = sanitize_body(body)
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     # If not JSON, include the content type but not the raw body
-                    content_type = request.headers.get("content-type", "unknown")
-                    request_info["body"] = f"<binary or non-JSON data: {content_type}>"
+                    content_type = request.headers.get("content-type")
+                    request_info["body"] = _format_placeholder(
+                        "binary or non-JSON data", content_type
+                    )
             except Exception as e:
                 request_logger.warning(f"Failed to capture request body: {str(e)}")
                 request_info["body"] = "<error reading body>"
@@ -379,7 +389,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     response_info["body"] = "<error decoding text body>"
             else:
                 # For binary responses, just log the content type
-                response_info["body"] = f"<binary data: {content_type}>"
+                response_info["body"] = _format_placeholder("binary data", content_type)
         
         # Log at appropriate level based on status code
         if response.status_code >= 500:

@@ -24,7 +24,7 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Replace insecure `pickle.loads` usage in `src/neuroca/tools/caching.py`.
 
 ## Cross-Site Scripting (XSS)
-- [ ] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
+- [x] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
 
 ## Dependency Vulnerabilities
 - [ ] Update `langchain` to at least `0.0.325` (covers CVE-2023-39631, CVE-2023-36281, and CVE-2023-39659).
