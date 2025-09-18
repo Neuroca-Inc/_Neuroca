@@ -206,17 +206,23 @@ class SQLiteMemory(MemorySystemInterface):
     def list_all(self, limit: Optional[int] = None) -> List[MemoryEntry]:
         """List all memory entries."""
         query = "SELECT id, content, metadata, timestamp FROM memories ORDER BY timestamp DESC"
+        params = ()
         if limit is not None:
-            query += f" LIMIT {limit}"
-        
+            if isinstance(limit, bool) or not isinstance(limit, int):
+                raise ValueError("limit must be a positive integer")
+            if limit <= 0:
+                raise ValueError("limit must be a positive integer")
+            query += " LIMIT ?"
+            params = (limit,)
+
         if self._conn:
-            cursor = self._conn.execute(query)
+            cursor = self._conn.execute(query, params)
             results = cursor.fetchall()
         else:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(query)
-                results = cursor.fetchall()
-        
+                cursor = conn.execute(query, params)
+                results = conn.fetchall()
+
         memory_results = []
         for row in results:
             memory_results.append(MemoryEntry(
@@ -225,9 +231,9 @@ class SQLiteMemory(MemorySystemInterface):
                 metadata=json.loads(row[2]),
                 timestamp=row[3]
             ))
-        
+
         return memory_results
-    
+
     def count(self) -> int:
         """Return the total number of stored entries."""
         if self._conn:

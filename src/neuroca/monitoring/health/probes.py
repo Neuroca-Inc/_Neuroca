@@ -29,9 +29,11 @@ Usage:
 
 import abc
 import datetime
+import ipaddress
 import logging
 import platform
 import socket
+import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -624,16 +626,26 @@ class NetworkHealthProbe(HealthProbe):
         """
         # This is a simplified ping implementation
         # In production, consider using a more robust approach or library
-        import platform
-        import subprocess
-        
         try:
-            # Determine ping command based on platform
-            param = "-n" if platform.system().lower() == "windows" else "-c"
-            timeout_param = f"-W {int(self.timeout_seconds * 1000)}" if platform.system().lower() != "windows" else f"-w {int(self.timeout_seconds * 1000)}"
-            
-            command = ["ping", param, str(self.packet_count), timeout_param, target]
-            
+            safe_target = self._sanitize_ping_target(target)
+        except ValueError as e:
+            logger.warning("Rejected ping target '%s': %s", target, e)
+            return {
+                "reachable": False,
+                "avg_latency_ms": None,
+                "packet_loss_percent": 100.0,
+                "error": str(e)
+            }
+
+        # Determine ping command based on platform
+        system_name = platform.system().lower()
+        param = "-n" if system_name == "windows" else "-c"
+        timeout_flag = "-w" if system_name == "windows" else "-W"
+        timeout_value = str(int(self.timeout_seconds * 1000))
+
+        command = ["ping", param, str(self.packet_count), timeout_flag, timeout_value, safe_target]
+
+        try:
             # Execute ping command
             result = subprocess.run(
                 command,
@@ -641,45 +653,6 @@ class NetworkHealthProbe(HealthProbe):
                 text=True,
                 timeout=self.timeout_seconds * self.packet_count + 1
             )
-            
-            # Parse ping output
-            output = result.stdout.lower()
-            
-            # Check if target is reachable
-            if "received, 0% packet loss" in output or "received, 0 percent" in output:
-                # Extract average round-trip time
-                if "average" in output:
-                    # Extract average latency from output
-                    # This is a simplified parser and may need adjustment for different OS outputs
-                    avg_parts = output.split("average")[1].strip().split()[0].replace("=", "").replace("ms", "")
-                    avg_latency = float(avg_parts.replace(",", "."))
-                else:
-                    avg_latency = 0.0
-                
-                return {
-                    "reachable": True,
-                    "avg_latency_ms": avg_latency,
-                    "packet_loss_percent": 0.0
-                }
-            else:
-                # Target is unreachable or has packet loss
-                # Try to extract packet loss percentage
-                packet_loss = 100.0  # Default to 100% loss
-                if "packet loss" in output:
-                    for part in output.split():
-                        if "%" in part:
-                            try:
-                                packet_loss = float(part.replace("%", ""))
-                                break
-                            except ValueError:
-                                pass
-                
-                return {
-                    "reachable": False,
-                    "avg_latency_ms": None,
-                    "packet_loss_percent": packet_loss
-                }
-                
         except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
             logger.warning(f"Ping to {target} failed: {str(e)}")
             return {
@@ -688,6 +661,89 @@ class NetworkHealthProbe(HealthProbe):
                 "packet_loss_percent": 100.0,
                 "error": str(e)
             }
+
+        # Parse ping output
+        output = result.stdout.lower()
+
+        # Check if target is reachable
+        if "received, 0% packet loss" in output or "received, 0 percent" in output:
+            # Extract average round-trip time
+            if "average" in output:
+                # Extract average latency from output
+                # This is a simplified parser and may need adjustment for different OS outputs
+                try:
+                    avg_parts = output.split("average")[1].strip().split()[0].replace("=", "").replace("ms", "")
+                    avg_latency = float(avg_parts.replace(",", "."))
+                except (IndexError, ValueError) as exc:
+                    logger.warning("Failed to parse average latency from ping output for %s: %s", safe_target, exc)
+                    return {
+                        "reachable": True,
+                        "avg_latency_ms": None,
+                        "packet_loss_percent": 0.0,
+                        "error": "Unable to parse average latency"
+                    }
+            else:
+                avg_latency = 0.0
+
+            return {
+                "reachable": True,
+                "avg_latency_ms": avg_latency,
+                "packet_loss_percent": 0.0
+            }
+
+        # Target is unreachable or has packet loss
+        packet_loss = 100.0  # Default to 100% loss
+        if "packet loss" in output:
+            for part in output.split():
+                if "%" in part:
+                    try:
+                        packet_loss = float(part.replace("%", ""))
+                        break
+                    except ValueError:
+                        continue
+
+        return {
+            "reachable": False,
+            "avg_latency_ms": None,
+            "packet_loss_percent": packet_loss
+        }
+
+    @staticmethod
+    def _sanitize_ping_target(target: str) -> str:
+        """Validate and sanitize a ping target string."""
+
+        sanitized = target.strip()
+        if not sanitized:
+            raise ValueError("Ping target cannot be empty")
+
+        if any(ch.isspace() for ch in sanitized):
+            raise ValueError("Ping target must not contain whitespace")
+
+        try:
+            ipaddress.ip_address(sanitized)
+            return sanitized
+        except ValueError:
+            if NetworkHealthProbe._is_valid_hostname(sanitized):
+                return sanitized
+
+        raise ValueError("Ping target must be a valid hostname or IP address")
+
+    @staticmethod
+    def _is_valid_hostname(hostname: str) -> bool:
+        if len(hostname) > 253:
+            return False
+
+        labels = hostname.split(".")
+        for label in labels:
+            if not label or len(label) > 63:
+                return False
+            if not (label[0].isalnum() and label[-1].isalnum()):
+                return False
+            for character in label:
+                if not (character.isalnum() or character == "-"):
+                    return False
+
+        return True
 
 
 # Factory function to create a standard set of health probes
