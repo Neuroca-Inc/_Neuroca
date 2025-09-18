@@ -5,7 +5,7 @@ This document tracks the remediation status of the critical security issues iden
 ## Command Execution Vulnerabilities
 - [x] Refactor `subprocess.Popen` usage in `src/neuroca/cli/commands/system.py` to eliminate the possibility of command injection when reading logs.
 - [x] Refactor `os.system` call in `src/neuroca/cli/commands/llm.py` to ensure user data cannot influence shell evaluation.
-- [ ] Refactor `subprocess.run` call in `src/neuroca/monitoring/health/probes.py` to avoid command injection vectors.
+- [x] Refactor `subprocess.run` call in `src/neuroca/monitoring/health/probes.py` to avoid command injection vectors.
 - [ ] Refactor `subprocess.run` call in `src/neuroca/cli/commands/system.py` to prevent injection through dynamically constructed commands.
 - [ ] Refactor `subprocess.run` call in `tests/scripts/check_coverage.py` to guard against command injection.
 
