@@ -2,6 +2,12 @@
 
 Here are the actionable checklist items:
 
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/cli/commands/llm.py` (line 137).
+- [x] Address Command Injection vulnerability (subprocess.run with user controlled data) in `src/neuroca/cli/commands/llm.py` (line 137).
+- [x] Fix "No value for argument 'user_id' in constructor call" in `src/neuroca/api/routes/memory_v1.py` (line 146).
+- [x] Fix "handler is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 974).
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/monitoring/health/probes.py` (line 683).
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/cli/commands/system.py` (line 1117).
 - [x] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 397) due to `subprocess.run` with user controlled data.
 - [x] Address command injection vulnerability in `src/neuroca/cli/commands/system.py` (line 1145) due to `subprocess.run` without a static string.
 - [x] Resolve "counter is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 1136).

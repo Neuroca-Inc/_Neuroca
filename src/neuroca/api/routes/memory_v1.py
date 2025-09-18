@@ -115,11 +115,11 @@ def _to_memory_record(memory: MemoryResponse) -> MemoryRecordV1:
         raw_user_id = metadata.user_id
 
     if raw_user_id is None:
-        user_id: str | None = None
-    else:
-        user_id = str(raw_user_id).strip()
-        if not user_id:
-            raise MemoryStorageError("Memory response contains an empty owner identifier")
+        raise MemoryStorageError("Memory response missing owner identifier")
+
+    user_id = str(raw_user_id).strip()
+    if not user_id:
+        raise MemoryStorageError("Memory response contains an empty owner identifier")
 
     memory_id = getattr(memory, "id", None)
     if memory_id is None:

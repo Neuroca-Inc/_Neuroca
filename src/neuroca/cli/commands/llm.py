@@ -21,13 +21,59 @@ import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional, Any, Iterable, Sequence
+from typing import Annotated, Optional, Any, Iterable, Sequence, NamedTuple
 
 import typer
 import yaml
 from rich.console import Console
 
 _UNSAFE_EDITOR_ARGUMENT_CHARS = frozenset({"&", ";", "|", ">", "<", "`", "$", "!"})
+
+
+class EditorPolicy(NamedTuple):
+    """Allow-list definition for permitted editor executables and flags."""
+
+    allowed_exact: frozenset[str]
+    allowed_prefixes: tuple[str, ...] = ()
+
+
+_SAFE_EDITOR_POLICIES: dict[str, EditorPolicy] = {
+    # Terminal editors
+    "nano": EditorPolicy(frozenset(), ("+",)),
+    "nano.exe": EditorPolicy(frozenset(), ("+",)),
+    "vi": EditorPolicy(frozenset(), ("+",)),
+    "vi.exe": EditorPolicy(frozenset(), ("+",)),
+    "vim": EditorPolicy(frozenset(), ("+",)),
+    "vim.exe": EditorPolicy(frozenset(), ("+",)),
+    "nvim": EditorPolicy(frozenset(), ("+",)),
+    "nvim.exe": EditorPolicy(frozenset(), ("+",)),
+    # Graphical editors with limited safe flags
+    "code": EditorPolicy(frozenset({"--wait", "--reuse-window", "--new-window"})),
+    "code.exe": EditorPolicy(frozenset({"--wait", "--reuse-window", "--new-window"})),
+    "code-insiders": EditorPolicy(
+        frozenset({"--wait", "--reuse-window", "--new-window"})
+    ),
+    "code-insiders.exe": EditorPolicy(
+        frozenset({"--wait", "--reuse-window", "--new-window"})
+    ),
+    "codium": EditorPolicy(frozenset({"--wait", "--reuse-window", "--new-window"})),
+    "codium.exe": EditorPolicy(
+        frozenset({"--wait", "--reuse-window", "--new-window"})
+    ),
+    "subl": EditorPolicy(frozenset({"--wait"})),
+    "subl.exe": EditorPolicy(frozenset({"--wait"})),
+    "sublime_text": EditorPolicy(frozenset({"--wait"})),
+    "sublime_text.exe": EditorPolicy(frozenset({"--wait"})),
+    "gedit": EditorPolicy(frozenset({"--wait"})),
+    "gedit.exe": EditorPolicy(frozenset({"--wait"})),
+    # Windows editors
+    "notepad": EditorPolicy(frozenset()),
+    "notepad.exe": EditorPolicy(frozenset()),
+    "notepad++": EditorPolicy(frozenset({"-multiInst", "-notabbar", "-nosession"})),
+    "notepad++.exe": EditorPolicy(
+        frozenset({"-multiInst", "-notabbar", "-nosession"})
+    ),
+}
 
 # Import dependencies with graceful fallback for missing components
 try:
@@ -66,8 +112,14 @@ llm_app = typer.Typer(name="llm", help="Commands for interacting with LLMs throu
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "neuroca" / "llm_config.yaml"
 
 
-def _validate_editor_arguments(arguments: Iterable[str]) -> list[str]:
-    """Validate that the supplied editor arguments are safe to pass to subprocess."""
+def _validate_editor_arguments(editor_key: str, arguments: Iterable[str]) -> list[str]:
+    """Validate editor arguments against a strict allow-list for the executable."""
+
+    policy = _SAFE_EDITOR_POLICIES.get(editor_key)
+    if policy is None:
+        raise ValueError(
+            f"Editor executable '{editor_key}' is not in the supported allow-list"
+        )
 
     safe_arguments: list[str] = []
     for argument in arguments:
@@ -78,8 +130,22 @@ def _validate_editor_arguments(arguments: Iterable[str]) -> list[str]:
         if any(control in argument for control in ("\r", "\n")):
             raise ValueError("Editor command contains control characters")
         if any(char in _UNSAFE_EDITOR_ARGUMENT_CHARS for char in argument):
-            raise ValueError("Editor command contains potentially unsafe shell metacharacters")
-        safe_arguments.append(argument)
+            raise ValueError(
+                "Editor command contains potentially unsafe shell metacharacters"
+            )
+        if any(ch.isspace() for ch in argument):
+            raise ValueError("Editor command arguments must not include whitespace")
+
+        if argument in policy.allowed_exact or any(
+            argument.startswith(prefix) for prefix in policy.allowed_prefixes
+        ):
+            safe_arguments.append(argument)
+            continue
+
+        raise ValueError(
+            f"Argument '{argument}' is not permitted for editor '{editor_key}'"
+        )
+
     return safe_arguments
 
 
@@ -89,15 +155,15 @@ def _build_editor_command(editor_cmd: Sequence[str], config_path: Path) -> list[
     if not editor_cmd:
         raise ValueError("Editor command must not be empty")
 
-    executable = _validate_editor_executable(editor_cmd[0])
-    safe_arguments = _validate_editor_arguments(editor_cmd[1:])
+    executable_path, editor_key = _validate_editor_executable(editor_cmd[0])
+    safe_arguments = _validate_editor_arguments(editor_key, editor_cmd[1:])
     safe_config_path = _sanitize_editor_config_path(config_path)
-    command = [executable, *safe_arguments, safe_config_path]
+    command = [executable_path, *safe_arguments, safe_config_path]
     return command
 
 
-def _validate_editor_executable(executable: str) -> str:
-    """Ensure the resolved editor path is absolute and safe for execution."""
+def _validate_editor_executable(executable: str) -> tuple[str, str]:
+    """Ensure the resolved editor path is absolute and backed by an allow-listed executable."""
 
     if not isinstance(executable, str):
         raise ValueError("Editor executable must be a string")
@@ -109,7 +175,16 @@ def _validate_editor_executable(executable: str) -> str:
         raise ValueError("Editor executable path must be absolute")
     if not executable_path.exists():
         raise ValueError("Editor executable path does not exist")
-    return os.fspath(executable_path)
+    if not executable_path.is_file():
+        raise ValueError("Editor executable path must reference a file")
+
+    canonical_name = executable_path.name.lower()
+    if canonical_name not in _SAFE_EDITOR_POLICIES:
+        raise ValueError(
+            f"Editor '{canonical_name}' is not permitted. Choose a supported editor."
+        )
+
+    return os.fspath(executable_path), canonical_name
 
 
 def _sanitize_editor_config_path(config_path: Path) -> str:
@@ -129,10 +204,18 @@ def _launch_editor(command: Sequence[str]) -> None:
         raise ValueError("Editor command must not be empty")
 
     executable, *arguments = command
-    sanitized_command = [
-        _validate_editor_executable(executable),
-        *_validate_editor_arguments(arguments),
-    ]
+    executable_path, editor_key = _validate_editor_executable(executable)
+    if not arguments:
+        raise ValueError("Editor launch command missing configuration path argument")
+
+    option_arguments = arguments[:-1]
+    config_argument = arguments[-1]
+    if not isinstance(config_argument, (str, os.PathLike)):
+        raise ValueError("Configuration path argument must be a string or path-like")
+
+    safe_arguments = _validate_editor_arguments(editor_key, option_arguments)
+    safe_config_path = _sanitize_editor_config_path(Path(config_argument))
+    sanitized_command = [executable_path, *safe_arguments, safe_config_path]
 
     subprocess.run(sanitized_command, check=True, shell=False)
 

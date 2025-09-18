@@ -91,3 +91,115 @@ def test_build_postgres_dump_command_rejects_null_path():
 
     with pytest.raises(BackupRestoreError):
         system._build_postgres_dump_command(config, "")
+
+
+def test_validate_database_command_allows_pg_dump(tmp_path):
+    executable = tmp_path / "pg_dump"
+    executable.touch()
+    dump_file = tmp_path / "dump.sql"
+
+    sanitized = system._validate_database_command(
+        [
+            executable.as_posix(),
+            "--host",
+            "db.internal",
+            "--port",
+            "5432",
+            "--username",
+            "neuro_admin",
+            "--file",
+            dump_file.as_posix(),
+            "neuroca",
+        ]
+    )
+
+    assert sanitized == [
+        executable.as_posix(),
+        "--host",
+        "db.internal",
+        "--port",
+        "5432",
+        "--username",
+        "neuro_admin",
+        "--file",
+        dump_file.as_posix(),
+        "neuroca",
+    ]
+
+
+def test_validate_database_command_rejects_unexpected_executable(tmp_path):
+    executable = tmp_path / "mysql"
+    executable.touch()
+    dump_file = tmp_path / "dump.sql"
+
+    with pytest.raises(BackupRestoreError):
+        system._validate_database_command(
+            [
+                executable.as_posix(),
+                "--host",
+                "db.internal",
+                "--port",
+                "5432",
+                "--username",
+                "neuro_admin",
+                "--file",
+                dump_file.as_posix(),
+                "neuroca",
+            ]
+        )
+
+
+def test_validate_database_command_allows_psql(tmp_path):
+    executable = tmp_path / "psql"
+    executable.touch()
+    dump_file = tmp_path / "dump.sql"
+
+    sanitized = system._validate_database_command(
+        [
+            executable.as_posix(),
+            "--host",
+            "db.internal",
+            "--port",
+            "5432",
+            "--username",
+            "neuro_admin",
+            "--dbname",
+            "neuroca",
+            "--file",
+            dump_file.as_posix(),
+        ]
+    )
+
+    assert sanitized == [
+        executable.as_posix(),
+        "--host",
+        "db.internal",
+        "--port",
+        "5432",
+        "--username",
+        "neuro_admin",
+        "--dbname",
+        "neuroca",
+        "--file",
+        dump_file.as_posix(),
+    ]
+
+
+def test_validate_database_command_rejects_malformed_arguments(tmp_path):
+    executable = tmp_path / "psql"
+    executable.touch()
+
+    with pytest.raises(BackupRestoreError):
+        system._validate_database_command(
+            [
+                executable.as_posix(),
+                "--host",
+                "db.internal",
+                "--port",
+                "5432",
+                "--username",
+                "neuro_admin",
+                "--file",
+                "dump.sql",
+            ]
+        )

@@ -1016,6 +1016,7 @@ def _restore_system_from_backup(backup_path: str) -> bool:
         raise BackupRestoreError(f"Failed to restore from backup: {str(e)}")
 
 
+_SAFE_DATABASE_EXECUTABLES = frozenset({"pg_dump", "pg_dump.exe", "psql", "psql.exe"})
 _SAFE_PG_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]+$")
 _SAFE_PG_HOST_PATTERN = re.compile(r"^[A-Za-z0-9_.:@-]+$")
 
@@ -1088,30 +1089,152 @@ def _resolve_database_executable(executable: str, description: str) -> str:
     return resolved
 
 
+def _validate_database_command(command: Sequence[str]) -> list[str]:
+    """Validate and sanitize a database command prior to execution."""
+
+    if not command:
+        raise BackupRestoreError("Database command must not be empty.")
+
+    executable_component = command[0]
+    if not isinstance(executable_component, str):
+        raise BackupRestoreError("Database utility must be provided as a string path.")
+    if "\x00" in executable_component or any(
+        control in executable_component for control in ("\r", "\n")
+    ):
+        raise BackupRestoreError("Database utility path contains invalid control characters.")
+
+    executable_path = Path(executable_component)
+    if not executable_path.is_absolute():
+        raise BackupRestoreError("Database utility must resolve to an absolute path.")
+    if not executable_path.exists():
+        raise BackupRestoreError("Database utility does not exist on disk.")
+    if not executable_path.is_file():
+        raise BackupRestoreError("Database utility path must reference an executable file.")
+
+    canonical_name = executable_path.name.lower()
+    if canonical_name not in _SAFE_DATABASE_EXECUTABLES:
+        raise BackupRestoreError(
+            f"Database utility '{canonical_name}' is not permitted for execution."
+        )
+
+    sanitized_command: list[str] = [os.fspath(executable_path)]
+    components = list(command[1:])
+
+    if canonical_name.startswith("pg_dump"):
+        if len(components) != 9:
+            raise BackupRestoreError(
+                "pg_dump command contains an unexpected number of arguments."
+            )
+
+        (
+            host_flag,
+            host_value,
+            port_flag,
+            port_value,
+            user_flag,
+            user_value,
+            file_flag,
+            file_value,
+            database_value,
+        ) = components
+
+        if host_flag != "--host" or port_flag != "--port" or user_flag != "--username":
+            raise BackupRestoreError("pg_dump command contains unexpected flag ordering.")
+        if file_flag != "--file":
+            raise BackupRestoreError("pg_dump command must include a --file argument.")
+
+        sanitized_host = _sanitize_postgres_host(host_value)
+        sanitized_port = _sanitize_postgres_port(port_value)
+        sanitized_user = _sanitize_postgres_identifier(
+            user_value, "PostgreSQL username"
+        )
+        sanitized_file = _sanitize_file_argument(
+            file_value, "PostgreSQL dump output path"
+        )
+        sanitized_db = _sanitize_postgres_identifier(
+            database_value, "PostgreSQL database name"
+        )
+
+        sanitized_command.extend(
+            [
+                "--host",
+                sanitized_host,
+                "--port",
+                str(sanitized_port),
+                "--username",
+                sanitized_user,
+                "--file",
+                sanitized_file,
+                sanitized_db,
+            ]
+        )
+        return sanitized_command
+
+    if canonical_name.startswith("psql"):
+        if len(components) != 10:
+            raise BackupRestoreError(
+                "psql command contains an unexpected number of arguments."
+            )
+
+        (
+            host_flag,
+            host_value,
+            port_flag,
+            port_value,
+            user_flag,
+            user_value,
+            db_flag,
+            db_value,
+            file_flag,
+            file_value,
+        ) = components
+
+        if host_flag != "--host" or port_flag != "--port" or user_flag != "--username":
+            raise BackupRestoreError("psql command contains unexpected flag ordering.")
+        if db_flag != "--dbname" or file_flag != "--file":
+            raise BackupRestoreError(
+                "psql command must include --dbname and --file arguments."
+            )
+
+        sanitized_host = _sanitize_postgres_host(host_value)
+        sanitized_port = _sanitize_postgres_port(port_value)
+        sanitized_user = _sanitize_postgres_identifier(
+            user_value, "PostgreSQL username"
+        )
+        sanitized_db = _sanitize_postgres_identifier(
+            db_value, "PostgreSQL database name"
+        )
+        sanitized_file = _sanitize_file_argument(
+            file_value, "PostgreSQL dump input path"
+        )
+
+        sanitized_command.extend(
+            [
+                "--host",
+                sanitized_host,
+                "--port",
+                str(sanitized_port),
+                "--username",
+                sanitized_user,
+                "--dbname",
+                sanitized_db,
+                "--file",
+                sanitized_file,
+            ]
+        )
+        return sanitized_command
+
+    raise BackupRestoreError(
+        f"Unsupported database utility '{canonical_name}' for execution."
+    )
+
+
 def _execute_database_command(
     command: Sequence[str], *, env: Mapping[str, str] | None = None
 ) -> None:
     """Execute a database utility command with strict argument validation."""
 
-    if not command:
-        raise BackupRestoreError("Database command must not be empty.")
-
-    sanitized: list[str] = []
-    for index, component in enumerate(command):
-        if not isinstance(component, str):
-            raise BackupRestoreError("Database command components must be strings.")
-        if "\x00" in component or any(control in component for control in ("\r", "\n")):
-            raise BackupRestoreError("Database command contains invalid control characters.")
-
-        if index == 0:
-            executable_path = Path(component)
-            if not executable_path.is_absolute():
-                raise BackupRestoreError("Database utility must resolve to an absolute path.")
-            if not executable_path.exists():
-                raise BackupRestoreError("Database utility does not exist on disk.")
-            sanitized.append(os.fspath(executable_path))
-        else:
-            sanitized.append(component)
+    sanitized = _validate_database_command(command)
 
     try:
         subprocess.run(sanitized, check=True, shell=False, env=env)

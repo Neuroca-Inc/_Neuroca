@@ -133,6 +133,7 @@ class MemoryManager(MemoryManagerInterface):
         self._stm = None
         self._mtm = None
         self._ltm = None
+        self._ltm_retrieval_cache: dict[str, Callable[..., Any] | None] = {}
         
         # Initialize working memory buffer
         self._working_memory = WorkingMemoryBuffer()
@@ -946,16 +947,28 @@ class MemoryManager(MemoryManagerInterface):
             return []
 
         retrieval_methods = ("list_all", "retrieve_all", "list")
+        cache = self._ltm_retrieval_cache
         for method_name in retrieval_methods:
-            handler = getattr(self._ltm, method_name, None)
-            if handler is None:
+            cached_handler = cache.get(method_name)
+            if cached_handler is None and method_name in cache:
                 continue
 
-            if not callable(handler):
-                logger.debug(
-                    "Skipping non-callable LTM retrieval handler %s", method_name
-                )
-                continue
+            if cached_handler is not None:
+                handler = cached_handler
+            else:
+                handler = getattr(self._ltm, method_name, None)
+                if handler is None:
+                    cache[method_name] = None
+                    continue
+
+                if not callable(handler):
+                    logger.debug(
+                        "Skipping non-callable LTM retrieval handler %s", method_name
+                    )
+                    cache[method_name] = None
+                    continue
+
+                cache[method_name] = handler
 
             result: Any = None
             attempted = False
@@ -982,6 +995,7 @@ class MemoryManager(MemoryManagerInterface):
                         )
                         attempted = False
                         result = None
+                        cache[method_name] = None
                         break
                     logger.debug(
                         "LTM retrieval handler %s rejected invocation with args=%s kwargs=%s: %s",
@@ -1003,6 +1017,7 @@ class MemoryManager(MemoryManagerInterface):
                 break
 
             if result is None and not attempted:
+                cache[method_name] = None
                 continue
 
             try:

@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import psutil
 
@@ -680,13 +680,18 @@ class NetworkHealthProbe(HealthProbe):
 
         try:
             # Execute ping command
-            result = subprocess.run(
+            result = self._execute_ping(
                 command,
-                capture_output=True,
-                text=True,
                 timeout=self.timeout_seconds * self.packet_count + 1,
-                shell=False,
             )
+        except ValueError as err:
+            logger.warning("Rejected ping command during execution for %s: %s", safe_target, err)
+            return {
+                "reachable": False,
+                "avg_latency_ms": None,
+                "packet_loss_percent": 100.0,
+                "error": str(err),
+            }
         except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
             logger.warning(f"Ping to {safe_target} failed: {str(e)}")
             return {
@@ -804,6 +809,53 @@ class NetworkHealthProbe(HealthProbe):
             sanitized_timeout_value,
             target,
         ]
+
+    @classmethod
+    def _validate_prepared_ping_command(cls, command: Sequence[str]) -> list[str]:
+        """Re-validate a ping command prior to execution."""
+
+        if len(command) != 6:
+            raise ValueError("Ping command must contain exactly six components")
+
+        executable, param, count, timeout_flag, timeout_value, target = command
+        sanitized_executable = cls._validate_ping_executable(executable)
+        sanitized_param, sanitized_timeout_flag = cls._sanitize_ping_flags(param, timeout_flag)
+
+        if not isinstance(count, str) or not count.isdigit():
+            raise ValueError("Ping packet count must be expressed as digits")
+        sanitized_count = cls._sanitize_packet_count(int(count))
+
+        if not isinstance(timeout_value, str):
+            raise ValueError("Ping timeout must be provided as a string")
+        sanitized_timeout_value = cls._sanitize_timeout_value(timeout_value)
+
+        if not isinstance(target, str):
+            raise ValueError("Ping target must be a string")
+        sanitized_target = cls._sanitize_ping_target(target)
+
+        return [
+            sanitized_executable,
+            sanitized_param,
+            str(sanitized_count),
+            sanitized_timeout_flag,
+            sanitized_timeout_value,
+            sanitized_target,
+        ]
+
+    @classmethod
+    def _execute_ping(
+        cls, command: Sequence[str], *, timeout: float
+    ) -> subprocess.CompletedProcess[str]:
+        """Execute a ping command after validating every component."""
+
+        sanitized_command = cls._validate_prepared_ping_command(command)
+        return subprocess.run(
+            sanitized_command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
 
     @staticmethod
     def _validate_ping_executable(executable: str) -> str:
