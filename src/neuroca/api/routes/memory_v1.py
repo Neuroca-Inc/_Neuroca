@@ -110,7 +110,14 @@ def _resolve_tier(raw_tier: Any, metadata: MemoryMetadataPayloadV1) -> str:
 def _to_memory_record(memory: MemoryResponse) -> MemoryRecordV1:
     metadata = _normalize_metadata(getattr(memory, "metadata", None))
     content = _normalize_content(getattr(memory, "content", None))
-    user_id = getattr(memory, "user_id", None) or metadata.user_id
+    raw_user_id = getattr(memory, "user_id", None) or metadata.user_id
+    if raw_user_id is None:
+        raise MemoryStorageError("Memory response missing owner identifier")
+
+    user_id = str(raw_user_id).strip()
+    if not user_id:
+        raise MemoryStorageError("Memory response contains an empty owner identifier")
+
     memory_id = getattr(memory, "id", None)
     if memory_id is None:
         raise MemoryStorageError("Memory response missing identifier")

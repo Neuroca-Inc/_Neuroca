@@ -17,32 +17,32 @@ This document tracks the remediation status of the critical security issues iden
 
 ## Secrets Management
 - [x] Remove hardcoded `SECRET_KEY` from `src/neuroca/config/default.py`.
-- [ ] Remove hardcoded `DEFAULT_PASSWORD` from `tests/factories/users.py`.
+- [x] Remove hardcoded `DEFAULT_PASSWORD` from `tests/factories/users.py`.
 
 ## Serialization Risks
-- [ ] Replace insecure `pickle.load` usage in `src/neuroca/tools/caching.py`.
-- [ ] Replace insecure `pickle.loads` usage in `src/neuroca/tools/caching.py`.
+- [x] Replace insecure `pickle.load` usage in `src/neuroca/tools/caching.py`.
+- [x] Replace insecure `pickle.loads` usage in `src/neuroca/tools/caching.py`.
 
 ## Cross-Site Scripting (XSS)
-- [ ] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
+- [x] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
 
 ## Dependency Vulnerabilities
-- [ ] Update `langchain` to at least `0.0.325` (covers CVE-2023-39631, CVE-2023-36281, and CVE-2023-39659).
-- [ ] Update `transformers` to at least `4.36.0`.
-- [ ] Update `torch` to at least `2.6.0`.
+- [x] Update `langchain` to at least `0.0.325` (covers CVE-2023-39631, CVE-2023-36281, and CVE-2023-39659).
+- [x] Update `transformers` to at least `4.36.0`.
+- [x] Update `torch` to at least `2.6.0`.
 
 ## Runtime Safety Checks
-- [ ] Ensure callable validation for `original_store` at `tests/unit/memory/manager/test_transactional_consolidation.py`.
-- [ ] Ensure callable validation for `handler` at `src/neuroca/memory/manager/memory_manager.py`.
-- [ ] Ensure callable validation for `counter` at `src/neuroca/memory/manager/memory_manager.py`.
-- [ ] Ensure callable validation for `getter` at `src/neuroca/core/cognitive_control/decision_maker.py`.
+- [x] Ensure callable validation for `original_store` at `tests/unit/memory/manager/test_transactional_consolidation.py`.
+- [x] Ensure callable validation for `handler` at `src/neuroca/memory/manager/memory_manager.py`.
+- [x] Ensure callable validation for `counter` at `src/neuroca/memory/manager/memory_manager.py`.
+- [x] Ensure callable validation for `getter` at `src/neuroca/core/cognitive_control/decision_maker.py`.
 
 ## Prompt Validation Issues
-- [ ] Correct duplicate `min_length` arguments across `src/neuroca/integration/prompts/*` files.
+- [x] Correct duplicate `min_length` arguments across `src/neuroca/integration/prompts/*` files.
 
 ## Constructor Argument Issues
-- [ ] Provide `backend_type` to `StorageStats` constructors.
-- [ ] Add missing `user_id` argument in `src/neuroca/api/routes/memory_v1.py`.
+- [x] Provide `backend_type` to `StorageStats` constructors.
+- [x] Add missing `user_id` argument in `src/neuroca/api/routes/memory_v1.py`.
 
 ## Notes
 - Focus remediation work from top to bottom, ensuring the highest-risk vulnerabilities are addressed first.

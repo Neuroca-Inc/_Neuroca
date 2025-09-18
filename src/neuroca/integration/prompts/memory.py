@@ -142,12 +142,31 @@ def get_working_memory_prompt(
     """
     try:
         # Validate inputs
-        validate_string(context, "context", min_length=1, max_length=MAX_PROMPT_LENGTH // 2)
-        validate_string(query, "query", min_length=1, max_length=1000)
-        validate_string(task_description, "task_description", min_length=1, max_length=500)
-        
+        validate_string(
+            context,
+            min_length=1,
+            max_length=MAX_PROMPT_LENGTH // 2,
+            field_name="context",
+        )
+        validate_string(
+            query,
+            min_length=1,
+            max_length=1000,
+            field_name="query",
+        )
+        validate_string(
+            task_description,
+            min_length=1,
+            max_length=500,
+            field_name="task_description",
+        )
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
         
         # Format system message
         system_msg = system_instruction or SYSTEM_HEADER.format(task="access working memory")
@@ -222,25 +241,59 @@ def get_episodic_memory_prompt(
     """
     try:
         # Validate inputs
-        validate_string(query, "query", min_length=1, max_length=1000)
-        validate_string(priority_criteria, "priority_criteria", min_length=1, max_length=200)
-        
+        validate_string(
+            query,
+            min_length=1,
+            max_length=1000,
+            field_name="query",
+        )
+        validate_string(
+            priority_criteria,
+            min_length=1,
+            max_length=200,
+            field_name="priority_criteria",
+        )
+
         if time_period is not None:
-            validate_string(time_period, "time_period", max_length=200)
-        
+            validate_string(
+                time_period,
+                max_length=200,
+                field_name="time_period",
+            )
+
         if location is not None:
-            validate_string(location, "location", max_length=200)
-        
+            validate_string(
+                location,
+                max_length=200,
+                field_name="location",
+            )
+
         if entities is not None:
-            validate_list(entities, "entities", max_length=20)
+            validate_list(
+                entities,
+                max_length=20,
+                field_name="entities",
+            )
             for i, entity in enumerate(entities):
-                validate_string(entity, f"entities[{i}]", max_length=100)
-        
+                validate_string(
+                    entity,
+                    max_length=100,
+                    field_name=f"entities[{i}]",
+                )
+
         if emotional_valence is not None:
-            validate_string(emotional_valence, "emotional_valence", max_length=100)
-            
+            validate_string(
+                emotional_valence,
+                max_length=100,
+                field_name="emotional_valence",
+            )
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
         
         # Format system message
         system_msg = system_instruction or SYSTEM_HEADER.format(task="access episodic memory")
@@ -300,23 +353,52 @@ def get_semantic_memory_prompt(
     """
     try:
         # Validate inputs
-        validate_string(query, "query", min_length=1, max_length=1000)
-        
+        validate_string(
+            query,
+            min_length=1,
+            max_length=1000,
+            field_name="query",
+        )
+
         if domain is not None:
-            validate_string(domain, "domain", max_length=200)
-        
+            validate_string(
+                domain,
+                max_length=200,
+                field_name="domain",
+            )
+
         if concepts is not None:
-            validate_list(concepts, "concepts", max_length=20)
+            validate_list(
+                concepts,
+                max_length=20,
+                field_name="concepts",
+            )
             for i, concept in enumerate(concepts):
-                validate_string(concept, f"concepts[{i}]", max_length=100)
-        
+                validate_string(
+                    concept,
+                    max_length=100,
+                    field_name=f"concepts[{i}]",
+                )
+
         if relationships is not None:
-            validate_list(relationships, "relationships", max_length=20)
+            validate_list(
+                relationships,
+                max_length=20,
+                field_name="relationships",
+            )
             for i, relationship in enumerate(relationships):
-                validate_string(relationship, f"relationships[{i}]", max_length=100)
-                
+                validate_string(
+                    relationship,
+                    max_length=100,
+                    field_name=f"relationships[{i}]",
+                )
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
         
         # Format system message
         system_msg = system_instruction or SYSTEM_HEADER.format(task="access semantic memory")
@@ -374,17 +456,41 @@ def get_memory_consolidation_prompt(
     """
     try:
         # Validate inputs
-        validate_list(memory_items, "memory_items", min_length=1, max_length=MAX_MEMORY_ITEMS)
-        validate_string(source_memory_type, "source_memory_type", min_length=1, max_length=100)
-        validate_string(target_memory_type, "target_memory_type", min_length=1, max_length=100)
-        validate_string(consolidation_criteria, "consolidation_criteria", min_length=1, max_length=500)
-        
+        validate_list(
+            memory_items,
+            min_length=1,
+            max_length=MAX_MEMORY_ITEMS,
+            field_name="memory_items",
+        )
+        validate_string(
+            source_memory_type,
+            min_length=1,
+            max_length=100,
+            field_name="source_memory_type",
+        )
+        validate_string(
+            target_memory_type,
+            min_length=1,
+            max_length=100,
+            field_name="target_memory_type",
+        )
+        validate_string(
+            consolidation_criteria,
+            min_length=1,
+            max_length=500,
+            field_name="consolidation_criteria",
+        )
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
-        
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
+
         # Validate memory items
         for i, item in enumerate(memory_items):
-            validate_dict(item, f"memory_items[{i}]")
+            validate_dict(item, field_name=f"memory_items[{i}]")
         
         # Format memory items as JSON string
         memory_items_str = json.dumps(memory_items, indent=2)
@@ -457,17 +563,41 @@ def get_memory_forgetting_prompt(
     """
     try:
         # Validate inputs
-        validate_list(memory_items, "memory_items", min_length=1, max_length=MAX_MEMORY_ITEMS)
-        validate_string(memory_type, "memory_type", min_length=1, max_length=100)
-        validate_string(forgetting_criteria, "forgetting_criteria", min_length=1, max_length=500)
-        validate_string(retention_importance, "retention_importance", min_length=1, max_length=500)
-        
+        validate_list(
+            memory_items,
+            min_length=1,
+            max_length=MAX_MEMORY_ITEMS,
+            field_name="memory_items",
+        )
+        validate_string(
+            memory_type,
+            min_length=1,
+            max_length=100,
+            field_name="memory_type",
+        )
+        validate_string(
+            forgetting_criteria,
+            min_length=1,
+            max_length=500,
+            field_name="forgetting_criteria",
+        )
+        validate_string(
+            retention_importance,
+            min_length=1,
+            max_length=500,
+            field_name="retention_importance",
+        )
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
-        
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
+
         # Validate memory items
         for i, item in enumerate(memory_items):
-            validate_dict(item, f"memory_items[{i}]")
+            validate_dict(item, field_name=f"memory_items[{i}]")
         
         # Format memory items as JSON string
         memory_items_str = json.dumps(memory_items, indent=2)
@@ -533,19 +663,31 @@ def format_memory_for_prompt(
         InvalidPromptParameterError: If input parameters are invalid
     """
     try:
-        validate_list(memories, "memories", max_length=MAX_MEMORY_ITEMS)
-        
+        validate_list(
+            memories,
+            max_length=MAX_MEMORY_ITEMS,
+            field_name="memories",
+        )
+
         if include_fields is not None:
-            validate_list(include_fields, "include_fields", max_length=20)
+            validate_list(
+                include_fields,
+                max_length=20,
+                field_name="include_fields",
+            )
             for i, field in enumerate(include_fields):
-                validate_string(field, f"include_fields[{i}]", max_length=100)
+                validate_string(
+                    field,
+                    max_length=100,
+                    field_name=f"include_fields[{i}]",
+                )
         
         # Limit number of memories
         memories = memories[:max_items]
         
         formatted_memories = []
         for i, memory in enumerate(memories):
-            validate_dict(memory, f"memories[{i}]")
+            validate_dict(memory, field_name=f"memories[{i}]")
             
             # Filter fields if specified
             if include_fields:
@@ -603,17 +745,36 @@ def get_memory_search_prompt(
     """
     try:
         # Validate inputs
-        validate_string(query, "query", min_length=1, max_length=1000)
-        validate_list(memory_types, "memory_types", min_length=1, max_length=10)
-        
+        validate_string(
+            query,
+            min_length=1,
+            max_length=1000,
+            field_name="query",
+        )
+        validate_list(
+            memory_types,
+            min_length=1,
+            max_length=10,
+            field_name="memory_types",
+        )
+
         for i, memory_type in enumerate(memory_types):
-            validate_string(memory_type, f"memory_types[{i}]", min_length=1, max_length=100)
-        
+            validate_string(
+                memory_type,
+                min_length=1,
+                max_length=100,
+                field_name=f"memory_types[{i}]",
+            )
+
         if search_parameters is not None:
-            validate_dict(search_parameters, "search_parameters")
-        
+            validate_dict(search_parameters, field_name="search_parameters")
+
         if system_instruction is not None:
-            validate_string(system_instruction, "system_instruction", max_length=1000)
+            validate_string(
+                system_instruction,
+                max_length=1000,
+                field_name="system_instruction",
+            )
         
         # Format system message
         system_msg = system_instruction or SYSTEM_HEADER.format(task="search across memory systems")

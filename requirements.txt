@@ -6,9 +6,9 @@ scipy>=1.10.0
 
 scikit-learn>=1.2.0
 
-torch>=2.0.0
+torch>=2.6.0
 
-transformers>=4.30.0
+transformers>=4.36.0
 
 pydantic>=2.0.0
 
@@ -46,7 +46,7 @@ opentelemetry-sdk>=1.18.0
 
 opentelemetry-exporter-otlp>=1.18.0
 
-langchain>=0.0.267
+langchain>=0.0.325
 
 langchain-core
 

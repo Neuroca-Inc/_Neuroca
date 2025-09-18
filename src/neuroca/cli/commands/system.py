@@ -1054,8 +1054,8 @@ def _sanitize_postgres_identifier(value: Any, field_name: str) -> str:
 def _sanitize_postgres_port(port: Any) -> int:
     try:
         port_value = int(port)
-    except (TypeError, ValueError):
-        raise BackupRestoreError("PostgreSQL port must be an integer.")
+    except (TypeError, ValueError) as exc:
+        raise BackupRestoreError("PostgreSQL port must be an integer.") from exc
 
     if not 0 < port_value < 65536:
         raise BackupRestoreError("PostgreSQL port must be between 1 and 65535.")
@@ -1155,7 +1155,7 @@ def _backup_database(output_file: str):
             
     except Exception as e:
         logger.error(f"Database backup failed: {str(e)}", exc_info=True)
-        raise BackupRestoreError(f"Database backup failed: {str(e)}")
+        raise BackupRestoreError(f"Database backup failed: {str(e)}") from e
 
 
 def _restore_database(input_file: str):
@@ -1191,7 +1191,7 @@ def _restore_database(input_file: str):
             
     except Exception as e:
         logger.error(f"Database restore failed: {str(e)}", exc_info=True)
-        raise BackupRestoreError(f"Database restore failed: {str(e)}")
+        raise BackupRestoreError(f"Database restore failed: {str(e)}") from e
 
 
 def _backup_memory_data(output_dir: str):

@@ -13,6 +13,8 @@ from pydantic import ValidationError
 from neuroca.api.contracts.memory_v1 import MemoryCreateRequestV1, MemoryRecordV1
 from neuroca.api.routes import memory_v1
 from neuroca.api.routes.memory import router as memory_router
+from neuroca.api.routes.memory_v1 import _to_memory_record
+from neuroca.core.exceptions import MemoryStorageError
 from neuroca.memory.service import MemoryResponse, MemorySearchParams
 
 
@@ -161,3 +163,30 @@ def test_memory_record_contract_schema_is_stable() -> None:
 def test_create_request_requires_content() -> None:
     with pytest.raises(ValidationError):
         MemoryCreateRequestV1.model_validate({})
+
+
+def test_to_memory_record_rejects_missing_user_identifier() -> None:
+    response = MemoryResponse(
+        id="mem-404",
+        tier="stm",
+        content={"text": "hello"},
+        metadata={"tier": "stm"},
+    )
+
+    with pytest.raises(MemoryStorageError):
+        _to_memory_record(response)
+
+
+def test_to_memory_record_coerces_uuid_user_identifier() -> None:
+    owner = UUID("12345678-1234-5678-1234-567812345678")
+    response = MemoryResponse(
+        id="mem-uuid",
+        user_id=owner,
+        tier="stm",
+        content={"text": "hello"},
+        metadata={"tier": "stm"},
+    )
+
+    record = _to_memory_record(response)
+
+    assert record.user_id == str(owner)

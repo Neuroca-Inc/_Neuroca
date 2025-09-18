@@ -31,6 +31,7 @@ import abc
 import datetime
 import ipaddress
 import logging
+import math
 import platform
 import socket
 import subprocess
@@ -641,7 +642,10 @@ class NetworkHealthProbe(HealthProbe):
         system_name = platform.system().lower()
         param = "-n" if system_name == "windows" else "-c"
         timeout_flag = "-w" if system_name == "windows" else "-W"
-        timeout_value = str(int(self.timeout_seconds * 1000))
+        if system_name == "windows":
+            timeout_value = str(max(1, math.ceil(self.timeout_seconds * 1000)))
+        else:
+            timeout_value = str(max(1, math.ceil(self.timeout_seconds)))
 
         command = ["ping", param, str(self.packet_count), timeout_flag, timeout_value, safe_target]
 
@@ -654,7 +658,7 @@ class NetworkHealthProbe(HealthProbe):
                 timeout=self.timeout_seconds * self.packet_count + 1
             )
         except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
-            logger.warning(f"Ping to {target} failed: {str(e)}")
+            logger.warning(f"Ping to {safe_target} failed: {str(e)}")
             return {
                 "reachable": False,
                 "avg_latency_ms": None,

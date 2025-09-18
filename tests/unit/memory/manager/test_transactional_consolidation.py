@@ -117,12 +117,14 @@ async def test_transaction_rolls_back_on_finalize_failure() -> None:
     mtm_storage = RecordingMTMStorage(mtm_memories, fail_finalize=True)
     ltm_storage = RecordingLTMStorage()
     pipeline = TransactionalConsolidationPipeline()
+    guard = ConsolidationInFlightGuard(dedupe_window_seconds=0.0)
 
     await consolidate_mtm_to_ltm(
         mtm_storage,
         ltm_storage,
         {"consolidation_batch_size": 5},
         pipeline=pipeline,
+        guard=guard,
     )
 
     assert ltm_storage.deleted == ["ltm-1"]
@@ -386,6 +388,7 @@ async def test_shutdown_waits_for_inflight_consolidation() -> None:
     release_store = asyncio.Event()
 
     original_store = mtm_tier.store
+    assert callable(original_store), "MTM tier store must be callable for test setup"
 
     async def blocking_store(self, payload: MemoryItem) -> str:
         store_started.set()

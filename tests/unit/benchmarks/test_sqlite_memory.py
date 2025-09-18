@@ -37,11 +37,8 @@ def test_list_all_rejects_non_integer_limits(memory_system):
         memory_system.list_all(limit="1; DROP TABLE memories")
 
 
-def test_list_all_rejects_non_positive_limits(memory_system):
+def test_list_all_rejects_negative_limits(memory_system):
     memory_system.store(_make_entry(0))
-
-    with pytest.raises(ValueError):
-        memory_system.list_all(limit=0)
 
     with pytest.raises(ValueError):
         memory_system.list_all(limit=-1)
@@ -52,3 +49,10 @@ def test_list_all_rejects_boolean_limits(memory_system):
 
     with pytest.raises(ValueError):
         memory_system.list_all(limit=True)
+
+
+def test_list_all_allows_zero_limit(memory_system):
+    for i in range(3):
+        memory_system.store(_make_entry(i))
+
+    assert memory_system.list_all(limit=0) == []

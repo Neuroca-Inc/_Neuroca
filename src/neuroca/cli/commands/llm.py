@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from enum import Enum
@@ -381,10 +382,19 @@ def manage_config(
         if not editor_cmd:
             editor_cmd = ["notepad"] if os.name == "nt" else ["nano"]
 
-        editor_cmd.append(str(conf_path))
+        editor_executable = editor_cmd[0]
+        resolved_editor = shutil.which(editor_executable)
+        if resolved_editor is None:
+            console.print(
+                "[red]Editor executable not found. Set the EDITOR environment variable",
+                " to a valid command.[/red]"
+            )
+            raise typer.Exit(code=1)
+
+        safe_editor_cmd = [resolved_editor, *editor_cmd[1:], str(conf_path)]
 
         try:
-            subprocess.run(editor_cmd, check=True)
+            subprocess.run(safe_editor_cmd, check=True)
         except FileNotFoundError:
             console.print(
                 "[red]Editor executable not found. Set the EDITOR environment variable"

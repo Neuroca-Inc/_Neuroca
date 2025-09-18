@@ -63,7 +63,7 @@ _SCHEMA_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 def _normalize_search_path(schema: str) -> list[str]:
     """Parse and validate a comma-separated list of schema names."""
     if schema is None:
-        raise ValueError("Schema name must not be None.")
+        raise ValueError("Schema name must not be None")
 
     normalized: list[str] = []
     for raw_part in schema.split(','):
@@ -112,7 +112,7 @@ def _build_connection_options(schema: str, statement_timeout: Union[int, str]) -
     """Create a safe libpq options string for search_path and statement_timeout."""
     normalized_schema = _normalize_search_path(schema)
     timeout_value = _validate_statement_timeout(statement_timeout)
-    schema_clause = ",".join(part for part in normalized_schema)
+    schema_clause = ",".join(normalized_schema)
     return f"-c search_path={schema_clause} -c statement_timeout={timeout_value}"
 
 
