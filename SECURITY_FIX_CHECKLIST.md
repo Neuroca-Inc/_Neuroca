@@ -27,9 +27,9 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
 
 ## Dependency Vulnerabilities
-- [ ] Update `langchain` to at least `0.0.325` (covers CVE-2023-39631, CVE-2023-36281, and CVE-2023-39659).
-- [ ] Update `transformers` to at least `4.36.0`.
-- [ ] Update `torch` to at least `2.6.0`.
+- [x] Update `langchain` to at least `0.0.325` (covers CVE-2023-39631, CVE-2023-36281, and CVE-2023-39659).
+- [x] Update `transformers` to at least `4.36.0`.
+- [x] Update `torch` to at least `2.6.0`.
 
 ## Runtime Safety Checks
 - [ ] Ensure callable validation for `original_store` at `tests/unit/memory/manager/test_transactional_consolidation.py`.
