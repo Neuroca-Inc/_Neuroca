@@ -24,21 +24,29 @@ Usage:
                                   payload_size=1024)
 """
 
+import asyncio
+from asyncio import QueueEmpty
 import datetime
 import json
 import logging
+import math
 import os
 import statistics
+import random
+import string
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import psutil
+
+from neuroca.memory.backends import BackendType
+from neuroca.memory.manager.memory_manager import MemoryManager
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -141,24 +149,684 @@ def measure_time() -> float:
 def measure_resources():
     """Context manager to measure CPU and memory usage."""
     process = psutil.Process(os.getpid())
-    
+
     # Measure before
     mem_before = process.memory_info().rss / 1024 / 1024  # MB
     cpu_percent_before = process.cpu_percent()
-    
+
     yield
-    
+
     # Measure after
     mem_after = process.memory_info().rss / 1024 / 1024  # MB
     cpu_percent_after = process.cpu_percent()
-    
+
     return {
         "memory_usage_mb": mem_after - mem_before,
         "cpu_percent": cpu_percent_after - cpu_percent_before
     }
 
 
-def benchmark(func=None, *, iterations=DEFAULT_ITERATIONS, warmup=DEFAULT_WARMUP_ITERATIONS, 
+TIER_ORDER: tuple[str, ...] = (
+    MemoryManager.STM_TIER,
+    MemoryManager.MTM_TIER,
+    MemoryManager.LTM_TIER,
+)
+
+
+def _percentile(values: Sequence[float], percentile: float) -> float:
+    """Return the requested percentile using linear interpolation."""
+
+    if not values:
+        return 0.0
+
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+
+    rank = (len(ordered) - 1) * (percentile / 100.0)
+    lower_index = math.floor(rank)
+    upper_index = math.ceil(rank)
+
+    if lower_index == upper_index:
+        return float(ordered[int(rank)])
+
+    lower_value = ordered[lower_index]
+    upper_value = ordered[upper_index]
+    fraction = rank - lower_index
+    return float(lower_value + (upper_value - lower_value) * fraction)
+
+
+def _summarize_latencies(samples: Sequence[float]) -> Dict[str, float]:
+    """Summarise latency samples in seconds into millisecond statistics."""
+
+    if not samples:
+        return {
+            "samples": 0,
+            "mean_ms": 0.0,
+            "p50_ms": 0.0,
+            "p95_ms": 0.0,
+            "min_ms": 0.0,
+            "max_ms": 0.0,
+        }
+
+    latencies_ms = [value * 1000.0 for value in samples]
+    return {
+        "samples": len(latencies_ms),
+        "mean_ms": float(statistics.mean(latencies_ms)),
+        "p50_ms": float(_percentile(latencies_ms, 50.0)),
+        "p95_ms": float(_percentile(latencies_ms, 95.0)),
+        "min_ms": float(min(latencies_ms)),
+        "max_ms": float(max(latencies_ms)),
+    }
+
+
+def _summarize_throughput(samples: Sequence[float]) -> Dict[str, float]:
+    """Summarise throughput samples (operations per second)."""
+
+    if not samples:
+        return {
+            "samples": 0,
+            "mean_ops_per_sec": 0.0,
+            "p50_ops_per_sec": 0.0,
+            "p95_ops_per_sec": 0.0,
+            "min_ops_per_sec": 0.0,
+            "max_ops_per_sec": 0.0,
+        }
+
+    return {
+        "samples": len(samples),
+        "mean_ops_per_sec": float(statistics.mean(samples)),
+        "p50_ops_per_sec": float(_percentile(samples, 50.0)),
+        "p95_ops_per_sec": float(_percentile(samples, 95.0)),
+        "min_ops_per_sec": float(min(samples)),
+        "max_ops_per_sec": float(max(samples)),
+    }
+
+
+def _chunked(values: Sequence[str], chunk_size: int) -> Iterable[Sequence[str]]:
+    """Yield successive chunks from *values* of size ``chunk_size``."""
+
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+
+    for start in range(0, len(values), chunk_size):
+        yield values[start:start + chunk_size]
+
+
+def _generate_memory_content(index: int, length: int, rng: random.Random) -> str:
+    """Generate deterministic pseudo-random memory content of ``length`` characters."""
+
+    prefix = f"Baseline memory {index}: "
+    remaining = max(0, length - len(prefix))
+    if remaining == 0:
+        return prefix[:length]
+
+    alphabet = string.ascii_letters + string.digits + " "
+    body = "".join(rng.choice(alphabet) for _ in range(remaining))
+    return prefix + body
+
+
+async def _collect_retrieval_latency_baseline(
+    num_memories_per_tier: Mapping[str, int],
+    retrieval_iterations: int,
+    content_length: int,
+    random_seed: int,
+    randomize_order: bool,
+) -> Dict[str, Any]:
+    """Populate each tier and measure retrieval latencies."""
+
+    manager = MemoryManager(
+        config={"maintenance_interval": 0},
+        backend_type=BackendType.MEMORY,
+    )
+    await manager.initialize()
+    rng = random.Random(random_seed)
+
+    try:
+        memory_counts = {
+            tier: max(0, int(num_memories_per_tier.get(tier, 0)))
+            for tier in TIER_ORDER
+        }
+
+        ids_by_tier: Dict[str, list[str]] = {tier: [] for tier in TIER_ORDER}
+
+        for tier, count in memory_counts.items():
+            for index in range(count):
+                content = _generate_memory_content(index, content_length, rng)
+                memory_id = await manager.add_memory(
+                    content,
+                    importance=0.65,
+                    metadata={"source": "performance_baseline"},
+                    tags=["baseline", tier],
+                    initial_tier=tier,
+                )
+                ids_by_tier[tier].append(memory_id)
+
+        # Warm up each tier to ensure caches and strength models are initialised
+        for tier, identifiers in ids_by_tier.items():
+            for memory_id in identifiers:
+                await manager.retrieve_memory(memory_id, tier=tier)
+
+        latencies_by_tier: Dict[str, list[float]] = {tier: [] for tier in TIER_ORDER}
+        aggregate_latencies: list[float] = []
+
+        iterations = max(1, retrieval_iterations)
+        for tier, identifiers in ids_by_tier.items():
+            if not identifiers:
+                continue
+
+            for _ in range(iterations):
+                ordered = list(identifiers)
+                if randomize_order and len(ordered) > 1:
+                    rng.shuffle(ordered)
+
+                for memory_id in ordered:
+                    start = time.perf_counter()
+                    item = await manager.retrieve_memory(memory_id, tier=tier)
+                    if item is None:
+                        raise RuntimeError(
+                            f"Memory {memory_id} missing from tier {tier} during baseline collection"
+                        )
+
+                    duration = time.perf_counter() - start
+                    latencies_by_tier[tier].append(duration)
+                    aggregate_latencies.append(duration)
+
+        tier_stats = {
+            tier: _summarize_latencies(latencies_by_tier.get(tier, []))
+            for tier in TIER_ORDER
+        }
+
+        return {
+            "tiers": tier_stats,
+            "aggregate": _summarize_latencies(aggregate_latencies),
+            "memory_counts": memory_counts,
+            "iterations": iterations,
+            "randomized": bool(randomize_order),
+        }
+    finally:
+        await manager.shutdown()
+
+
+def run_retrieval_latency_baseline(
+    *,
+    num_memories_per_tier: Mapping[str, int] | None = None,
+    retrieval_iterations: int = 3,
+    content_length: int = 256,
+    random_seed: int = 42,
+    randomize_order: bool = True,
+) -> Dict[str, Any]:
+    """Synchronously execute the retrieval latency baseline benchmark."""
+
+    payload = num_memories_per_tier or {
+        MemoryManager.STM_TIER: 120,
+        MemoryManager.MTM_TIER: 120,
+        MemoryManager.LTM_TIER: 120,
+    }
+
+    return asyncio.run(
+        _collect_retrieval_latency_baseline(
+            payload,
+            retrieval_iterations,
+            max(32, int(content_length)),
+            random_seed,
+            randomize_order,
+        )
+    )
+
+
+async def _collect_consolidation_throughput_baseline(
+    total_memories: int,
+    batch_size: int,
+    content_length: int,
+    random_seed: int,
+) -> Dict[str, Any]:
+    """Populate STM and measure consolidation throughput across tiers."""
+
+    manager = MemoryManager(
+        config={"maintenance_interval": 0},
+        backend_type=BackendType.MEMORY,
+    )
+    await manager.initialize()
+    rng = random.Random(random_seed)
+
+    try:
+        stm_ids: list[str] = []
+        for index in range(total_memories):
+            content = _generate_memory_content(index, content_length, rng)
+            memory_id = await manager.add_memory(
+                content,
+                importance=0.75,
+                metadata={"source": "performance_baseline"},
+                tags=["baseline", MemoryManager.STM_TIER],
+                initial_tier=MemoryManager.STM_TIER,
+            )
+            stm_ids.append(memory_id)
+
+        if len(stm_ids) > 1:
+            rng.shuffle(stm_ids)
+
+        stage_samples: Dict[str, list[float]] = {
+            "stm_to_mtm": [],
+            "mtm_to_ltm": [],
+        }
+
+        mtm_ids: list[str] = []
+        for chunk in _chunked(stm_ids, batch_size):
+            if not chunk:
+                continue
+
+            start = time.perf_counter()
+            produced: list[str] = []
+            for memory_id in chunk:
+                new_id = await manager.consolidate_memory(
+                    memory_id,
+                    MemoryManager.STM_TIER,
+                    MemoryManager.MTM_TIER,
+                )
+                if new_id:
+                    produced.append(new_id)
+
+            duration = time.perf_counter() - start
+            if duration > 0 and produced:
+                stage_samples["stm_to_mtm"].append(len(produced) / duration)
+
+            mtm_ids.extend(produced)
+
+        stage_one_completed = len(mtm_ids)
+
+        if len(mtm_ids) > 1:
+            rng.shuffle(mtm_ids)
+
+        ltm_ids: list[str] = []
+        for chunk in _chunked(mtm_ids, batch_size):
+            if not chunk:
+                continue
+
+            start = time.perf_counter()
+            produced: list[str] = []
+            for memory_id in chunk:
+                new_id = await manager.consolidate_memory(
+                    memory_id,
+                    MemoryManager.MTM_TIER,
+                    MemoryManager.LTM_TIER,
+                )
+                if new_id:
+                    produced.append(new_id)
+
+            duration = time.perf_counter() - start
+            if duration > 0 and produced:
+                stage_samples["mtm_to_ltm"].append(len(produced) / duration)
+
+            ltm_ids.extend(produced)
+
+        aggregate_samples = (
+            stage_samples["stm_to_mtm"] + stage_samples["mtm_to_ltm"]
+        )
+
+        return {
+            "stages": {
+                stage: _summarize_throughput(values)
+                for stage, values in stage_samples.items()
+            },
+            "aggregate": _summarize_throughput(aggregate_samples),
+            "batch_size": batch_size,
+            "total_memories": total_memories,
+            "completed": {
+                "stm_to_mtm": stage_one_completed,
+                "mtm_to_ltm": len(ltm_ids),
+            },
+        }
+    finally:
+        await manager.shutdown()
+
+
+def run_consolidation_throughput_baseline(
+    *,
+    total_memories: int = 240,
+    batch_size: int = 12,
+    content_length: int = 256,
+    random_seed: int = 99,
+) -> Dict[str, Any]:
+    """Synchronously execute the consolidation throughput baseline benchmark."""
+
+    if total_memories <= 0:
+        raise ValueError("total_memories must be a positive integer")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be a positive integer")
+
+    return asyncio.run(
+        _collect_consolidation_throughput_baseline(
+            total_memories,
+            batch_size,
+            max(32, int(content_length)),
+            random_seed,
+        )
+    )
+
+
+async def _execute_high_concurrency_stress_scenario(
+    *,
+    concurrent_workers: int,
+    operations_per_worker: int,
+    preloaded_memories: Mapping[str, int],
+    content_length: int,
+    random_seed: int,
+) -> Dict[str, Any]:
+    """Drive concurrent ingestion, retrieval, and consolidation across tiers."""
+
+    manager = MemoryManager(
+        config={"maintenance_interval": 0},
+        backend_type=BackendType.MEMORY,
+    )
+    await manager.initialize()
+
+    preloaded_counts = {
+        tier: max(0, int(preloaded_memories.get(tier, 0)))
+        for tier in TIER_ORDER
+    }
+    total_seed = sum(preloaded_counts.values())
+
+    tier_state: Dict[str, Dict[str, Any]] = {
+        MemoryManager.STM_TIER: {
+            "ids": set(),
+            "lock": asyncio.Lock(),
+            "queue": asyncio.Queue(),
+        },
+        MemoryManager.MTM_TIER: {
+            "ids": set(),
+            "lock": asyncio.Lock(),
+            "queue": asyncio.Queue(),
+        },
+        MemoryManager.LTM_TIER: {
+            "ids": set(),
+            "lock": asyncio.Lock(),
+            "queue": None,
+        },
+    }
+
+    async def register_new_id(tier: str, memory_id: str, enqueue: bool = False) -> None:
+        async with tier_state[tier]["lock"]:
+            tier_state[tier]["ids"].add(memory_id)
+
+        queue = tier_state[tier].get("queue")
+        if enqueue and queue is not None:
+            queue.put_nowait(memory_id)
+
+    async def remove_id(tier: str, memory_id: str) -> None:
+        async with tier_state[tier]["lock"]:
+            tier_state[tier]["ids"].discard(memory_id)
+
+    async def sample_id(tier: str, rng_instance: random.Random) -> Optional[str]:
+        async with tier_state[tier]["lock"]:
+            if not tier_state[tier]["ids"]:
+                return None
+            choices = tuple(tier_state[tier]["ids"])
+
+        return rng_instance.choice(choices)
+
+    seed_rng = random.Random(random_seed)
+    seed_index = 0
+    for tier in TIER_ORDER:
+        count = preloaded_counts.get(tier, 0)
+        for _ in range(count):
+            content = _generate_memory_content(seed_index, content_length, seed_rng)
+            seed_index += 1
+            memory_id = await manager.add_memory(
+                content,
+                importance=0.6,
+                metadata={"source": "concurrency_stress_seed", "tier": tier},
+                tags=["stress_seed", tier],
+                initial_tier=tier,
+            )
+            await register_new_id(
+                tier,
+                memory_id,
+                enqueue=tier != MemoryManager.LTM_TIER,
+            )
+
+    operation_keys: tuple[str, ...] = (
+        "ingest_stm",
+        "promote_stm_to_mtm",
+        "promote_mtm_to_ltm",
+        "retrieve_stm",
+        "retrieve_mtm",
+        "retrieve_ltm",
+    )
+
+    start_time = time.perf_counter()
+
+    async def worker(
+        worker_index: int,
+    ) -> tuple[dict[str, int], dict[str, list[float]], list[dict[str, Any]]]:
+        local_counts: Dict[str, int] = {key: 0 for key in operation_keys}
+        local_latencies: Dict[str, list[float]] = {key: [] for key in operation_keys}
+        local_errors: list[dict[str, Any]] = []
+        local_rng = random.Random(random_seed + worker_index + 1)
+
+        async def do_ingest(iteration_index: int) -> bool:
+            content_index = total_seed + worker_index * operations_per_worker + iteration_index
+            content = _generate_memory_content(content_index, content_length, local_rng)
+            start = time.perf_counter()
+            try:
+                memory_id = await manager.add_memory(
+                    content,
+                    importance=0.55,
+                    metadata={
+                        "source": "concurrency_stress",
+                        "worker": worker_index,
+                    },
+                    tags=["stress", f"worker:{worker_index}"],
+                    initial_tier=MemoryManager.STM_TIER,
+                )
+            except Exception as exc:  # pragma: no cover - surfaced via error reporting
+                local_errors.append(
+                    {
+                        "worker": worker_index,
+                        "operation": "ingest_stm",
+                        "error": str(exc),
+                    }
+                )
+                return False
+
+            duration = time.perf_counter() - start
+            local_counts["ingest_stm"] += 1
+            local_latencies["ingest_stm"].append(duration)
+            await register_new_id(MemoryManager.STM_TIER, memory_id, enqueue=True)
+            return True
+
+        async def do_promote(source: str, target: str, op_key: str) -> bool:
+            queue = tier_state[source]["queue"]
+            if queue is None:
+                return False
+
+            try:
+                memory_id = queue.get_nowait()
+            except QueueEmpty:
+                return False
+
+            start = time.perf_counter()
+            try:
+                new_id = await manager.consolidate_memory(memory_id, source, target)
+            except Exception as exc:  # pragma: no cover - surfaced via error reporting
+                local_errors.append(
+                    {
+                        "worker": worker_index,
+                        "operation": op_key,
+                        "memory_id": memory_id,
+                        "error": str(exc),
+                    }
+                )
+                queue.put_nowait(memory_id)
+                return False
+
+            duration = time.perf_counter() - start
+            local_counts[op_key] += 1
+            local_latencies[op_key].append(duration)
+
+            await remove_id(source, memory_id)
+            if new_id:
+                await register_new_id(
+                    target,
+                    new_id,
+                    enqueue=target != MemoryManager.LTM_TIER,
+                )
+            return True
+
+        async def do_retrieve(tier: str) -> bool:
+            memory_id = await sample_id(tier, local_rng)
+            if memory_id is None:
+                return False
+
+            start = time.perf_counter()
+            try:
+                item = await manager.retrieve_memory(memory_id, tier=tier)
+            except Exception as exc:  # pragma: no cover - surfaced via error reporting
+                local_errors.append(
+                    {
+                        "worker": worker_index,
+                        "operation": f"retrieve_{tier}",
+                        "memory_id": memory_id,
+                        "error": str(exc),
+                    }
+                )
+                return False
+
+            if item is None:
+                local_errors.append(
+                    {
+                        "worker": worker_index,
+                        "operation": f"retrieve_{tier}",
+                        "memory_id": memory_id,
+                        "error": "memory_missing",
+                    }
+                )
+                return False
+
+            duration = time.perf_counter() - start
+            key = f"retrieve_{tier}"
+            local_counts[key] += 1
+            local_latencies[key].append(duration)
+            return True
+
+        for iteration_index in range(operations_per_worker):
+            action = local_rng.random()
+            executed = False
+
+            if action < 0.4:
+                executed = await do_ingest(iteration_index)
+            elif action < 0.65:
+                executed = await do_promote(
+                    MemoryManager.STM_TIER,
+                    MemoryManager.MTM_TIER,
+                    "promote_stm_to_mtm",
+                )
+            elif action < 0.85:
+                executed = await do_promote(
+                    MemoryManager.MTM_TIER,
+                    MemoryManager.LTM_TIER,
+                    "promote_mtm_to_ltm",
+                )
+            else:
+                tiers = list(TIER_ORDER)
+                local_rng.shuffle(tiers)
+                for tier in tiers:
+                    if await do_retrieve(tier):
+                        executed = True
+                        break
+
+            if not executed:
+                await do_ingest(iteration_index)
+
+            await asyncio.sleep(0)
+
+        return local_counts, local_latencies, local_errors
+
+    result: Dict[str, Any]
+    try:
+        workers = [asyncio.create_task(worker(index)) for index in range(concurrent_workers)]
+        worker_results = await asyncio.gather(*workers)
+        total_duration = time.perf_counter() - start_time
+
+        aggregate_counts: Dict[str, int] = {key: 0 for key in operation_keys}
+        aggregate_latencies: Dict[str, list[float]] = {key: [] for key in operation_keys}
+        errors: list[dict[str, Any]] = []
+
+        for counts, latencies, worker_errors in worker_results:
+            for key, value in counts.items():
+                aggregate_counts[key] += value
+            for key, samples in latencies.items():
+                aggregate_latencies[key].extend(samples)
+            errors.extend(worker_errors)
+
+        total_operations = sum(aggregate_counts.values())
+
+        result = {
+            "parameters": {
+                "concurrent_workers": concurrent_workers,
+                "operations_per_worker": operations_per_worker,
+                "preloaded_memories": preloaded_counts,
+                "content_length": content_length,
+                "random_seed": random_seed,
+            },
+            "operation_counts": aggregate_counts,
+            "latency_ms": {
+                key: _summarize_latencies(aggregate_latencies[key])
+                for key in operation_keys
+            },
+            "errors": errors,
+            "workers": concurrent_workers,
+            "total_operations": total_operations,
+            "total_duration_seconds": total_duration,
+            "aggregate_throughput_ops_per_sec": (
+                total_operations / total_duration if total_duration > 0 else 0.0
+            ),
+        }
+    finally:
+        await manager.shutdown()
+
+    return result
+
+
+def run_high_concurrency_stress_scenario(
+    *,
+    concurrent_workers: int = 24,
+    operations_per_worker: int = 40,
+    preloaded_memories: Mapping[str, int] | None = None,
+    content_length: int = 256,
+    random_seed: int = 2024,
+) -> Dict[str, Any]:
+    """Synchronously execute the high-concurrency stress scenario."""
+
+    if concurrent_workers <= 0:
+        raise ValueError("concurrent_workers must be a positive integer")
+    if operations_per_worker <= 0:
+        raise ValueError("operations_per_worker must be a positive integer")
+
+    base_preload = {
+        MemoryManager.STM_TIER: 180,
+        MemoryManager.MTM_TIER: 120,
+        MemoryManager.LTM_TIER: 80,
+    }
+
+    payload = {tier: base_preload.get(tier, 0) for tier in TIER_ORDER}
+    if preloaded_memories:
+        for tier in TIER_ORDER:
+            if tier in preloaded_memories:
+                payload[tier] = max(0, int(preloaded_memories[tier]))
+
+    return asyncio.run(
+        _execute_high_concurrency_stress_scenario(
+            concurrent_workers=concurrent_workers,
+            operations_per_worker=operations_per_worker,
+            preloaded_memories=payload,
+            content_length=max(32, int(content_length)),
+            random_seed=random_seed,
+        )
+    )
+
+
+def benchmark(func=None, *, iterations=DEFAULT_ITERATIONS, warmup=DEFAULT_WARMUP_ITERATIONS,
               parameters=None, metadata=None):
     """
     Decorator to benchmark a function.
@@ -266,7 +934,9 @@ def run_benchmark(benchmark_name: str, **kwargs) -> BenchmarkResult:
         "memory_tier_comparison": benchmark_memory_tier_comparison,
         "llm_integration": benchmark_llm_integration,
         "cognitive_processing": benchmark_cognitive_processing,
-        "system_throughput": benchmark_system_throughput
+        "system_throughput": benchmark_system_throughput,
+        "consolidation_throughput": benchmark_system_throughput,
+        "concurrency_stress": benchmark_concurrency_stress,
     }
     
     if benchmark_name not in benchmark_registry:
@@ -296,15 +966,19 @@ def run_benchmark_suite(benchmarks: Optional[list[str]] = None,
         "memory_tier_comparison",
         "llm_integration",
         "cognitive_processing",
-        "system_throughput"
+        "consolidation_throughput",
+        "concurrency_stress",
     ]
-    
+
     benchmarks_to_run = benchmarks or available_benchmarks
-    
+    valid_benchmarks = set(available_benchmarks) | {"system_throughput"}
+
     # Validate benchmark names
     for benchmark in benchmarks_to_run:
-        if benchmark not in available_benchmarks:
-            raise ValueError(f"Unknown benchmark: {benchmark}. Available benchmarks: {available_benchmarks}")
+        if benchmark not in valid_benchmarks:
+            raise ValueError(
+                f"Unknown benchmark: {benchmark}. Available benchmarks: {sorted(valid_benchmarks)}"
+            )
     
     logger.info(f"Running benchmark suite with {len(benchmarks_to_run)} benchmarks")
     
@@ -513,76 +1187,43 @@ def benchmark_memory_access(data_size: int = 1000000, access_pattern: str = "seq
     return result
 
 
-@benchmark
-def benchmark_memory_tier_comparison(tier_type: str = "all", operation: str = "read", data_size: int = 10000):
-    """
-    Benchmark and compare different memory tiers.
-    
-    Args:
-        tier_type: Type of memory tier to benchmark ("working", "episodic", "semantic", "all")
-        operation: Operation to benchmark ("read", "write", "search")
-        data_size: Size of the data to use
-    
-    Returns:
-        Benchmark results
-    """
-    logger.info(f"Running memory tier comparison benchmark: {tier_type}, {operation}, {data_size}")
-    
-    # This is a placeholder implementation
-    # In a real implementation, this would interact with the actual memory tiers
-    
-    # Simulate different memory tier operations
-    if tier_type == "working" or tier_type == "all":
-        # Working memory operations (fastest)
-        data = {i: f"value_{i}" for i in range(data_size)}
-        if operation == "read":
-            for i in range(data_size):
-                _ = data.get(i)
-        elif operation == "write":
-            for i in range(data_size):
-                data[i] = f"new_value_{i}"
-        elif operation == "search":
-            for i in range(data_size):
-                _ = i in data
-    
-    if tier_type == "episodic" or tier_type == "all":
-        # Episodic memory operations (medium)
-        # Simulate with a more complex data structure
-        data = [{"id": i, "timestamp": time.time(), "content": f"episode_{i}"} for i in range(data_size)]
-        if operation == "read":
-            for i in range(data_size):
-                _ = data[i]
-        elif operation == "write":
-            for i in range(data_size):
-                data[i] = {"id": i, "timestamp": time.time(), "content": f"new_episode_{i}"}
-        elif operation == "search":
-            for i in range(data_size):
-                _ = next((item for item in data if item["id"] == i), None)
-    
-    if tier_type == "semantic" or tier_type == "all":
-        # Semantic memory operations (slowest but most structured)
-        # Simulate with a graph-like structure
-        nodes = {i: {"connections": list(range(max(0, i-5), min(data_size, i+5)))} for i in range(data_size)}
-        if operation == "read":
-            for i in range(data_size):
-                _ = nodes.get(i)
-        elif operation == "write":
-            for i in range(data_size):
-                nodes[i] = {"connections": list(range(max(0, i-3), min(data_size, i+3)))}
-        elif operation == "search":
-            for i in range(data_size // 10):  # Reduce iterations for search as it's more complex
-                target = i * 10
-                visited = set()
-                queue = [0]
-                while queue:
-                    node = queue.pop(0)
-                    if node == target:
-                        break
-                    if node not in visited:
-                        visited.add(node)
-                        queue.extend([conn for conn in nodes[node]["connections"] if conn not in visited])
-    
-    return {"tier_type": tier_type, "operation": operation, "data_size": data_size}
+@benchmark(
+    iterations=1,
+    warmup=0,
+    parameters={"benchmark": "retrieval_latency"},
+)
+def benchmark_memory_tier_comparison(
+    stm_memories: int = 120,
+    mtm_memories: int = 120,
+    ltm_memories: int = 120,
+    retrieval_iterations: int = 3,
+    content_length: int = 256,
+    random_seed: int = 42,
+    randomize_order: bool = True,
+):
+    """Measure retrieval latency across STM, MTM, and LTM tiers."""
+
+    logger.info(
+        "Running retrieval latency baseline: stm=%s, mtm=%s, ltm=%s, iterations=%s",
+        stm_memories,
+        mtm_memories,
+        ltm_memories,
+        retrieval_iterations,
+    )
+
+    configuration = {
+        MemoryManager.STM_TIER: stm_memories,
+        MemoryManager.MTM_TIER: mtm_memories,
+        MemoryManager.LTM_TIER: ltm_memories,
+    }
+
+    return run_retrieval_latency_baseline(
+        num_memories_per_tier=configuration,
+        retrieval_iterations=retrieval_iterations,
+        content_length=content_length,
+        random_seed=random_seed,
+        randomize_order=randomize_order,
+    )
 
 
 @benchmark
@@ -698,80 +1339,68 @@ def benchmark_cognitive_processing(complexity: str = "medium", parallel: bool = 
     }
 
 
-@benchmark
-def benchmark_system_throughput(load_level: str = "medium", duration: int = 5, concurrent_operations: int = 10):
-    """
-    Benchmark overall system throughput under different loads.
-    
-    Args:
-        load_level: Level of system load to simulate ("light", "medium", "heavy")
-        duration: Duration of the benchmark in seconds
-        concurrent_operations: Number of concurrent operations to simulate
-    
-    Returns:
-        Benchmark results
-    """
-    logger.info(f"Running system throughput benchmark: {load_level}, {duration}s, {concurrent_operations} concurrent ops")
-    
-    # This is a placeholder implementation
-    # In a real implementation, this would interact with actual system components
-    
-    # Simulate different load levels
-    if load_level == "light":
-        operations_per_second = 10
-    elif load_level == "medium":
-        operations_per_second = 50
-    elif load_level == "heavy":
-        operations_per_second = 200
-    else:
-        raise ValueError(f"Unknown load level: {load_level}")
-    
-    total_operations = operations_per_second * duration
-    operations_completed = 0
-    start_time = time.time()
-    
-    if concurrent_operations > 1:
-        # Simulate concurrent operations
-        from concurrent.futures import ThreadPoolExecutor
-        
-        def perform_operation(op_id):
-            # Simulate a single operation
-            time.sleep(0.01)  # Small delay to simulate work
-            return op_id
-        
-        with ThreadPoolExecutor(max_workers=concurrent_operations) as executor:
-            # Submit all operations
-            futures = [executor.submit(perform_operation, i) for i in range(total_operations)]
-            
-            # Wait for all operations to complete or timeout
-            end_time = start_time + duration
-            for future in futures:
-                if time.time() < end_time:
-                    try:
-                        future.result(timeout=max(0.1, end_time - time.time()))
-                        operations_completed += 1
-                    except Exception as e:
-                        logger.warning(f"Operation failed: {str(e)}")
-                else:
-                    break
-    else:
-        # Sequential operations
-        while time.time() - start_time < duration and operations_completed < total_operations:
-            # Simulate a single operation
-            time.sleep(0.01)  # Small delay to simulate work
-            operations_completed += 1
-    
-    actual_duration = time.time() - start_time
-    throughput = operations_completed / actual_duration if actual_duration > 0 else 0
-    
-    return {
-        "load_level": load_level,
-        "target_duration": duration,
-        "actual_duration": actual_duration,
-        "concurrent_operations": concurrent_operations,
-        "operations_completed": operations_completed,
-        "throughput_ops_per_second": throughput
+@benchmark(
+    iterations=1,
+    warmup=0,
+    parameters={"benchmark": "consolidation_throughput"},
+)
+def benchmark_system_throughput(
+    total_memories: int = 240,
+    batch_size: int = 12,
+    content_length: int = 256,
+    random_seed: int = 99,
+):
+    """Measure STM→MTM→LTM consolidation throughput using the live manager."""
+
+    logger.info(
+        "Running consolidation throughput baseline: memories=%s, batch_size=%s",
+        total_memories,
+        batch_size,
+    )
+
+    return run_consolidation_throughput_baseline(
+        total_memories=total_memories,
+        batch_size=batch_size,
+        content_length=content_length,
+        random_seed=random_seed,
+    )
+
+
+@benchmark(
+    iterations=1,
+    warmup=0,
+    parameters={"benchmark": "concurrency_stress"},
+)
+def benchmark_concurrency_stress(
+    concurrent_workers: int = 16,
+    operations_per_worker: int = 30,
+    preloaded_stm: int = 96,
+    preloaded_mtm: int = 64,
+    preloaded_ltm: int = 48,
+    content_length: int = 256,
+    random_seed: int = 1337,
+):
+    """Exercise the manager with concurrent ingestion, retrieval, and consolidation."""
+
+    logger.info(
+        "Running concurrency stress benchmark: workers=%s, operations=%s",
+        concurrent_workers,
+        operations_per_worker,
+    )
+
+    payload = {
+        MemoryManager.STM_TIER: preloaded_stm,
+        MemoryManager.MTM_TIER: preloaded_mtm,
+        MemoryManager.LTM_TIER: preloaded_ltm,
     }
+
+    return run_high_concurrency_stress_scenario(
+        concurrent_workers=concurrent_workers,
+        operations_per_worker=operations_per_worker,
+        preloaded_memories=payload,
+        content_length=content_length,
+        random_seed=random_seed,
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,34 @@
+---
+# Alerting rules that watch the memory manager maintenance metrics published via Prometheus.
+groups:
+  - name: memory-maintenance
+    interval: 30s
+    rules:
+      - alert: MemoryMaintenanceBacklogHigh
+        expr: memory_maintenance_backlog_age_seconds{scope="maintenance"} > 300
+        for: 10m
+        labels:
+          severity: warning
+          service: memory-manager
+          domain: memory
+        annotations:
+          summary: Maintenance backlog age exceeds 5 minutes
+          description: |
+            The maintenance orchestrator has not completed a successful cycle for
+            over 5 minutes. Consolidation queues may be stalled and new
+            promotions could be delayed.
+          runbook: https://docs.neuroca.dev/runbooks/memory/maintenance-backlog
+      - alert: MemoryConsolidationFailuresBurst
+        expr: sum by (source, target)(increase(memory_consolidation_failures_total[5m])) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          service: memory-manager
+          domain: memory
+        annotations:
+          summary: Sustained spike in memory consolidation failures
+          description: |
+            Three or more consolidation attempts have failed within the last five
+            minutes. Investigate tier capacity, model compatibility, or recent
+            deployment changes before the backlog grows further.
+          runbook: https://docs.neuroca.dev/runbooks/memory/consolidation-failures

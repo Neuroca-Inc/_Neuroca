@@ -9,10 +9,16 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from neuroca.memory.backends import MemoryTier
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata, MemoryStatus
 # Define priority enum for MTM memories since no longer imported from mtm.storage
 from enum import Enum
+from neuroca.memory.manager.summarization import MemorySummarizer
+from neuroca.memory.manager.consolidation_pipeline import (
+    ConsolidationSkip,
+    ConsolidationTransaction,
+    TransactionalConsolidationPipeline,
+)
+from neuroca.memory.manager.consolidation_guard import ConsolidationInFlightGuard
 
 class MemoryPriority(str, Enum):
     """Priority levels for MTM memories."""
@@ -27,6 +33,28 @@ MTMStatus = MemoryStatus
 logger = logging.getLogger(__name__)
 
 
+_GLOBAL_PIPELINE = TransactionalConsolidationPipeline(
+    log=logger.getChild("pipeline")
+)
+_GLOBAL_GUARD = ConsolidationInFlightGuard()
+
+
+async def _safe_delete(storage: Any, memory_id: Any, *, context: str) -> None:
+    """Attempt to delete ``memory_id`` from ``storage`` while swallowing errors."""
+
+    if not memory_id:
+        return
+
+    delete_handler = getattr(storage, "delete", None)
+    if delete_handler is None:
+        return
+
+    try:
+        await delete_handler(memory_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Rollback delete failed for %s on %s", memory_id, context)
+
+
 class StandardMemoryConsolidator:
     """
     Standard implementation of memory consolidation.
@@ -35,9 +63,18 @@ class StandardMemoryConsolidator:
     (STM -> MTM -> LTM) based on importance, access patterns, and age.
     """
     
-    def __init__(self):
+    def __init__(
+        self,
+        pipeline: TransactionalConsolidationPipeline | None = None,
+        guard: ConsolidationInFlightGuard | None = None,
+    ):
         """Initialize the memory consolidator."""
+
         self.config = {}
+        self._pipeline = pipeline or TransactionalConsolidationPipeline(
+            log=logger.getChild("transactional")
+        )
+        self._guard = guard or _GLOBAL_GUARD
     
     async def consolidate_stm_to_mtm(self, stm_storage, mtm_storage):
         """
@@ -47,7 +84,13 @@ class StandardMemoryConsolidator:
             stm_storage: STM storage backend
             mtm_storage: MTM storage backend
         """
-        await consolidate_stm_to_mtm(stm_storage, mtm_storage, self.config)
+        await consolidate_stm_to_mtm(
+            stm_storage,
+            mtm_storage,
+            self.config,
+            pipeline=self._pipeline,
+            guard=self._guard,
+        )
     
     async def consolidate_mtm_to_ltm(self, mtm_storage, ltm_storage):
         """
@@ -57,7 +100,13 @@ class StandardMemoryConsolidator:
             mtm_storage: MTM storage backend
             ltm_storage: LTM storage backend
         """
-        await consolidate_mtm_to_ltm(mtm_storage, ltm_storage, self.config)
+        await consolidate_mtm_to_ltm(
+            mtm_storage,
+            ltm_storage,
+            self.config,
+            pipeline=self._pipeline,
+            guard=self._guard,
+        )
     
     def configure(self, config):
         """
@@ -84,9 +133,14 @@ class StandardMemoryConsolidator:
 async def consolidate_stm_to_mtm(
     stm_storage,
     mtm_storage,
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    *,
+    pipeline: TransactionalConsolidationPipeline | None = None,
+    guard: ConsolidationInFlightGuard | None = None,
 ) -> None:
     """Consolidate important memories from STM to MTM."""
+    pipeline = pipeline or _GLOBAL_PIPELINE
+    guard = guard or _GLOBAL_GUARD
     logger.debug("Starting STM to MTM consolidation")
     
     # Get items from STM
@@ -130,45 +184,83 @@ async def consolidate_stm_to_mtm(
         top_candidates = candidates[:batch_size]
         
         # Consolidate top candidates
-        for item, score in top_candidates:
-            try:
-                # Get the item ID
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                
-                # Extract content and metadata
-                content = item.get("content", {})
-                metadata = item.get("metadata", {})
-                tags = metadata.get("tags", [])
-                importance = metadata.get("importance", 0.5)
-                
-                # Determine priority based on importance
-                priority = MemoryPriority.MEDIUM
-                if importance >= 0.8:
-                    priority = MemoryPriority.HIGH
-                elif importance >= 0.5:
-                    priority = MemoryPriority.MEDIUM
-                else:
-                    priority = MemoryPriority.LOW
-                
-                # Store in MTM
-                mtm_id = await mtm_storage.store(
-                    content=content,
-                    tags=tags,
-                    priority=priority,
-                    metadata=metadata
-                )
-                
-                # If successful, delete from STM
-                if mtm_id:
-                    await stm_storage.delete(item_id)
-                    logger.info(f"Consolidated memory {item_id} from STM to MTM (new ID: {mtm_id})")
-            
-            except Exception as e:
-                logger.error(f"Error consolidating STM memory: {str(e)}")
+        for item, _ in top_candidates:
+            item_id = item.get("id") if isinstance(item, dict) else None
+            if not item_id:
                 continue
-    
+
+            content = dict(item.get("content", {})) if isinstance(item, dict) else {}
+            metadata = dict(item.get("metadata", {})) if isinstance(item, dict) else {}
+            tags = metadata.get("tags", [])
+            importance = metadata.get("importance", 0.5)
+
+            priority = MemoryPriority.MEDIUM
+            if importance >= 0.8:
+                priority = MemoryPriority.HIGH
+            elif importance < 0.5:
+                priority = MemoryPriority.LOW
+
+            async def runner(transaction: ConsolidationTransaction) -> Any:
+                mtm_id = await transaction.stage(
+                    lambda: mtm_storage.store(
+                        content=content,
+                        tags=tags,
+                        priority=priority,
+                        metadata=metadata,
+                    ),
+                    rollback=lambda new_id: _safe_delete(
+                        mtm_storage,
+                        new_id,
+                        context=f"mtm rollback for {item_id}",
+                    ),
+                    description="store_mtm",
+                )
+
+                if not mtm_id:
+                    raise ConsolidationSkip("MTM storage returned no identifier")
+
+                await transaction.stage(
+                    lambda: stm_storage.delete(item_id),
+                    description="delete_stm",
+                )
+
+                logger.info(
+                    "Consolidated memory %s from STM to MTM (new ID: %s)",
+                    item_id,
+                    mtm_id,
+                )
+
+                return mtm_id
+
+            key = f"stm:{item_id}->mtm"
+
+            while True:
+                decision = await guard.reserve(key)
+                if not decision.proceed:
+                    if decision.result is None:
+                        continue
+                    break
+
+                reservation = decision.reservation
+                if reservation is None:
+                    break
+
+                async with reservation:
+                    try:
+                        mtm_id = await pipeline.run(key, runner)
+                    except ConsolidationSkip:
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error(
+                            "Error consolidating STM memory %s: %s",
+                            item_id,
+                            exc,
+                        )
+                        break
+
+                    reservation.commit(mtm_id)
+                    break
+
     except Exception as e:
         logger.error(f"Error in STM to MTM consolidation: {str(e)}")
 
@@ -176,9 +268,14 @@ async def consolidate_stm_to_mtm(
 async def consolidate_mtm_to_ltm(
     mtm_storage,
     ltm_storage,
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    *,
+    pipeline: TransactionalConsolidationPipeline | None = None,
+    guard: ConsolidationInFlightGuard | None = None,
 ) -> None:
     """Consolidate important memories from MTM to LTM."""
+    pipeline = pipeline or _GLOBAL_PIPELINE
+    guard = guard or _GLOBAL_GUARD
     logger.debug("Starting MTM to LTM consolidation")
     
     try:
@@ -229,53 +326,139 @@ async def consolidate_mtm_to_ltm(
         batch_size = min(len(candidates), config.get("consolidation_batch_size", 3))
         top_candidates = candidates[:batch_size]
         
+        summarizer = MemorySummarizer.from_config(config.get("summarization"))
+        batch_summary = summarizer.summarize_memories([memory for memory, _ in top_candidates])
+        per_item_summary = batch_summary.per_item
+        batch_keywords = batch_summary.keywords
+        batch_highlights = batch_summary.highlights
+        batch_aggregate = batch_summary.aggregated_summary
+
         # Consolidate top candidates
-        for memory, score in top_candidates:
-            try:
-                # Get the memory ID
-                memory_id = getattr(memory, "id", None)
-                if not memory_id:
-                    continue
-                
-                # Extract content and metadata
-                content = getattr(memory, "content", {})
-                summary = f"Summary of MTM memory: {str(content)[:100]}..."  # Basic summary
-                
-                # Get tags from MTM memory
-                tags = []
-                if hasattr(memory, "tags"):
-                    tags = memory.tags
-                
-                # Get importance
-                importance = 0.5
-                if hasattr(memory, "metadata") and memory.metadata:
-                    if isinstance(memory.metadata, dict) and "importance" in memory.metadata:
-                        importance = memory.metadata.get("importance", 0.5)
-                
-                # Store in LTM
-                memory_item = MemoryItem(
-                    content=content,
-                    summary=summary,
-                    metadata=MemoryMetadata(
-                        status=MemoryStatus.ACTIVE,
-                        tags=tags,
-                        importance=importance,
-                        created_at=datetime.now(),
-                        source="mtm_consolidation"
-                    )
-                )
-                
-                # Store in LTM
-                ltm_id = await ltm_storage.store(memory_item)
-                
-                if ltm_id:
-                    # Mark as consolidated in MTM
-                    await mtm_storage.consolidate_memory(memory_id)
-                    logger.info(f"Consolidated memory {memory_id} from MTM to LTM (new ID: {ltm_id})")
-            
-            except Exception as e:
-                logger.error(f"Error consolidating MTM memory: {str(e)}")
+        for memory, _ in top_candidates:
+            memory_id = getattr(memory, "id", None)
+            if not memory_id:
                 continue
-    
+
+            content = getattr(memory, "content", {})
+            summary = per_item_summary.get(str(memory_id)) or batch_aggregate
+            if not summary:
+                if isinstance(content, dict) and "text" in content:
+                    summary = str(content.get("text", ""))[:200]
+                else:
+                    summary = str(content)[:200]
+
+            tags = getattr(memory, "tags", [])
+
+            importance = 0.5
+            metadata_obj = getattr(memory, "metadata", None)
+            if metadata_obj:
+                if isinstance(metadata_obj, dict):
+                    importance = metadata_obj.get("importance", importance)
+                elif hasattr(metadata_obj, "importance"):
+                    importance = getattr(metadata_obj, "importance")
+
+            additional_metadata: Dict[str, Any] = {}
+            if metadata_obj:
+                if isinstance(metadata_obj, dict):
+                    additional_metadata = dict(metadata_obj.get("additional_metadata", {}))
+                elif hasattr(metadata_obj, "additional_metadata"):
+                    additional_metadata = dict(getattr(metadata_obj, "additional_metadata"))
+
+            summarization_package = {
+                "aggregated": batch_aggregate,
+                "keywords": batch_keywords,
+                "highlights": batch_highlights.get(str(memory_id), []),
+                "batch": batch_summary.batch_metadata,
+            }
+            additional_metadata["summarization"] = summarization_package
+
+            if isinstance(tags, dict):
+                tag_map: Dict[str, Any] = {str(k): v for k, v in tags.items()}
+            elif isinstance(tags, (list, tuple, set)):
+                tag_map = {str(tag): True for tag in tags}
+            elif tags:
+                tag_map = {str(tags): True}
+            else:
+                tag_map = {}
+
+            memory_item = MemoryItem(
+                content=content,
+                summary=summary,
+                metadata=MemoryMetadata(
+                    status=MemoryStatus.ACTIVE,
+                    tags=tag_map,
+                    importance=importance,
+                    created_at=datetime.now(),
+                    source="mtm_consolidation",
+                    consolidated_from=str(memory_id),
+                    consolidated_at=datetime.now(),
+                    additional_metadata=additional_metadata,
+                )
+            )
+
+            async def runner(transaction: ConsolidationTransaction) -> Any:
+                ltm_id = await transaction.stage(
+                    lambda: ltm_storage.store(memory_item),
+                    rollback=lambda inserted_id: _safe_delete(
+                        ltm_storage,
+                        inserted_id,
+                        context=f"ltm rollback for {memory_id}",
+                    ),
+                    description="store_ltm",
+                )
+
+                if not ltm_id:
+                    raise ConsolidationSkip("LTM storage returned no identifier")
+
+                if hasattr(mtm_storage, "consolidate_memory"):
+                    await transaction.stage(
+                        lambda: mtm_storage.consolidate_memory(memory_id),
+                        description="finalize_mtm",
+                    )
+                elif hasattr(mtm_storage, "delete"):
+                    await transaction.stage(
+                        lambda: mtm_storage.delete(memory_id),
+                        description="delete_mtm",
+                    )
+                else:
+                    raise RuntimeError("MTM storage lacks consolidation finalizer")
+
+                logger.info(
+                    "Consolidated memory %s from MTM to LTM (new ID: %s)",
+                    memory_id,
+                    ltm_id,
+                )
+
+                return ltm_id
+
+            key = f"mtm:{memory_id}->ltm"
+
+            while True:
+                decision = await guard.reserve(key)
+                if not decision.proceed:
+                    if decision.result is None:
+                        continue
+                    break
+
+                reservation = decision.reservation
+                if reservation is None:
+                    break
+
+                async with reservation:
+                    try:
+                        ltm_id = await pipeline.run(key, runner)
+                    except ConsolidationSkip:
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error(
+                            "Error consolidating MTM memory %s: %s",
+                            memory_id,
+                            exc,
+                        )
+                        break
+
+                    reservation.commit(ltm_id)
+                    break
+
     except Exception as e:
         logger.error(f"Error in MTM to LTM consolidation: {str(e)}")

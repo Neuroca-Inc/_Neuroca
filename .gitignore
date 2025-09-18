@@ -88,7 +88,9 @@ data/
 !data/.gitkeep
 *.csv
 *.json
+!src/neuroca/infrastructure/monitoring/grafana/*.json
 *.jsonl
+!src/neuroca/memory/seeding/packs/*.jsonl
 *.parquet
 *.feather
 *.arrow

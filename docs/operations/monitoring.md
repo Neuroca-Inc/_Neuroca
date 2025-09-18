@@ -251,7 +251,11 @@ The NCA monitoring stack includes:
 
 1. **Metrics Collection and Storage**:
    - Prometheus for metrics collection and storage
+     - Memory maintenance alert rules raise warnings on backlog age and consolidation failures.【F:src/neuroca/infrastructure/monitoring/rules/memory_maintenance_alerts.yml†L1-L27】
    - Grafana for metrics visualization
+     - Memory maintenance dashboard (`memory_maintenance.json`) visualises backlog age and recent promotion failures using the
+       memory manager metrics publisher.【F:src/neuroca/infrastructure/monitoring/grafana/memory_maintenance.json†L1-L158】【F:src/neuroca/memory/manager/metrics.py†L1-L235】
+     - Import the dashboard via ConfigMap or the Grafana UI to watch consolidation health during rollouts.【F:src/neuroca/infrastructure/monitoring/grafana/memory_maintenance.json†L1-L158】
    - Custom exporters for NCA-specific metrics
 
 2. **Logging**:

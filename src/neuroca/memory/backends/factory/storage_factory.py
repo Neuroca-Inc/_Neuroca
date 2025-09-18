@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.memory_tier import MemoryTier
+from neuroca.memory.backends.factory.operation_policy import (
+    resolve_operation_policy,
+    sanitize_policy_keys,
+)
 from neuroca.memory.backends.in_memory_backend import InMemoryBackend
 from neuroca.memory.backends.sqlite_backend import SQLiteBackend
 # Import Redis conditionally as it requires external dependencies
@@ -92,21 +96,21 @@ class StorageBackendFactory:
     ) -> BaseStorageBackend:
         """
         Create and initialize a storage backend instance.
-        
+
         Args:
             tier: Memory tier for which to create the backend (determines default backend type)
             backend_type: Explicit backend type to create (overrides tier default)
             config: Backend-specific configuration
             use_existing: Whether to reuse an existing instance if available
             instance_name: Optional name for the instance (for reuse identification)
-            
+
         Returns:
             Initialized storage backend instance
-            
+
         Raises:
             ConfigurationError: If the specified backend type is not supported
         """
-        config = config or {}
+        raw_config: Dict[str, Any] = dict(config) if isinstance(config, dict) else {}
         
         # Determine the backend type
         if backend_type is None:
@@ -126,6 +130,9 @@ class StorageBackendFactory:
             )
         
         backend_class = cls._backend_registry[backend_type]
+
+        operation_policy = resolve_operation_policy(backend_type, raw_config)
+        sanitized_config = sanitize_policy_keys(raw_config)
         
         # Generate instance name (for registry)
         if instance_name is None:
@@ -135,15 +142,18 @@ class StorageBackendFactory:
                 instance_name = f"{backend_type.value}"
                 
             # Add identifier based on selected config values if present
-            if "database" in config:
-                instance_name += f"_{config['database']}"
-            elif "host" in config and "port" in config:
-                instance_name += f"_{config['host']}_{config['port']}"
+            if "database" in sanitized_config:
+                instance_name += f"_{sanitized_config['database']}"
+            elif "host" in sanitized_config and "port" in sanitized_config:
+                instance_name += f"_{sanitized_config['host']}_{sanitized_config['port']}"
         
         # Check if instance already exists
         if use_existing and instance_name in cls._instances:
+            backend = cls._instances[instance_name]
+            if isinstance(backend, BaseStorageBackend):
+                backend.configure_operation_policy(operation_policy)
             logger.debug(f"Reusing existing backend instance: {instance_name}")
-            return cls._instances[instance_name]
+            return backend
         
         # Prepare keyword arguments for backend initialization
         logger.info(f"Creating new {backend_type.value} storage backend for {tier.value if tier else 'custom'} tier")
@@ -163,7 +173,7 @@ class StorageBackendFactory:
                 % (backend_class.__name__, positional_only_params)
             )
 
-        provided_config = config.copy() if isinstance(config, dict) else {}
+        provided_config = sanitized_config.copy()
         init_kwargs: Dict[str, Any] = {}
         residual_config: Dict[str, Any] = {}
 
@@ -197,6 +207,9 @@ class StorageBackendFactory:
                 error,
             )
             raise
+
+        if isinstance(backend, BaseStorageBackend):
+            backend.configure_operation_policy(operation_policy)
 
         # Store the instance for reuse
         cls._instances[instance_name] = backend

@@ -98,6 +98,12 @@ class MemoryMetadata(BaseModel):
     strength: float = Field(default=1.0, ge=0.0, le=1.0)
     access_count: int = Field(default=0, ge=0)
     
+    # Ownership and scoping
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    tenant_id: Optional[str] = None
+    shared_with: List[str] = Field(default_factory=list)
+
     # Categorization
     tags: Dict[str, Any] = Field(default_factory=dict)
     source: Optional[str] = None

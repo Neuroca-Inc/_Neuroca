@@ -99,7 +99,7 @@ class MemoryEventMetadata(BaseModel):
         return v
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryEvent(BaseEvent):
     """Base class for all memory-related events in the NCA system."""
     memory_id: str
@@ -129,7 +129,7 @@ class MemoryEvent(BaseEvent):
                 logging.warning(f"Failed to validate memory metadata: {e}. Using raw metadata.")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryCreatedEvent(MemoryEvent):
     """Event emitted when a new memory is created."""
     operation: MemoryOperation = field(default=MemoryOperation.CREATE)
@@ -142,7 +142,7 @@ class MemoryCreatedEvent(MemoryEvent):
             raise ValueError("Content is required for memory creation")
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryRetrievedEvent(MemoryEvent):
     """Event emitted when a memory is retrieved."""
     operation: MemoryOperation = field(default=MemoryOperation.RETRIEVE)
@@ -162,7 +162,7 @@ class MemoryRetrievedEvent(MemoryEvent):
         self.metadata['last_retrieved_at'] = datetime.utcnow().isoformat()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryUpdatedEvent(MemoryEvent):
     """Event emitted when a memory is updated."""
     operation: MemoryOperation = field(default=MemoryOperation.UPDATE)
@@ -185,7 +185,7 @@ class MemoryUpdatedEvent(MemoryEvent):
         self.metadata['last_updated_at'] = datetime.utcnow().isoformat()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryDeletedEvent(MemoryEvent):
     """Event emitted when a memory is deleted."""
     operation: MemoryOperation = field(default=MemoryOperation.DELETE)
@@ -203,7 +203,7 @@ class MemoryDeletedEvent(MemoryEvent):
             self.metadata['deletion_reason'] = self.reason
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryConsolidatedEvent(MemoryEvent):
     """Event emitted when a memory is consolidated (e.g., from working to long-term)."""
     operation: MemoryOperation = field(default=MemoryOperation.CONSOLIDATE)
@@ -225,7 +225,7 @@ class MemoryConsolidatedEvent(MemoryEvent):
         self.metadata['target_memory_type'] = self.target_memory_type.value
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryDecayEvent(MemoryEvent):
     """Event emitted when a memory decays (loses importance or detail)."""
     operation: MemoryOperation = field(default=MemoryOperation.DECAY)
@@ -249,7 +249,7 @@ class MemoryDecayEvent(MemoryEvent):
             self.metadata['importance'] = max(0, self.metadata['importance'] - self.decay_factor)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryReinforcedEvent(MemoryEvent):
     """Event emitted when a memory is reinforced (becomes stronger)."""
     operation: MemoryOperation = field(default=MemoryOperation.REINFORCE)
@@ -273,7 +273,7 @@ class MemoryReinforcedEvent(MemoryEvent):
             self.metadata['importance'] = min(1.0, self.metadata['importance'] + self.reinforcement_factor)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MemoryAssociationEvent(MemoryEvent):
     """Event emitted when memories are associated with each other."""
     operation: MemoryOperation = field(default=MemoryOperation.ASSOCIATE)

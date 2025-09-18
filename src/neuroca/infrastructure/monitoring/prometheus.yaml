@@ -16,6 +16,7 @@ global:
 # Rule files specifies a list of files from which rules are read
 rule_files:
   - "rules/memory_tier_alerts.yml"
+  - "rules/memory_maintenance_alerts.yml"
   - "rules/api_alerts.yml"
   - "rules/integration_alerts.yml"
   - "rules/system_alerts.yml"

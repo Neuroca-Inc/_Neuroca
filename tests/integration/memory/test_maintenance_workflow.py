@@ -68,10 +68,22 @@ async def test_run_maintenance_promotes_candidates_between_tiers():
             {
                 "id": "stm-candidate",
                 "content": {"text": "short term"},
-                "metadata": {"status": "active", "tags": {}},
+                "metadata": {
+                    "status": "active",
+                    "tags": {},
+                    "importance": 0.9,
+                    "access_count": 6,
+                },
+                "access_count": 6,
             }
         )
-        stm.query_results = [{"id": "stm-candidate"}]
+        stm.query_results = [
+            {
+                "id": "stm-candidate",
+                "metadata": {"importance": 0.9, "tags": {}},
+                "access_count": 6,
+            }
+        ]
 
         await mtm.store(
             {
@@ -84,8 +96,10 @@ async def test_run_maintenance_promotes_candidates_between_tiers():
 
         results = await manager.run_maintenance()
 
+        assert results["status"] == "ok"
         assert results["consolidated_memories"] == 2
         assert set(results["tiers"].keys()) == {"stm", "mtm", "ltm"}
+        assert "telemetry" in results
 
         assert "stm-candidate" not in stm.storage
         assert "stm-candidate" in mtm.storage
