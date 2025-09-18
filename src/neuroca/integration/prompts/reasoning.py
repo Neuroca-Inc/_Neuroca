@@ -65,9 +65,9 @@ class ReasoningExample:
     
     def __post_init__(self):
         """Validate the example fields after initialization."""
-        validate_string(self.problem, "problem", min_length=1)
-        validate_string(self.reasoning, "reasoning", min_length=1)
-        validate_string(self.answer, "answer", min_length=1)
+        validate_string(self.problem, min_length=1, field_name="problem")
+        validate_string(self.reasoning, min_length=1, field_name="reasoning")
+        validate_string(self.answer, min_length=1, field_name="answer")
 
 
 class BaseReasoningPrompt(BasePromptTemplate):
@@ -109,7 +109,7 @@ class BaseReasoningPrompt(BasePromptTemplate):
         # Validate and process examples
         self.examples = []
         if examples:
-            validate_list(examples, "examples")
+            validate_list(examples, field_name="examples")
             for example in examples:
                 if isinstance(example, ReasoningExample):
                     self.examples.append(example)

@@ -32,17 +32,17 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Update `torch` to at least `2.6.0`.
 
 ## Runtime Safety Checks
-- [ ] Ensure callable validation for `original_store` at `tests/unit/memory/manager/test_transactional_consolidation.py`.
-- [ ] Ensure callable validation for `handler` at `src/neuroca/memory/manager/memory_manager.py`.
-- [ ] Ensure callable validation for `counter` at `src/neuroca/memory/manager/memory_manager.py`.
-- [ ] Ensure callable validation for `getter` at `src/neuroca/core/cognitive_control/decision_maker.py`.
+- [x] Ensure callable validation for `original_store` at `tests/unit/memory/manager/test_transactional_consolidation.py`.
+- [x] Ensure callable validation for `handler` at `src/neuroca/memory/manager/memory_manager.py`.
+- [x] Ensure callable validation for `counter` at `src/neuroca/memory/manager/memory_manager.py`.
+- [x] Ensure callable validation for `getter` at `src/neuroca/core/cognitive_control/decision_maker.py`.
 
 ## Prompt Validation Issues
-- [ ] Correct duplicate `min_length` arguments across `src/neuroca/integration/prompts/*` files.
+- [x] Correct duplicate `min_length` arguments across `src/neuroca/integration/prompts/*` files.
 
 ## Constructor Argument Issues
-- [ ] Provide `backend_type` to `StorageStats` constructors.
-- [ ] Add missing `user_id` argument in `src/neuroca/api/routes/memory_v1.py`.
+- [x] Provide `backend_type` to `StorageStats` constructors.
+- [x] Add missing `user_id` argument in `src/neuroca/api/routes/memory_v1.py`.
 
 ## Notes
 - Focus remediation work from top to bottom, ensuring the highest-risk vulnerabilities are addressed first.
