@@ -20,8 +20,8 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Remove hardcoded `DEFAULT_PASSWORD` from `tests/factories/users.py`.
 
 ## Serialization Risks
-- [ ] Replace insecure `pickle.load` usage in `src/neuroca/tools/caching.py`.
-- [ ] Replace insecure `pickle.loads` usage in `src/neuroca/tools/caching.py`.
+- [x] Replace insecure `pickle.load` usage in `src/neuroca/tools/caching.py`.
+- [x] Replace insecure `pickle.loads` usage in `src/neuroca/tools/caching.py`.
 
 ## Cross-Site Scripting (XSS)
 - [ ] Sanitize user-controlled input before it is embedded into HTML in `src/neuroca/api/middleware/logging.py`.
