@@ -15,6 +15,8 @@ import asyncio
 import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
@@ -363,8 +365,38 @@ def manage_config(
     
     # Handle edit option
     if edit:
-        editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "nano")
-        os.system(f"{editor} {conf_path}")
+        editor_setting = os.environ.get("EDITOR")
+        if editor_setting:
+            try:
+                editor_cmd = shlex.split(editor_setting)
+            except ValueError as err:
+                console.print(
+                    "[red]Unable to parse EDITOR command from environment:"
+                    f" {err}. Falling back to default editor.[/red]"
+                )
+                editor_cmd = []
+        else:
+            editor_cmd = []
+
+        if not editor_cmd:
+            editor_cmd = ["notepad"] if os.name == "nt" else ["nano"]
+
+        editor_cmd.append(str(conf_path))
+
+        try:
+            subprocess.run(editor_cmd, check=True)
+        except FileNotFoundError:
+            console.print(
+                "[red]Editor executable not found. Set the EDITOR environment variable"
+                " to a valid command.[/red]"
+            )
+            raise typer.Exit(code=1)
+        except subprocess.CalledProcessError as err:
+            console.print(
+                "[red]Editor exited with a non-zero status code."
+                f" (code: {err.returncode})[/red]"
+            )
+            raise typer.Exit(code=err.returncode or 1)
         return
     
     # Handle view option

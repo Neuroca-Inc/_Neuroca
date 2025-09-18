@@ -33,8 +33,9 @@ from neuroca.core.models.health import HealthMetrics
 from neuroca.core.models.users import CognitiveProfile, User, UserPreferences, UserRole
 from neuroca.db.database import db_session
 
+from .passwords import get_default_user_password
+
 # Constants for generating realistic test data
-DEFAULT_PASSWORD = "securePassword123!"
 USER_ROLES = [role.value for role in UserRole]
 TIMEZONE_CHOICES = list(pytz.common_timezones)
 COGNITIVE_TRAIT_RANGE = (1, 100)  # Range for cognitive metrics (1-100 scale)
@@ -171,7 +172,7 @@ class UserFactory(factory.alchemy.SQLAlchemyModelFactory):
     username = factory.Sequence(lambda n: f"user_{n}")
     email = factory.Sequence(lambda n: f"user{n}@example.com")
     password_hash = factory.LazyFunction(
-        lambda: User.hash_password(DEFAULT_PASSWORD)
+        lambda: User.hash_password(get_default_user_password())
     )
     first_name = Faker('first_name')
     last_name = Faker('last_name')
@@ -280,5 +281,5 @@ def create_test_users(count: int = 10) -> list[User]:
     remaining_count = max(0, count - 2)
     if remaining_count > 0:
         users.extend(UserFactory.create_batch(size=remaining_count))
-    
+
     return users

@@ -28,6 +28,8 @@ variables or secure vaults in the environment-specific configuration files.
 """
 
 import os
+import secrets
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +46,24 @@ for directory in [DATA_DIR, LOGS_DIR]:
 DEBUG = False
 TESTING = False
 ENV = "production"  # Options: development, testing, production
-SECRET_KEY = "CHANGE_ME_IN_PRODUCTION"  # Will be overridden in production
+def _load_secret_key() -> str:
+    """Load the secret key from the environment or generate a temporary one."""
+
+    for env_var in ("NEUROCA_SECRET_KEY", "SECRET_KEY"):
+        value = os.environ.get(env_var)
+        if value and value.strip():
+            return value
+
+    warnings.warn(
+        "SECRET_KEY environment variable not set; generating an ephemeral key. "
+        "Set NEUROCA_SECRET_KEY to a persistent value for production deployments.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return secrets.token_urlsafe(64)
+
+
+SECRET_KEY = _load_secret_key()
 TIMEZONE = "UTC"
 
 # Application metadata
