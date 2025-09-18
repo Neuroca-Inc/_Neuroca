@@ -31,6 +31,10 @@ Here are the actionable checklist items:
 - [x] Address Insecure Modules Libraries: `pickle` vulnerable to deserialization attacks (src/neuroca/tools/caching.py:734)
 - [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/monitoring/health/probes.py:665)
 - [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/cli/commands/system.py:1156)
+- [x] Address command injection vulnerability in `src/neuroca/monitoring/health/probes.py` (line 852) due to `subprocess.run` without a static string.
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 220) due to `subprocess.run` without a static string and with user-controlled data.
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/system.py` (line 1240) due to `subprocess.run` without a static string.
+- [x] Resolve "No value for argument 'user_id'" error in constructor call in `src/neuroca/api/routes/memory_v1.py` (line 146).
 
 ## Key Highlights
 

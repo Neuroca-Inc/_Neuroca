@@ -55,7 +55,7 @@ def test_launch_editor_sanitizes_command(monkeypatch: pytest.MonkeyPatch, tmp_pa
     llm._launch_editor(sanitized_command)
 
     expected_path = os.path.abspath(os.fspath(config_path))
-    assert recorded["command"] == [editor_path, "+1", expected_path]
+    assert recorded["command"] == (editor_path, "+1", expected_path)
 
 
 def test_launch_editor_rejects_unsafe_argument(tmp_path: Path) -> None:

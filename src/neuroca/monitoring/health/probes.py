@@ -849,13 +849,29 @@ class NetworkHealthProbe(HealthProbe):
         """Execute a ping command after validating every component."""
 
         sanitized_command = cls._validate_prepared_ping_command(command)
+        safe_command = cls._finalize_ping_command(sanitized_command)
         return subprocess.run(
-            sanitized_command,
+            safe_command,
             capture_output=True,
             text=True,
             timeout=timeout,
             shell=False,
         )
+
+    @staticmethod
+    def _finalize_ping_command(command: Sequence[str]) -> tuple[str, ...]:
+        """Freeze a ping command after sanitization to prevent injection."""
+
+        sanitized_parts: list[str] = []
+        for part in command:
+            if not isinstance(part, str):
+                raise ValueError("Ping command components must be strings")
+            if not part:
+                raise ValueError("Ping command components must not be empty")
+            if "\x00" in part or any(control in part for control in ("\r", "\n")):
+                raise ValueError("Ping command contains invalid control characters")
+            sanitized_parts.append(part)
+        return tuple(sanitized_parts)
 
     @staticmethod
     def _validate_ping_executable(executable: str) -> str:

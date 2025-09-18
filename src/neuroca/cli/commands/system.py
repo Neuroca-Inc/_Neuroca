@@ -1235,13 +1235,31 @@ def _execute_database_command(
     """Execute a database utility command with strict argument validation."""
 
     sanitized = _validate_database_command(command)
+    safe_command = _finalize_database_command(sanitized)
 
     try:
-        subprocess.run(sanitized, check=True, shell=False, env=env)
+        subprocess.run(safe_command, check=True, shell=False, env=env)
     except subprocess.CalledProcessError as exc:  # pragma: no cover - subprocess failure path
         raise BackupRestoreError(
             f"Database utility exited with status {exc.returncode}."
         ) from exc
+
+
+def _finalize_database_command(command: Sequence[str]) -> tuple[str, ...]:
+    """Freeze a sanitized database command and guard against runtime injection."""
+
+    sanitized_parts: list[str] = []
+    for part in command:
+        if not isinstance(part, str):
+            raise BackupRestoreError("Database command components must be strings.")
+        if not part:
+            raise BackupRestoreError("Database command components must not be empty.")
+        if "\x00" in part or any(control in part for control in ("\r", "\n")):
+            raise BackupRestoreError(
+                "Database command components contain invalid control characters."
+            )
+        sanitized_parts.append(part)
+    return tuple(sanitized_parts)
 
 
 def _build_postgres_dump_command(db_config: Any, output_file: Any) -> list[str]:

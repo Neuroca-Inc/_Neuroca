@@ -216,8 +216,24 @@ def _launch_editor(command: Sequence[str]) -> None:
     safe_arguments = _validate_editor_arguments(editor_key, option_arguments)
     safe_config_path = _sanitize_editor_config_path(Path(config_argument))
     sanitized_command = [executable_path, *safe_arguments, safe_config_path]
+    safe_command = _finalize_editor_command(sanitized_command)
 
-    subprocess.run(sanitized_command, check=True, shell=False)
+    subprocess.run(safe_command, check=True, shell=False)
+
+
+def _finalize_editor_command(command: Sequence[str]) -> tuple[str, ...]:
+    """Re-validate and freeze an editor command before execution."""
+
+    sanitized_parts: list[str] = []
+    for part in command:
+        if not isinstance(part, str):
+            raise ValueError("Editor command components must be strings")
+        if not part:
+            raise ValueError("Editor command components must not be empty")
+        if "\x00" in part or any(control in part for control in ("\r", "\n")):
+            raise ValueError("Editor command contains invalid control characters")
+        sanitized_parts.append(part)
+    return tuple(sanitized_parts)
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
