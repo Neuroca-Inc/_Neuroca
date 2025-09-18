@@ -10,8 +10,8 @@ This document tracks the remediation status of the critical security issues iden
 - [x] Refactor `subprocess.run` call in `tests/scripts/check_coverage.py` to guard against command injection.
 
 ## SQL Injection Vulnerabilities
-- [ ] Replace dynamic `search_path` assignment with parameterized query in `src/neuroca/db/connections/postgres.py`.
-- [ ] Replace dynamic `statement_timeout` assignment with parameterized query in `src/neuroca/db/connections/postgres.py`.
+- [x] Replace dynamic `search_path` assignment with parameterized query in `src/neuroca/db/connections/postgres.py`.
+- [x] Replace dynamic `statement_timeout` assignment with parameterized query in `src/neuroca/db/connections/postgres.py`.
 - [ ] Parameterize competitor query at line 213 in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py`.
 - [ ] Parameterize competitor query at line 217 in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py`.
 
