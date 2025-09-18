@@ -8,6 +8,7 @@ groups:
         expr: memory_maintenance_backlog_age_seconds{scope="maintenance"} > 300
         for: 10m
         labels:
+          alert_id: memory-maintenance-backlog-high
           severity: warning
           service: memory-manager
           domain: memory
@@ -22,6 +23,7 @@ groups:
         expr: sum by (source, target)(increase(memory_consolidation_failures_total[5m])) >= 3
         for: 5m
         labels:
+          alert_id: memory-consolidation-failures-burst
           severity: critical
           service: memory-manager
           domain: memory

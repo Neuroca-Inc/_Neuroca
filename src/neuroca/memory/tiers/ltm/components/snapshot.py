@@ -70,72 +70,16 @@ class LTMSnapshotExporter:
         filters = self._build_filters(statuses)
         requested_batch = self._resolve_batch_size(batch_size)
 
-        total_count: int | None = None
-        try:
-            total_count = await backend.count(filters or None)
-        except Exception:  # pragma: no cover - defensive logging path
-            logger.warning("Failed to count LTM records before export", exc_info=True)
+        total_count = await self._safe_count(backend, filters)
+        memories, invalid = await self._collect_memories(
+            backend=backend,
+            filters=filters,
+            limit=limit,
+            batch_size=requested_batch,
+        )
 
-        offset = 0
-        collected: list[dict[str, Any]] = []
-        invalid = 0
-
-        while True:
-            remaining = None if limit is None else max(0, limit - len(collected))
-            if remaining == 0:
-                break
-
-            batch_limit = requested_batch if remaining is None else min(requested_batch, remaining)
-            items = await backend.query(
-                filters=filters or None,
-                sort_by="metadata.created_at",
-                ascending=True,
-                limit=batch_limit,
-                offset=offset,
-            )
-            if not items:
-                break
-
-            offset += len(items)
-
-            for raw in items:
-                try:
-                    item = MemoryItem.model_validate(raw)
-                except ValidationError:
-                    invalid += 1
-                    logger.warning("Skipping invalid LTM record during snapshot export", exc_info=True)
-                    continue
-
-                collected.append(item.model_dump())
-                if limit is not None and len(collected) >= limit:
-                    break
-
-            if limit is not None and len(collected) >= limit:
-                break
-
-            if len(items) < batch_limit:
-                break
-
-        snapshot: dict[str, Any] = {
-            "version": self.VERSION,
-            "tier": self._tier_name,
-            "exported_at": self._clock().isoformat(),
-            "filters": filters or {},
-            "count": len(collected),
-            "invalid": invalid,
-            "memories": collected,
-        }
-        if total_count is not None:
-            snapshot["total"] = total_count
-
-        if self._lifecycle is not None:
-            categories = self._serialize_categories(self._lifecycle.get_category_map())
-            relationships = self._serialize_relationships(self._lifecycle.get_relationship_map())
-            if categories:
-                snapshot["categories"] = categories
-            if relationships:
-                snapshot["relationships"] = relationships
-
+        snapshot = self._assemble_snapshot(filters, memories, invalid, total_count)
+        self._include_lifecycle_state(snapshot)
         return snapshot
 
     async def restore_snapshot(
@@ -148,6 +92,93 @@ class LTMSnapshotExporter:
 
         backend = self._require_backend()
 
+        raw_memories, categories, relationships = self._normalize_snapshot(snapshot)
+        results = await self._apply_memories(backend, raw_memories, overwrite)
+        self._restore_lifecycle_state(categories, relationships)
+        return results
+
+    async def _safe_count(
+        self,
+        backend: BaseStorageBackend,
+        filters: Mapping[str, Any] | None,
+    ) -> int | None:
+        try:
+            return await backend.count(filters or None)
+        except Exception:  # pragma: no cover - defensive logging path
+            logger.warning("Failed to count LTM records before export", exc_info=True)
+            return None
+
+    async def _collect_memories(
+        self,
+        *,
+        backend: BaseStorageBackend,
+        filters: Mapping[str, Any] | None,
+        limit: int | None,
+        batch_size: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        collected: list[dict[str, Any]] = []
+        invalid = 0
+        offset = 0
+
+        while self._has_capacity(limit, len(collected)):
+            batch_limit = self._calculate_batch_limit(batch_size, limit, len(collected))
+            items = await backend.query(
+                filters=filters or None,
+                sort_by="metadata.created_at",
+                ascending=True,
+                limit=batch_limit,
+                offset=offset,
+            )
+            if not items:
+                break
+
+            offset += len(items)
+            processed, batch_invalid, should_continue = self._process_batch(
+                items, limit, len(collected)
+            )
+            collected.extend(processed)
+            invalid += batch_invalid
+
+            if not should_continue or len(items) < batch_limit:
+                break
+
+        return collected, invalid
+
+    def _assemble_snapshot(
+        self,
+        filters: Mapping[str, Any] | None,
+        memories: list[dict[str, Any]],
+        invalid: int,
+        total_count: int | None,
+    ) -> dict[str, Any]:
+        snapshot: dict[str, Any] = {
+            "version": self.VERSION,
+            "tier": self._tier_name,
+            "exported_at": self._clock().isoformat(),
+            "filters": filters or {},
+            "count": len(memories),
+            "invalid": invalid,
+            "memories": memories,
+        }
+        if total_count is not None:
+            snapshot["total"] = total_count
+        return snapshot
+
+    def _include_lifecycle_state(self, snapshot: dict[str, Any]) -> None:
+        if self._lifecycle is None:
+            return
+        categories = self._serialize_categories(self._lifecycle.get_category_map())
+        relationships = self._serialize_relationships(
+            self._lifecycle.get_relationship_map()
+        )
+        if categories:
+            snapshot["categories"] = categories
+        if relationships:
+            snapshot["relationships"] = relationships
+
+    def _normalize_snapshot(
+        self, snapshot: Mapping[str, Any]
+    ) -> tuple[list[Any], Any, Any]:
         if not isinstance(snapshot, Mapping):
             raise ValueError("LTM snapshot must be a mapping")
 
@@ -161,14 +192,20 @@ class LTMSnapshotExporter:
         if not isinstance(raw_memories, list):
             raise ValueError("Snapshot 'memories' section must be a list")
 
+        return raw_memories, snapshot.get("categories"), snapshot.get("relationships")
+
+    async def _apply_memories(
+        self,
+        backend: BaseStorageBackend,
+        raw_memories: Sequence[Any],
+        overwrite: bool,
+    ) -> dict[str, int]:
         restored = created = updated = skipped = invalid = 0
 
         for raw in raw_memories:
-            try:
-                item = MemoryItem.model_validate(raw)
-            except ValidationError:
+            item = self._parse_memory_item(raw, context="restore")
+            if item is None:
                 invalid += 1
-                logger.warning("Skipping invalid LTM record during snapshot restore", exc_info=True)
                 continue
 
             payload = item.model_dump()
@@ -187,14 +224,6 @@ class LTMSnapshotExporter:
             restored += 1
             created += 1
 
-        if self._lifecycle is not None:
-            categories = self._coerce_categories(snapshot.get("categories"))
-            relationships = self._coerce_relationships(snapshot.get("relationships"))
-            self._lifecycle.apply_snapshot_state(
-                categories=categories,
-                relationships=relationships,
-            )
-
         return {
             "restored": restored,
             "created": created,
@@ -202,6 +231,64 @@ class LTMSnapshotExporter:
             "skipped": skipped,
             "invalid": invalid,
         }
+
+    def _restore_lifecycle_state(self, categories: Any, relationships: Any) -> None:
+        if self._lifecycle is None:
+            return
+        self._lifecycle.apply_snapshot_state(
+            categories=self._coerce_categories(categories),
+            relationships=self._coerce_relationships(relationships),
+        )
+
+    def _parse_memory_item(
+        self, raw: Any, *, context: str
+    ) -> MemoryItem | None:
+        try:
+            return MemoryItem.model_validate(raw)
+        except ValidationError:
+            logger.warning(
+                "Skipping invalid LTM record during snapshot %s", context, exc_info=True
+            )
+            return None
+
+    @staticmethod
+    def _has_capacity(limit: int | None, count: int) -> bool:
+        return limit is None or count < limit
+
+    @staticmethod
+    def _calculate_batch_limit(
+        batch_size: int, limit: int | None, collected: int
+    ) -> int:
+        if limit is None:
+            return batch_size
+        remaining = limit - collected
+        return batch_size if remaining >= batch_size else max(1, remaining)
+
+    def _process_batch(
+        self,
+        items: Sequence[Any],
+        limit: int | None,
+        collected_count: int,
+    ) -> tuple[list[dict[str, Any]], int, bool]:
+        processed: list[dict[str, Any]] = []
+        invalid = 0
+        remaining = None if limit is None else max(0, limit - collected_count)
+
+        for raw in items:
+            if remaining == 0:
+                break
+
+            item = self._parse_memory_item(raw, context="export")
+            if item is None:
+                invalid += 1
+                continue
+
+            processed.append(item.model_dump())
+            if remaining is not None:
+                remaining -= 1
+
+        should_continue = remaining is None or remaining > 0
+        return processed, invalid, should_continue
 
     def _require_backend(self) -> BaseStorageBackend:
         if self._backend is None:
@@ -290,18 +377,30 @@ class LTMSnapshotExporter:
             return {}
         coerced: dict[str, dict[str, float]] = {}
         for memory_id, related in value.items():
-            if memory_id is None or not isinstance(related, Mapping):
+            if memory_id is None:
                 continue
-            related_map: dict[str, float] = {}
-            for related_id, strength in related.items():
-                if related_id is None:
-                    continue
-                try:
-                    value_float = float(strength)
-                except (TypeError, ValueError):
-                    continue
-                value_float = max(0.0, min(1.0, value_float))
-                related_map[str(related_id)] = value_float
-            if related_map:
-                coerced[str(memory_id)] = related_map
+            normalized = LTMSnapshotExporter._normalize_relationship_entries(related)
+            if normalized:
+                coerced[str(memory_id)] = normalized
         return coerced
+
+    @staticmethod
+    def _normalize_relationship_entries(value: Any) -> dict[str, float]:
+        if not isinstance(value, Mapping):
+            return {}
+        normalized: dict[str, float] = {}
+        for related_id, strength in value.items():
+            if related_id is None:
+                continue
+            value_float = LTMSnapshotExporter._coerce_relationship_strength(strength)
+            if value_float is not None:
+                normalized[str(related_id)] = value_float
+        return normalized
+
+    @staticmethod
+    def _coerce_relationship_strength(strength: Any) -> float | None:
+        try:
+            value = float(strength)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, min(1.0, value))

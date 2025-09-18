@@ -55,10 +55,12 @@ def test_summarizer_respects_custom_sentence_and_keyword_limits() -> None:
 
     payload = SummarizationPayload(
         memory_id="m1",
-        text=(
-            "First sentence details the outage impact. "
-            "Second sentence elaborates on mitigation steps. "
-            "Third sentence covers preventative measures."
+        text=" ".join(
+            [
+                "First sentence details the outage impact.",
+                "Second sentence elaborates on mitigation steps.",
+                "Third sentence covers preventative measures.",
+            ]
         ),
         importance=0.85,
     )
@@ -83,18 +85,22 @@ def test_batch_summary_retains_salient_entities() -> None:
     payloads = [
         SummarizationPayload(
             memory_id="critical",
-            text=(
-                "Team Aurora isolated cascading failure impacting Redwood clients. "
-                "Immediate failover protected Hydra workloads from broader impact."
+            text=" ".join(
+                [
+                    "Team Aurora isolated cascading failure impacting Redwood clients.",
+                    "Immediate failover protected Hydra workloads from broader impact.",
+                ]
             ),
             importance=0.92,
             tags=["incident", "aurora"],
         ),
         SummarizationPayload(
             memory_id="analysis",
-            text=(
-                "Phoenix audit logs confirmed gateway throttling recovered after temporary scaling. "
-                "Runbooks highlighted new containment policies."
+            text=" ".join(
+                [
+                    "Phoenix audit logs confirmed gateway throttling recovered after temporary scaling.",
+                    "Runbooks highlighted new containment policies.",
+                ]
             ),
             importance=0.68,
             tags=["phoenix"],
@@ -133,18 +139,22 @@ def test_batch_summary_preserves_semantic_overlap() -> None:
     payloads = [
         SummarizationPayload(
             memory_id="aurora",
-            text=(
-                "Aurora pipeline triggered redundant failover for Redwood clients after telemetry spikes. "
-                "Engineers documented mitigations and staged a gradual rollout to prevent regression."
+            text=" ".join(
+                [
+                    "Aurora pipeline triggered redundant failover for Redwood clients after telemetry spikes.",
+                    "Engineers documented mitigations and staged a gradual rollout to prevent regression.",
+                ]
             ),
             importance=0.94,
             tags=["aurora", "failover"],
         ),
         SummarizationPayload(
             memory_id="hydra",
-            text=(
-                "Hydra cache layer absorbed spillover traffic but reported elevated tail latency. "
-                "Coordinated tuning reduced saturation while keeping session integrity intact."
+            text=" ".join(
+                [
+                    "Hydra cache layer absorbed spillover traffic but reported elevated tail latency.",
+                    "Coordinated tuning reduced saturation while keeping session integrity intact.",
+                ]
             ),
             importance=0.71,
             tags=["hydra", "latency"],
