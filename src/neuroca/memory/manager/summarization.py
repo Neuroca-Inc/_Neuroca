@@ -9,6 +9,12 @@ from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
 
 
+try:  # pragma: no cover - optional dependency for richer defaults
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS as _SKLEARN_STOP_WORDS
+except ImportError:  # pragma: no cover - fallback when sklearn unavailable
+    _SKLEARN_STOP_WORDS = frozenset()
+
+
 def _normalise_scalar(value: Any) -> str:
     """Convert primitive values to their string representation."""
 
@@ -65,7 +71,7 @@ def _tokenise(text: str) -> List[str]:
     return re.findall(r"\b[\w']+\b", text.lower())
 
 
-DEFAULT_STOP_WORDS = {
+_BASE_STOP_WORDS = {
     "a",
     "an",
     "and",
@@ -88,6 +94,8 @@ DEFAULT_STOP_WORDS = {
     "to",
     "with",
 }
+
+DEFAULT_STOP_WORDS = frozenset({*_BASE_STOP_WORDS, *_SKLEARN_STOP_WORDS})
 
 
 @dataclass

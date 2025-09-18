@@ -29,7 +29,6 @@ from asyncio import QueueEmpty
 import datetime
 import json
 import logging
-import math
 import os
 import statistics
 import random
@@ -42,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import psutil
 
@@ -174,26 +174,12 @@ TIER_ORDER: tuple[str, ...] = (
 
 
 def _percentile(values: Sequence[float], percentile: float) -> float:
-    """Return the requested percentile using linear interpolation."""
+    """Return the requested percentile using NumPy's percentile implementation."""
 
     if not values:
         return 0.0
 
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return float(ordered[0])
-
-    rank = (len(ordered) - 1) * (percentile / 100.0)
-    lower_index = math.floor(rank)
-    upper_index = math.ceil(rank)
-
-    if lower_index == upper_index:
-        return float(ordered[int(rank)])
-
-    lower_value = ordered[lower_index]
-    upper_value = ordered[upper_index]
-    fraction = rank - lower_index
-    return float(lower_value + (upper_value - lower_value) * fraction)
+    return float(np.percentile(values, percentile, method="linear"))
 
 
 def _summarize_latencies(samples: Sequence[float]) -> Dict[str, float]:
