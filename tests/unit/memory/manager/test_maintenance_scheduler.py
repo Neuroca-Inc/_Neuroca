@@ -360,7 +360,9 @@ async def test_quality_analysis_attached_to_maintenance_report() -> None:
 
 
 @pytest.mark.asyncio
-async def test_consolidation_skips_when_circuit_breaker_reports_backlog() -> None:
+async def test_consolidation_skips_when_circuit_breaker_reports_backlog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager, _ = await _build_manager(
         config_override={
             "maintenance": {
@@ -375,17 +377,18 @@ async def test_consolidation_skips_when_circuit_breaker_reports_backlog() -> Non
     orchestrator = MaintenanceOrchestrator(manager, min_interval=5.0)
     manager._maintenance_orchestrator = orchestrator
 
-    original_snapshot = manager._backpressure.snapshot
-    manager._backpressure.snapshot = lambda: {  # type: ignore[assignment]
-        "stm": {"queued": 3, "inflight": 1},
-        "mtm": {"queued": 0, "inflight": 0},
-        "ltm": {"queued": 0, "inflight": 0},
-    }
+    def backlog_snapshot() -> Dict[str, Dict[str, int]]:
+        return {
+            "stm": {"queued": 3, "inflight": 1},
+            "mtm": {"queued": 0, "inflight": 0},
+            "ltm": {"queued": 0, "inflight": 0},
+        }
+
+    monkeypatch.setattr(manager._backpressure, "snapshot", backlog_snapshot)
 
     try:
         result = await orchestrator.run_cycle(triggered_by="breaker-backlog")
     finally:
-        manager._backpressure.snapshot = original_snapshot  # type: ignore[assignment]
         await manager.shutdown()
 
     consolidation = result["consolidation"]
@@ -398,7 +401,9 @@ async def test_consolidation_skips_when_circuit_breaker_reports_backlog() -> Non
 
 
 @pytest.mark.asyncio
-async def test_circuit_breaker_releases_after_failures_clear() -> None:
+async def test_circuit_breaker_releases_after_failures_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager, tiers = await _build_manager(
         config_override={
             "maintenance": {
@@ -424,11 +429,15 @@ async def test_circuit_breaker_releases_after_failures_clear() -> None:
         assert skipped["consecutive_failures"] == 2
 
         orchestrator.telemetry.consecutive_failures = 0
-        manager._backpressure.snapshot = lambda: {  # type: ignore[assignment]
-            "stm": {"queued": 0, "inflight": 0},
-            "mtm": {"queued": 0, "inflight": 0},
-            "ltm": {"queued": 0, "inflight": 0},
-        }
+
+        def healthy_snapshot() -> Dict[str, Dict[str, int]]:
+            return {
+                "stm": {"queued": 0, "inflight": 0},
+                "mtm": {"queued": 0, "inflight": 0},
+                "ltm": {"queued": 0, "inflight": 0},
+            }
+
+        monkeypatch.setattr(manager._backpressure, "snapshot", healthy_snapshot)
 
         stm, mtm = tiers["stm"], tiers["mtm"]
         await stm.store(

@@ -137,7 +137,9 @@ class MemoryRetrievalScope:
             if not allowed_users:
                 return False
 
-            if owner_id not in allowed_users and not (permitted_users & allowed_users):
+            is_owner_allowed = owner_id in allowed_users
+            is_permitted_user_allowed = bool(permitted_users & allowed_users)
+            if not is_owner_allowed and not is_permitted_user_allowed:
                 return False
 
         allowed_sessions = {
