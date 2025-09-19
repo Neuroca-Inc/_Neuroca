@@ -1410,7 +1410,14 @@ class MemoryManager(MemoryManagerInterface):
 
             for key, value in extra_dict.items():
                 memory_metadata.additional_metadata[key] = value
-        
+
+        # Ensure tier is set on metadata for downstream search filters
+        try:
+            if not getattr(memory_metadata, "tier", None):
+                memory_metadata.tier = initial_tier
+        except Exception:
+            pass
+
         # Create memory item
         memory_item = MemoryItem(
             content=memory_content,

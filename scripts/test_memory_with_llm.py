@@ -10,6 +10,7 @@ import asyncio
 import os
 import json
 import time
+import argparse
 from typing import Dict, List, Any, Optional
 import uuid
 import sys
@@ -37,6 +38,12 @@ except ImportError:
     print("OpenAI package not available. Install with: pip install openai python-dotenv")
     OPENAI_AVAILABLE = False
 
+# Optional local LLM fallback (Ollama)
+try:
+    import ollama  # type: ignore
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
 class ConversationalAgent:
     """A simple conversational agent that uses the memory system to remember context."""
     
@@ -48,11 +55,32 @@ class ConversationalAgent:
         self.conversation_id = str(uuid.uuid4())
         
         # OpenAI setup if available
+        self._openai_client = None
         if OPENAI_AVAILABLE:
             load_dotenv()
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            if not openai.api_key:
+            api_key = os.getenv("OPENAI_API_KEY")
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(api_key=api_key) if api_key else None
+            except Exception:
+                self._openai_client = None
+            if not api_key:
                 print("Warning: OPENAI_API_KEY not found in .env file")
+
+        # Runtime provider controls
+        # provider: openai | ollama | none (auto-selected by availability)
+        if OPENAI_AVAILABLE and self._openai_client:
+            self.provider = "openai"
+        elif 'OLLAMA_AVAILABLE' in globals() and OLLAMA_AVAILABLE:
+            self.provider = "ollama"
+        else:
+            self.provider = "none"
+
+        self.use_llm = True  # toggle during interactive runs
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-5")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+        self.scope = os.getenv("MEMORY_SCOPE", "all").strip().lower()
+        self.use_full_memory = (self.scope == "all")
     
     async def initialize(self):
         """Initialize the memory system."""
@@ -61,7 +89,11 @@ class ConversationalAgent:
             config={
                 "stm": {"default_ttl": 3600},  # 1 hour TTL for STM memories
                 "mtm": {"max_capacity": 1000},
-                "ltm": {"maintenance_interval": 86400}  # 24 hours
+                "ltm": {"maintenance_interval": 86400},  # 24 hours
+                "monitoring": {
+                    "metrics": {"enabled": False},
+                    "events": {"enabled": False}
+                }
             },
             mtm_storage_type=self.backend_type,
             ltm_storage_type=self.backend_type,
@@ -97,20 +129,39 @@ class ConversationalAgent:
         return memory_id
 
     # Corrected indentation for this method
-    async def retrieve_relevant_memories(self, query: str, limit: int = 5) -> List[MemorySearchResult]: # Return MemorySearchResult objects
-        """Retrieve memories relevant to the current conversation."""
-        try: # Ensure try is correctly indented
-            search_results_obj = await self.memory_manager.search_memories( # Ensure this call is correctly indented
+    async def retrieve_relevant_memories(self, query: str, limit: int = 5) -> List[MemorySearchResult]:
+        """Retrieve memories relevant to the current conversation (compat with list or results container)."""
+        try:
+            tiers = None if self.use_full_memory else ["stm"]
+            raw = await self.memory_manager.search_memories(
                 query=query,
                 limit=limit,
-                min_relevance=0.3 # Only retrieve somewhat relevant memories
+                min_relevance=0.3,
+                tiers=tiers
             )
-
-            print(f"Retrieved {len(search_results_obj.results)} relevant memories")
-            return search_results_obj.results # Return the list of MemorySearchResult objects
-        except Exception as e: # Ensure except is aligned with try
+            # Normalize into a list of MemorySearchResult objects
+            items = raw.results if hasattr(raw, "results") else raw
+            results: List[MemorySearchResult] = []
+            for it in (items or []):
+                if isinstance(it, MemorySearchResult):
+                    results.append(it)
+                    continue
+                if isinstance(it, dict):
+                    try:
+                        mem = MemoryItem.model_validate(it)
+                    except Exception:
+                        # Fallback if model parsing fails
+                        content = it.get("content", {}) if isinstance(it.get("content"), dict) else {"text": str(it.get("content", ""))}
+                        metadata = it.get("metadata", {}) if isinstance(it.get("metadata"), dict) else {}
+                        mem = MemoryItem(content=content, metadata=metadata)
+                    relevance = it.get("_relevance", 0.0)
+                    tier = it.get("tier")
+                    results.append(MemorySearchResult(memory=mem, relevance=relevance, tier=tier))
+            print(f"Retrieved {len(results)} relevant memories")
+            return results
+        except Exception as e:
             print(f"Error during memory retrieval: {e}")
-            return [] # Return empty list on error
+            return []
 
     async def process_message(self, user_message: str) -> str:
         """Process a user message and generate a response."""
@@ -120,61 +171,126 @@ class ConversationalAgent:
         # Add to conversation history
         self.conversation_history.append({"role": "user", "content": user_message})
         
-        # Retrieve relevant memories
-        relevant_memories = await self.retrieve_relevant_memories(user_message)
-        
-        # Format memories for context
+        # Build memory context from working memory across tiers (full memory) if enabled
         memory_context = ""
-        if relevant_memories: # relevant_memories is now List[MemorySearchResult]
-            memory_context = "Relevant previous information:\n"
-            # Sort by relevance before formatting (highest first)
-            relevant_memories.sort(key=lambda r: r.relevance, reverse=True)
-            for i, search_result in enumerate(relevant_memories):
-                # Access text via search_result.memory.get_text()
-                memory_content = search_result.memory.get_text()
-                memory_context += f"{i+1}. (Relevance: {search_result.relevance:.2f}) {memory_content}\n"
+        try:
+            await self.memory_manager.update_context({"message": user_message})
+            prompt_items = await self.memory_manager.get_prompt_context_memories(max_memories=8, max_tokens_per_memory=150)
+            if prompt_items:
+                memory_context = "Relevant previous information:\n"
+                for i, item in enumerate(prompt_items, 1):
+                    text = item.get("content") or ""
+                    tier = item.get("tier") or "unknown"
+                    rel = item.get("relevance", 0.0)
+                    try:
+                        memory_context += f"{i}. [tier={tier}] (Relevance: {rel:.2f}) {text}\n"
+                    except Exception:
+                        memory_context += f"{i}. [tier={tier}] {text}\n"
+        except Exception as ctx_err:
+            print(f"DEBUG: Failed to build prompt context from working memory: {ctx_err}")
+            # Fallback to direct retrieval (respects scope)
+            relevant_memories = await self.retrieve_relevant_memories(user_message)
+            if relevant_memories:
+                memory_context = "Relevant previous information:\n"
+                relevant_memories.sort(key=lambda r: r.relevance, reverse=True)
+                for i, search_result in enumerate(relevant_memories, 1):
+                    memory_content = search_result.memory.get_text()
+                    memory_context += f"{i}. (Relevance: {search_result.relevance:.2f}) {memory_content}\n"
 
         # Generate response using OpenAI if available
         response = ""
-        if OPENAI_AVAILABLE and openai.api_key:
+        if self.use_llm and self.provider == "openai" and OPENAI_AVAILABLE and getattr(self, "_openai_client", None):
             try:
-                system_message = f"""You are a helpful assistant with memory capabilities. 
-                You can remember previous parts of the conversation.
-                
-                {memory_context if memory_context else "No relevant memories found."}
-                
-                Base your response on the conversation history and relevant memories."""
-                
+                system_message = f"""You are a helpful assistant with memory capabilities.
+You can remember previous parts of the conversation.
+
+{memory_context if memory_context else "No relevant memories found."}
+
+Base your response on the conversation history and relevant memories."""
                 messages = [
                     {"role": "system", "content": system_message},
                     *self.conversation_history
                 ]
-
-                completion = openai.chat.completions.create(
-                    model="gpt-4o", # Changed model name to gpt-4o
+                client = self._openai_client
+                # Primary request (strict same-model)
+                completion = client.chat.completions.create(
+                    model=self.openai_model,
                     messages=messages,
-                    # temperature=0.7, # Keeping temperature commented out for now
-                    max_completion_tokens=500
+                    max_tokens=500,
+                    temperature=0.7,
+                    top_p=0.9
                 )
+                # Parse content
+                content_text = ""
+                try:
+                    if getattr(completion, "choices", None):
+                        msg = completion.choices[0].message
+                        if msg:
+                            print(f"DEBUG: Message object: {msg}")
+                            content_text = (getattr(msg, "content", "") or "").strip()
+                            if not content_text:
+                                # capture any refusal artifacts for debugging
+                                refusal = getattr(msg, "refusal", None)
+                                if refusal:
+                                    print(f"DEBUG: refusal: {refusal}")
+                except Exception as parse_err:
+                    print(f"DEBUG: Error parsing completion: {parse_err}")
 
-                # Debugging: Print the message object structure
-                if completion.choices and completion.choices[0].message:
-                    print(f"DEBUG: Message object: {completion.choices[0].message}")
-                    response = completion.choices[0].message.content
-                    if not response: # Check if content is empty
-                         print("DEBUG: Response content is empty.")
-                         response = "[Model returned empty content]" # Placeholder for empty response
-                    else:
-                         print(f"Generated response using OpenAI API")
-                else:
-                    print("DEBUG: No valid choices or message found in completion.")
-                    response = "[Error retrieving model response]"
+                # Retry once with a minimal nudge if empty, keeping the SAME model
+                if not content_text:
+                    print("DEBUG: Empty content from model; retrying with same model and explicit nudge")
+                    retry_messages = list(messages) + [
+                        {"role": "user", "content": "Please respond in plain text to the previous message."}
+                    ]
+                    try:
+                        retry = client.chat.completions.create(
+                            model=self.openai_model,
+                            messages=retry_messages,
+                            max_tokens=400,
+                            temperature=0.7,
+                            top_p=0.9
+                        )
+                        if getattr(retry, "choices", None):
+                            rmsg = retry.choices[0].message
+                            if rmsg:
+                                content_text = (getattr(rmsg, "content", "") or "").strip()
+                                if not content_text:
+                                    rref = getattr(rmsg, "refusal", None)
+                                    if rref:
+                                        print(f"DEBUG: retry refusal: {rref}")
+                    except Exception as retry_err:
+                        print(f"DEBUG: Retry failed: {retry_err}")
 
+                # If still empty, keep the chat flowing but DO NOT switch models
+                if not content_text:
+                    content_text = "Acknowledged." + (f"\n\n{memory_context}" if memory_context else "")
+
+                response = content_text
+                print("Generated response using OpenAI API (strict same-model)")
             except Exception as e:
                 print(f"Error using OpenAI API: {e}")
                 response = f"I'd respond to '{user_message}' here, but there was an issue with the OpenAI API. Using memory system with {self.backend_type} backend."
+        elif self.use_llm and self.provider == "ollama" and 'OLLAMA_AVAILABLE' in globals() and OLLAMA_AVAILABLE:
+            try:
+                system_message = f"""You are a helpful assistant with memory capabilities.
+You can remember previous parts of the conversation.
+
+{memory_context if memory_context else "No relevant memories found."}
+
+Base your response on the conversation history and relevant memories."""
+                messages = [
+                    {"role": "system", "content": system_message},
+                    *self.conversation_history
+                ]
+                result = ollama.chat(model=self.ollama_model, messages=messages)
+                msg = result.get("message", {})
+                response = msg.get("content") or "[Model returned empty content]"
+                print(f"Generated response using Ollama ({self.ollama_model})")
+            except Exception as e:
+                print(f"Error using Ollama: {e}")
+                response = f"I'd respond to '{user_message}' here, but there was an issue with Ollama. Using memory system with {self.backend_type} backend."
         else:
-            # Fallback response without OpenAI
+            # Fallback response without LLM
             response = f"I'd respond to '{user_message}' here. I've stored your message in my {self.backend_type} memory system."
             if memory_context:
                 response += f"\n\nI remember: {memory_context}"
@@ -187,13 +303,129 @@ class ConversationalAgent:
         
         return response
 
+    async def handle_command(self, cmd: str) -> bool:
+        """Handle interactive commands to stress-test memory during chat."""
+        parts = (cmd or "").strip().split()
+        if not parts:
+            return True
+        head = parts[0].lower()
+
+        if head in ("/help", "/?"):
+            print("Commands:")
+            print("  /search <query>        Search memories")
+            print("  /stats                 Show system stats")
+            print("  /llm on|off            Toggle LLM usage")
+            print("  /provider openai|ollama|none  Select provider")
+            print("  /spam <N> [text]       Push N messages into memory (LLM disabled for speed)")
+            print("  /help                  This help")
+            return True
+
+        if head == "/search" and len(parts) > 1:
+            query = " ".join(parts[1:])
+            results = await self.retrieve_relevant_memories(query, limit=10)
+            if not results:
+                print("No results")
+                return True
+            print("Top results:")
+            for i, r in enumerate(results[:10]):
+                print(f"{i+1}. ({r.relevance:.2f}) {r.memory.get_text()}")
+            return True
+
+        if head == "/stats":
+            try:
+                stats = await self.memory_manager.get_system_stats()
+                print(json.dumps(stats, indent=2, default=str))
+            except Exception as e:
+                print(f"Error fetching stats: {e}")
+            return True
+
+        if head == "/llm" and len(parts) > 1:
+            self.use_llm = parts[1].lower() == "on"
+            print(f"LLM usage: {'on' if self.use_llm else 'off'}")
+            return True
+
+        if head == "/provider" and len(parts) > 1:
+            choice = parts[1].lower()
+            if choice in ("openai", "ollama", "none"):
+                self.provider = choice
+                print(f"Provider set to: {self.provider}")
+            else:
+                print("Unknown provider. Use: openai | ollama | none")
+            return True
+
+        if head == "/model" and len(parts) > 1:
+            name = " ".join(parts[1:])
+            if self.provider == "openai":
+                self.openai_model = name
+                print(f"OpenAI model set to: {self.openai_model}")
+            elif self.provider == "ollama":
+                self.ollama_model = name
+                print(f"Ollama model set to: {self.ollama_model}")
+            else:
+                print("No provider selected. Use /provider openai|ollama first.")
+            return True
+
+        if head == "/scope" and len(parts) > 1:
+            name = parts[1].lower()
+            if name in ("all", "stm"):
+                self.scope = name
+                self.use_full_memory = (name == "all")
+                print(f"Memory scope set to: {self.scope}")
+            else:
+                print("Unknown scope. Use: all | stm")
+            return True
+
+        if head == "/spam" and len(parts) >= 2:
+            try:
+                n = int(parts[1])
+                payload = " ".join(parts[2:]) if len(parts) > 2 else "spam message"
+                prev = self.use_llm
+                self.use_llm = False
+                for i in range(max(0, n)):
+                    await self.store_memory(f"{payload} #{i+1}", "user", importance=0.5)
+                    if (i+1) % 100 == 0:
+                        print(f"Stored {i+1} messages...")
+                self.use_llm = prev
+                print(f"Spam complete: {n} messages stored.")
+            except ValueError:
+                print("Usage: /spam <N> [text]")
+            return True
+
+        return False
+
 async def main():
     """Main function to demonstrate the agent."""
-    # Create an agent with SQLite backend (more persistent)
-    # Or use in-memory backend for faster testing (less persistent)
-    use_sqlite = False  # Using in-memory backend for easier testing
+    # Parse CLI arguments
+    parser = argparse.ArgumentParser(description="Conversational Memory Agent")
+    parser.add_argument("--quick", action="store_true", help="Run a non-interactive quick self-test and exit")
+    parser.add_argument("--provider", choices=["openai", "ollama", "none"], help="Override LLM provider")
+    parser.add_argument("--llm", choices=["on", "off"], help="Toggle LLM usage")
+    parser.add_argument("--backend", choices=["sqlite", "memory"], help="Select memory backend")
+    parser.add_argument("--prompt", help="Prompt to use in quick mode")
+    parser.add_argument("--model", help="Model name for selected provider (e.g., gpt-5 or gemma3:4b)")
+    parser.add_argument("--scope", choices=["all", "stm"], help="Memory scope: all tiers or STM only")
+    args = parser.parse_args()
+
+    # Backend selection (default: in-memory for easier testing)
+    use_sqlite = (args.backend == "sqlite") if args.backend else False
     agent = ConversationalAgent(use_sqlite=use_sqlite)
-    
+
+    # Apply runtime overrides
+    if args.provider:
+        agent.provider = args.provider
+    if args.llm:
+        agent.use_llm = (args.llm == "on")
+    if args.model:
+        if agent.provider == "openai":
+            agent.openai_model = args.model
+        elif agent.provider == "ollama":
+            agent.ollama_model = args.model
+    if getattr(args, "scope", None):
+        agent.scope = args.scope
+        agent.use_full_memory = (args.scope == "all")
+
+    quick_mode = args.quick or os.getenv("QUICK", "").strip().lower() in ("1", "true", "yes")
+
     try:
         # Initialize the agent
         await agent.initialize()
@@ -201,15 +433,29 @@ async def main():
         print("\n=== Conversational Memory Agent ===")
         print("Type 'exit' to end the conversation.")
         print("Backend: " + ("SQLite" if use_sqlite else "In-Memory"))
-        print("OpenAI API: " + ("Available" if OPENAI_AVAILABLE and openai.api_key else "Not Available"))
+        print("OpenAI API: " + ("Available" if OPENAI_AVAILABLE and getattr(agent, "_openai_client", None) else "Not Available"))
+        print(f"Provider: {agent.provider} | Model: {(agent.openai_model if agent.provider == 'openai' else (agent.ollama_model if agent.provider == 'ollama' else 'n/a'))} | Scope: {'all' if agent.use_full_memory else 'stm'} | LLM usage: {'on' if agent.use_llm else 'off'}")
+        print("Commands: /help for stress-test controls")
         print("====================================\n")
+
+        if quick_mode:
+            prompt = args.prompt or "Hello! Quick self-test."
+            print(f"Quick mode: processing single prompt -> {prompt}")
+            response = await agent.process_message(prompt)
+            print(f"Agent: {response}")
+            hits = await agent.retrieve_relevant_memories(prompt, limit=3)
+            print(f"Quick self-test: {len(hits)} memory hits")
+            return
         
         # Main conversation loop
         while True:
             user_input = input("\nYou: ")
             if user_input.lower() in ['exit', 'quit', 'bye']:
                 break
-            
+            if user_input.startswith('/'):
+                handled = await agent.handle_command(user_input)
+                if handled:
+                    continue
             response = await agent.process_message(user_input)
             print(f"\nAgent: {response}")
             

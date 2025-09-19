@@ -76,6 +76,10 @@ Definition of Done
 - [ ] Embedding storage support decision [src/neuroca/memory/interfaces/storage_backend.py](src/neuroca/memory/interfaces/storage_backend.py:306)
 - [ ] Expiry management support decision (set/extend/clear/list) [src/neuroca/memory/interfaces/storage_backend.py](src/neuroca/memory/interfaces/storage_backend.py:332)
 - [ ] Tier relationships support decision [src/neuroca/memory/interfaces/memory_tier.py](src/neuroca/memory/interfaces/memory_tier.py:454)
+- [ ] Add real vector store backend (e.g., Qdrant integration) and validate knowledge graph capabilities
+- [ ] Add knowledge graph backend
+- [ ] Add real vector store backend (e.g., Qdrant integration) and validate knowledge graph capabilities
+- [ ] Add knowledge graph backend
 
 11. Demo Stabilization
 
