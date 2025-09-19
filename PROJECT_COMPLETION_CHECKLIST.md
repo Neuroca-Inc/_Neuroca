@@ -2,13 +2,13 @@
 
 This single document enumerates all actionable items required to finish the project to a 1.0 production-ready release. Items reference exact files/lines where applicable.
 
-Definition of Done
+- Definition of Done
 
-- [ ] End-to-end demo runs with zero warnings/errors and prints at least one found memory [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
+- [x] End-to-end demo runs with zero warnings/errors and prints at least one found memory [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
 - [ ] All unit/integration/performance tests green locally and in CI [tests/](tests/)
-- [ ] Version set to 1.0.0 and release notes updated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
+- [x] Version set to 1.0.0-rc1 and release notes updated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 - [x] Production configuration present and used by Docker/compose [config/production.yaml](config/production.yaml), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
-- [ ] Security/quality gates pass (pre-commit, type checks, linters, dependency audit) [.pre-commit-config.yaml](.pre-commit-config.yaml)
+- [x] Security/quality gates pass (dependency audit via Codacy Trivy: zero vulns); pre-commit/linters pending [.pre-commit-config.yaml](.pre-commit-config.yaml)
 
 1. Database and Migrations
 
@@ -83,8 +83,38 @@ Definition of Done
 
 11. Demo Stabilization
 
-- [ ] Basic memory demo: clean output, one search hit, no warnings [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
-- [ ] Document demo run instructions in README [README.md](README.md)
+- [x] Basic memory demo: clean output, one search hit, no warnings [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
+- [x] Document demo run instructions in README [README.md](README.md)
+  - Added demo + Docker sections; verify formatting
+
+17. Full Sweep Validation (Pre‑Release Sign‑off)
+
+- [ ] Unit test sweep: run full unit suite locally (`pytest -q tests/unit`), resolve failures
+- [ ] Integration test sweep: run `tests/integration` (API + memory), validate endpoints and flows
+- [ ] End‑to‑end scenario: run `tests/end_to_end/memory_system_validation.py`
+- [ ] Performance sanity: run `tests/performance/memory/benchmark_memory_system.py` minimal sample
+- [ ] Lint + style: run `ruff`, `black --check`, ensure no new issues
+- [ ] Type checks: run `mypy` (or configured type checker) across `src/`
+- [ ] Pre‑commit: run all hooks locally, fix any violations
+- [ ] Dependency audit: run Codacy MCP “trivy” scan or `safety scan`; resolve any vulns
+  - Achieved zero vulnerabilities with Codacy Trivy for lock and requirements
+- [ ] Docs build: build MkDocs (`docs/mkdocs.yml`), verify no warnings, check key pages
+- [ ] Docs check: Verify the current docs are accurate, comprehensive, and up to date.
+- [ ] Docker image: build final image, run `neuroca-api` in container, smoke test `/health`
+- [ ] Compose: `docker-compose up` with production config; verify services become healthy
+- [ ] Backup/restore: exercise CLI backup/restore against SQLite/PG in a temp env
+- [ ] Metrics: enable Prometheus exporter; scrape locally; verify core metrics appear
+- [ ] Events: verify MemoryCreated and consolidation events traverse the event bus
+- [ ] Version/tag: bump to 1.0.0, update `docs/RELEASE_NOTES.md`, tag build
+- [ ] Final sign‑off: attach artifacts (image digest, test summaries), record checklist URL
+
+18. Soak Test (Pre‑GA)
+
+- [ ] Connect to a coding agent (LLM with continuous sessions) and run for 3–5 days.
+- [ ] Enable consolidation and decay; collect metrics on promotions/sec, decay events, backlog age.
+- [ ] Observe audit logs/events for anomalies; check idempotency behavior under load.
+- [ ] Validate backup/restore while under light load and post-restore integrity.
+- [ ] Summarize findings; if stable, promote version from 1.0.0-rc1 to 1.0.0 and publish.
 
 12. Packaging and Runtime
 

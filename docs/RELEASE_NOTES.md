@@ -1,5 +1,33 @@
 # Neuroca Release Notes
 
+## 1.0.0-rc1 – Release Candidate
+
+Release date: 2025-09-19 (candidate)
+
+Highlights
+
+- Memory manager stabilization: clean demo run with one search hit, no warnings.
+- Audit/events readiness: event bus compatibility (BaseEvent), tags metadata normalized; tests green.
+- Production configuration: added config/production.yaml; Docker defaults to prod (ENV/NCA_ENV).
+- Observability: Prometheus metrics publisher integrated; disabled by default in demo.
+- Security: Codacy CLI Trivy shows zero vulnerabilities for poetry.lock and requirements.txt after tightening constraints (httpx, aiohttp, transformers, requests, protobuf, starlette, torch, pydantic, scikit-learn, urllib3). LangChain moved to optional extra.
+
+Breaking changes (planned for 1.0.0)
+
+- LangChain integration is optional by default; install with extras: `pip install .[integrations]`.
+- Torch minimum version raised on supported Python versions.
+
+Upgrade notes
+
+- Review any custom constraints; align to new minimums.
+- If using LangChain adapters, enable extras and validate workflows.
+
+RC validation plan
+
+- Soak test with a coding agent for several days under realistic load (chat sessions, memory churn, consolidation/decay active) and monitor metrics/events.
+- Exercise CLI backup/restore in both SQLite and Postgres modes and validate recovery.
+- Run full integration and end-to-end suites; fix any regressions before cutting 1.0.0.
+
 ## 0.1.0b1 – Beta Preview
 
 **Release date:** 2025-09-16

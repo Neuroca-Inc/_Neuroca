@@ -430,3 +430,23 @@ For questions, feedback, or collaboration opportunities, please open an issue on
 ---
 
 <p align="center"><em>Updated as of 4/15/2025</em></p>
+### Demo Script
+
+Run a minimal demo to insert and search a memory (clean, no warnings):
+
+```bash
+python scripts/basic_memory_test.py
+```
+
+### Production via Docker
+
+The Docker image defaults to production settings (ENV/NCA_ENV=production). A production configuration file is provided at `config/production.yaml`.
+
+Build and run:
+
+```bash
+docker build -t neuroca:1.0.0 .
+docker run --rm -p 8000:8000 neuroca:1.0.0
+```
+
+Prometheus metrics are disabled by default in the demo and can be enabled via configuration in production.

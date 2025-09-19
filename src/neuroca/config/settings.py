@@ -279,7 +279,7 @@ class Settings(BaseSettings):
     """
     # Application metadata
     APP_NAME: str = "NeuroCognitive Architecture"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "1.0.0rc1"
     APP_DESCRIPTION: str = "Biologically-inspired cognitive architecture for LLMs"
     
     # Environment configuration

@@ -144,4 +144,4 @@ EXPOSE 8000
 # Label the image with metadata
 LABEL maintainer="NeuroCognitive Architecture Team" \
       description="NeuroCognitive Architecture (NCA) for LLMs" \
-      version="0.1.0"
+      version="1.0.0-rc1"

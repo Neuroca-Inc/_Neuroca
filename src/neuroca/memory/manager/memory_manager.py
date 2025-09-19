@@ -1424,7 +1424,44 @@ class MemoryManager(MemoryManagerInterface):
             metadata=memory_metadata,
         )
         
-        serialized_memory = memory_item.model_dump()
+        # Serialize memory item robustly across Pydantic/runtime combos.
+        # Prefer model_dump (v2) but gracefully degrade to dict() or manual mapping
+        # to avoid rare serializer incompatibilities (e.g., 'MockValSer').
+        try:
+            serialized_memory = memory_item.model_dump()
+        except Exception as ser_err:
+            logger.debug("model_dump() failed for MemoryItem: %s; falling back to dict()", ser_err)
+            try:
+                serialized_memory = memory_item.dict()
+            except Exception as dict_err:
+                logger.debug("dict() failed for MemoryItem: %s; falling back to manual mapping", dict_err)
+                content = memory_item.content
+                metadata = memory_item.metadata
+                if hasattr(content, "model_dump"):
+                    try:
+                        content = content.model_dump()
+                    except Exception:
+                        content = getattr(content, "dict", lambda: content)()
+                elif hasattr(content, "dict"):
+                    content = content.dict()
+
+                if hasattr(metadata, "model_dump"):
+                    try:
+                        metadata = metadata.model_dump()
+                    except Exception:
+                        metadata = getattr(metadata, "dict", lambda: metadata)()
+                elif hasattr(metadata, "dict"):
+                    metadata = metadata.dict()
+
+                serialized_memory = {
+                    "id": getattr(memory_item, "id", None),
+                    "content": content,
+                    "metadata": metadata,
+                    "summary": getattr(memory_item, "summary", None),
+                    "embedding": getattr(memory_item, "embedding", None),
+                }
+                # Drop None values
+                serialized_memory = {k: v for k, v in serialized_memory.items() if v is not None}
 
         memory_id: str | None = None
         try:

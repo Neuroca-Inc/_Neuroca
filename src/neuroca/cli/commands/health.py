@@ -28,7 +28,7 @@ def health_status() -> None:
     # Example: health_manager = get_health_manager()
     # Example: health_data = health_manager.get_system_status()
     
-    # Sample health data (Replace with actual data from health_manager)
+    # Sample health data ( TODO: Replace with actual data from health_manager)
     health_data = {
         "energy": 0.72,
         "rest_state": "active",

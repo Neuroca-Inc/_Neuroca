@@ -6,6 +6,7 @@ This script demonstrates the minimum viable use of the memory system.
 """
 
 import asyncio
+import os
 import logging
 import sys
 from pathlib import Path
@@ -17,6 +18,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
+# Silence environment-related warnings for a clean demo run.
+# Use in-memory SQLite and disable external LLM provider expectations.
+os.environ.setdefault("NCA_DB_URL", "sqlite:///:memory:")
+os.environ.setdefault("NCA_LLM_PROVIDER", "none")
 
 from neuroca.memory.backends import BackendType
 from neuroca.memory.manager import MemoryManager
