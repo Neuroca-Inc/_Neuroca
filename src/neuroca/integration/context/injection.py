@@ -30,7 +30,7 @@ from typing import Any, Optional, Union
 
 from neuroca.config.settings import ContextInjectionConfig
 from neuroca.core.exceptions import ContextWindowExceededError, InvalidContextFormatError
-from neuroca.memory.retrieval import MemoryRetrievalResult
+from neuroca.memory.retrieval import MemoryRetrievalResult # TODO Fix this
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -110,18 +110,8 @@ class ContextInjectionManager:
         Returns:
             A function that counts tokens in a string
         """
-        # In a real implementation, this would use the appropriate tokenizer
-        # for the selected LLM provider
-        if self.format == ContextFormat.OPENAI:
-            # This is a placeholder - in production code, you would use the actual tokenizer
-            return lambda text: len(text.split())
-        elif self.format == ContextFormat.ANTHROPIC:
-            return lambda text: len(text.split())
-        elif self.format == ContextFormat.GOOGLE:
-            return lambda text: len(text.split())
-        else:
-            # Default simple tokenizer (word-based)
-            return lambda text: len(text.split())
+        # This is a placeholder - in production code, you would use the actual tokenizer
+        return lambda text: len(text.split())
     
     def inject_context(
         self,
@@ -149,12 +139,12 @@ class ContextInjectionManager:
             InvalidContextFormatError: If the context cannot be properly formatted
         """
         logger.debug(f"Injecting context for prompt: {prompt[:50]}...")
-        
+
         # Initialize with empty lists if None
         conversation_history = conversation_history or []
         memory_retrieval_results = memory_retrieval_results or []
         additional_context = additional_context or {}
-        
+
         # 1. Prepare context elements from various sources
         context_elements = self._prepare_context_elements(
             prompt=prompt,
@@ -163,13 +153,13 @@ class ContextInjectionManager:
             system_instructions=system_instructions,
             additional_context=additional_context
         )
-        
+
         # 2. Prioritize and select context elements to fit within token limits
         selected_elements = self._select_context_elements(
             context_elements=context_elements,
             prompt_tokens=self.token_counter(prompt)
         )
-        
+
         # 3. Format the selected context elements according to the chosen strategy
         try:
             enhanced_prompt = self._format_context(
@@ -180,19 +170,19 @@ class ContextInjectionManager:
             )
         except Exception as e:
             logger.error(f"Error formatting context: {str(e)}")
-            raise InvalidContextFormatError(f"Failed to format context: {str(e)}")
-        
+            raise InvalidContextFormatError(f"Failed to format context: {str(e)}") from e
+
         # 4. Verify the final token count is within limits
         final_token_count = self.token_counter(enhanced_prompt) if isinstance(enhanced_prompt, str) else \
-                           self._estimate_structured_token_count(enhanced_prompt)
-        
+                               self._estimate_structured_token_count(enhanced_prompt)
+
         if final_token_count > self.max_tokens - self.reserved_tokens:
             logger.warning(f"Context window exceeded: {final_token_count} tokens (max: {self.max_tokens - self.reserved_tokens})")
             raise ContextWindowExceededError(
                 f"Enhanced prompt exceeds token limit: {final_token_count} tokens "
                 f"(max: {self.max_tokens - self.reserved_tokens})"
             )
-        
+
         logger.info(f"Successfully injected context. Final token count: {final_token_count}")
         return enhanced_prompt
     
@@ -409,33 +399,33 @@ class ContextInjectionManager:
         # Start with system instructions if present and not already in selected elements
         formatted_context = ""
         system_in_elements = any(e.source == "system_instructions" for e in selected_elements)
-        
+
         if system_instructions and not system_in_elements:
             formatted_context += f"System: {system_instructions}\n\n"
-        
+
         # Add other context elements
         for element in selected_elements:
             # Skip system instructions if we already added them
             if element.source == "system_instructions" and formatted_context.startswith("System:"):
                 continue
-                
+
             # Format based on source
             if element.source == "system_instructions":
                 formatted_context += f"System: {element.content}\n\n"
-            elif element.source == "conversation_history":
+            elif element.source == "conversation_history" or element.source not in [
+                "memory_retrieval",
+                "additional_context",
+            ]:
                 formatted_context += f"{element.content}\n\n"
             elif element.source == "memory_retrieval":
                 memory_type = element.metadata.get("memory_type", "Memory")
                 formatted_context += f"Relevant {memory_type}: {element.content}\n\n"
-            elif element.source == "additional_context":
+            else:
                 context_key = element.metadata.get("context_key", "Context")
                 formatted_context += f"{context_key}: {element.content}\n\n"
-            else:
-                formatted_context += f"{element.content}\n\n"
-        
         # Add the user's prompt
         formatted_context += f"User: {prompt}\n\nAssistant:"
-        
+
         return formatted_context
     
     def _format_append_strategy(
@@ -500,7 +490,7 @@ class ContextInjectionManager:
                                     if e.source != "conversation_history"]
         
         # Get conversation history elements
-        [e for e in selected_elements 
+        [e for e in selected_elements # TODO Address Codacy warning "Statement seems to have no effect"
                                if e.source == "conversation_history"]
         
         # Build conversation with interleaved context
@@ -572,43 +562,43 @@ class ContextInjectionManager:
             Structured object representing the prompt with context
         """
         messages = []
-        
+
         # Add system message if present
         if system_instructions or "system_instructions" in elements_by_source:
             system_content = system_instructions or ""
             if "system_instructions" in elements_by_source:
                 for element in elements_by_source["system_instructions"]:
                     system_content += element.content + "\n\n"
-            
+
             messages.append({
                 "role": "system",
                 "content": system_content.strip()
             })
-        
+
         # Add memory retrieval as system messages
         if "memory_retrieval" in elements_by_source:
             memory_content = "Relevant information from memory:\n\n"
             for element in elements_by_source["memory_retrieval"]:
                 memory_type = element.metadata.get("memory_type", "Memory")
                 memory_content += f"- {memory_type}: {element.content}\n\n"
-            
+
             messages.append({
                 "role": "system",
                 "content": memory_content.strip()
             })
-        
+
         # Add additional context as system messages
         if "additional_context" in elements_by_source:
             context_content = "Additional context:\n\n"
             for element in elements_by_source["additional_context"]:
                 context_key = element.metadata.get("context_key", "Context")
                 context_content += f"- {context_key}: {element.content}\n\n"
-            
+
             messages.append({
                 "role": "system",
                 "content": context_content.strip()
             })
-        
+
         # Add conversation history
         if "conversation_history" in elements_by_source:
             # Sort by turn index if available
@@ -616,24 +606,24 @@ class ContextInjectionManager:
                 elements_by_source["conversation_history"],
                 key=lambda x: x.metadata.get("turn_index", 0) if x.metadata else 0
             )
-            
+
             for element in conversation_elements:
                 content = element.content
-                
+
                 # Parse the content to extract user and assistant messages
                 if content.startswith("User: ") and "Assistant: " in content:
                     user_content, assistant_content = content.split("Assistant: ", 1)
                     user_content = user_content.replace("User: ", "", 1).strip()
-                    
-                    messages.append({
-                        "role": "user",
-                        "content": user_content
-                    })
-                    
-                    messages.append({
-                        "role": "assistant",
-                        "content": assistant_content.strip()
-                    })
+
+                    messages.extend(
+                        (
+                            {"role": "user", "content": user_content},
+                            {
+                                "role": "assistant",
+                                "content": assistant_content.strip(),
+                            },
+                        )
+                    )
                 elif content.startswith("User: "):
                     user_content = content.replace("User: ", "", 1).strip()
                     messages.append({
@@ -646,13 +636,13 @@ class ContextInjectionManager:
                         "role": "assistant",
                         "content": assistant_content
                     })
-        
+
         # Add the current prompt
         messages.append({
             "role": "user",
             "content": prompt
         })
-        
+
         return {"messages": messages}
     
     def _estimate_structured_token_count(self, structured_prompt: dict[str, Any]) -> int:
@@ -699,7 +689,7 @@ class ContextInjector:
         """
         if config is None:
             # Use default configuration
-            from neuroca.config.defaults import get_default_context_injection_config
+            from neuroca.config.defaults import get_default_context_injection_config # TODO Fix bad import
             config = get_default_context_injection_config()
         
         self.manager = ContextInjectionManager(config)

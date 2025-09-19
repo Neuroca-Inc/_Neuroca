@@ -176,10 +176,49 @@ class Planner:
                 logger.warning("Retrieved semantic knowledge was not a valid procedure dictionary.")
 
         if not plan and episodic_knowledge:
+            # TODO: Enhance this, it's brittle and simplistic. Use an LLM or some other method to derive a plan.
+            # Minimal adaptation: derive a lightweight plan from recent episodic traces.
+            # Strategy:
+            #  - Extract plain text from up to 3 most relevant episodes
+            #  - Pull the first verb-like token as an action and the remainder as parameters
+            #  - Compose 2–4 coarse steps to scaffold execution
             logger.info(
-                "Found %s related past episodes. Adaptation logic not implemented.",
+                "Adapting plan from %s related past episodes.",
                 len(episodic_knowledge),
             )
+
+            def _derive_step(text: str) -> PlanStep | None:
+                try:
+                    words = text.strip().split()
+                    if not words:
+                        return None
+                    action = words[0].lower().strip(",.()[]{}:")
+                    params = {"detail": " ".join(words[1:])[:180]} if len(words) > 1 else {}
+                    return PlanStep(action=f"review_{action}", parameters=params, estimated_cost=0.2)
+                except Exception:
+                    return None
+
+            steps: list[PlanStep] = []
+            for item in episodic_knowledge[:3]:
+                text = extract_content(item)
+                if isinstance(text, dict):
+                    text = text.get("text") or text.get("summary") or ""
+                if not isinstance(text, str):
+                    continue
+                # Split on sentences and take the first informative one
+                sentence = next((s.strip() for s in text.split(".") if s and len(s.strip()) > 3), "")
+                step = _derive_step(sentence or text)
+                if step:
+                    steps.append(step)
+                if len(steps) >= 4:
+                    break
+
+            if steps:
+                plan = Plan(goal=goal_description, steps=steps)
+                logger.info(
+                    "Constructed adaptive plan with %s steps from episodic knowledge.",
+                    len(steps),
+                )
 
         if not plan:
             logger.debug(
@@ -211,8 +250,7 @@ class Planner:
         health_state: HealthState,
     ) -> list[PlanStep]:
         steps: list[PlanStep] = []
-        words = goal_description.lower().split()
-        if words:
+        if words := goal_description.lower().split():
             action_verb = words[0]
             action_object = " ".join(words[1:]) if len(words) > 1 else "default_target"
             steps.extend(

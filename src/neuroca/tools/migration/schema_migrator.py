@@ -69,22 +69,18 @@ class MigrationDirection(Enum):
 
 class MigrationError(Exception):
     """Base exception for migration-related errors."""
-    pass
 
 
 class MigrationVersionError(MigrationError):
     """Exception raised for errors related to migration versioning."""
-    pass
 
 
 class MigrationFileError(MigrationError):
     """Exception raised for errors related to migration files."""
-    pass
 
 
 class MigrationExecutionError(MigrationError):
     """Exception raised for errors during migration execution."""
-    pass
 
 
 class DatabaseAdapter:
@@ -209,7 +205,7 @@ class PostgresAdapter(DatabaseAdapter):
     def transaction_begin(self) -> None:
         """Begin a PostgreSQL transaction."""
         # PostgreSQL automatically starts a transaction when needed
-        pass
+        return None
     
     def transaction_commit(self) -> None:
         """Commit the current PostgreSQL transaction."""
@@ -318,7 +314,7 @@ class SQLiteAdapter(DatabaseAdapter):
     def transaction_begin(self) -> None:
         """Begin a SQLite transaction."""
         # SQLite automatically starts a transaction when needed
-        pass
+        return None
     
     def transaction_commit(self) -> None:
         """Commit the current SQLite transaction."""
@@ -461,17 +457,17 @@ class MongoDBAdapter(DatabaseAdapter):
         """Begin a MongoDB transaction."""
         # MongoDB transactions are not used in this implementation
         # as they require a replica set
-        pass
+        return None
     
     def transaction_commit(self) -> None:
         """Commit the current MongoDB transaction."""
         # MongoDB transactions are not used in this implementation
-        pass
+        return None
     
     def transaction_rollback(self) -> None:
         """Roll back the current MongoDB transaction."""
         # MongoDB transactions are not used in this implementation
-        pass
+        return None
     
     def ensure_migration_table(self) -> None:
         """Ensure the migration tracking collection exists in MongoDB."""
@@ -618,6 +614,268 @@ class SchemaMigrator:
         
         # Load available migrations
         self._load_migrations()
+
+
+    def connect(self) -> None:
+        """Establish a database connection for migration operations.
+
+        Summary:
+            Delegate to the configured database adapter to open a connection that
+            subsequent migration steps can reuse.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationError: Raised when the adapter cannot create a connection.
+
+        Side Effects:
+            Opens a database connection managed by the adapter.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        adapter_name = type(self.adapter).__name__
+        try:
+            self.adapter.connect()
+            logger.debug("SchemaMigrator connected using %s", adapter_name)
+        except MigrationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to connect using %s: %s", adapter_name, exc)
+            raise MigrationError(f"Failed to establish migration connection via {adapter_name}") from exc
+
+    def disconnect(self) -> None:
+        """Close the adapter-managed database connection.
+
+        Summary:
+            Ensure that any open connection created during migration work is
+            closed cleanly via the adapter.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationError: Raised when the adapter reports a disconnection failure.
+
+        Side Effects:
+            Closes the adapter-managed connection if one was open.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        adapter_name = type(self.adapter).__name__
+        try:
+            self.adapter.disconnect()
+            logger.debug("SchemaMigrator disconnected %s", adapter_name)
+        except MigrationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to disconnect %s: %s", adapter_name, exc)
+            raise MigrationError(f"Failed to close migration connection via {adapter_name}") from exc
+
+    def execute(self, query: str, params: Optional[dict[str, Any]] = None) -> Any:
+        """Execute a database operation through the active adapter.
+
+        Summary:
+            Delegate execution to the adapter so migrations can perform backend
+            specific statements while centralising error handling.
+
+        Parameters:
+            query: Statement or serialized command to execute.
+            params: Optional mapping of parameters for the statement.
+
+        Returns:
+            Adapter-specific result payload returned by the execution.
+
+        Raises:
+            MigrationExecutionError: Raised when the adapter cannot execute the
+                provided command.
+
+        Side Effects:
+            May mutate database state depending on the supplied query.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            return self.adapter.execute(query, params)
+        except MigrationExecutionError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to execute migration command: %s", exc)
+            raise MigrationExecutionError("Adapter execution failure during schema migration") from exc
+
+    def transaction_begin(self) -> None:
+        """Begin an adapter-managed transaction for migration work.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationExecutionError: Raised when the adapter cannot enter a
+                transactional state.
+
+        Side Effects:
+            Opens a database transaction if supported by the backend.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            self.adapter.transaction_begin()
+        except MigrationExecutionError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to begin migration transaction: %s", exc)
+            raise MigrationExecutionError("Unable to start migration transaction") from exc
+
+    def transaction_commit(self) -> None:
+        """Commit the active migration transaction.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationExecutionError: Raised when the adapter cannot commit the
+                current transaction.
+
+        Side Effects:
+            Persists changes performed within the transaction.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            self.adapter.transaction_commit()
+        except MigrationExecutionError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to commit migration transaction: %s", exc)
+            raise MigrationExecutionError("Unable to commit migration transaction") from exc
+
+    def transaction_rollback(self) -> None:
+        """Roll back the active migration transaction.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationExecutionError: Raised when the adapter cannot roll back the
+                current transaction.
+
+        Side Effects:
+            Discards uncommitted migration changes when supported by the backend.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            self.adapter.transaction_rollback()
+        except MigrationExecutionError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to roll back migration transaction: %s", exc)
+            raise MigrationExecutionError("Unable to roll back migration transaction") from exc
+
+    def ensure_migration_table(self) -> None:
+        """Ensure the migration bookkeeping table exists.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationError: Raised when the adapter cannot guarantee the presence
+                of the tracking table.
+
+        Side Effects:
+            Creates the schema_migrations table or equivalent if missing.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            self.adapter.ensure_migration_table()
+        except MigrationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to ensure migration table: %s", exc)
+            raise MigrationError("Unable to prepare migration bookkeeping table") from exc
+
+    def get_current_version(self) -> Optional[str]:
+        """Obtain the current applied schema version from the adapter.
+
+        Returns:
+            Optional[str]: The most recent applied migration version or ``None``
+            when no migrations have been recorded.
+
+        Raises:
+            MigrationError: Raised when the adapter cannot retrieve version
+                information.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            return self.adapter.get_current_version()
+        except MigrationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to read current migration version: %s", exc)
+            raise MigrationError("Unable to determine current migration version") from exc
+
+    def record_migration(
+        self,
+        version: str,
+        direction: MigrationDirection,
+        script_hash: str,
+        execution_time: float,
+    ) -> None:
+        """Persist a migration execution record via the adapter.
+
+        Parameters:
+            version: Semantic version identifier that was applied.
+            direction: Direction taken (up/down) for the migration.
+            script_hash: SHA-256 digest of the migration source used.
+            execution_time: Duration in seconds for the migration run.
+
+        Returns:
+            None
+
+        Raises:
+            MigrationError: Raised when the adapter cannot persist the metadata.
+
+        Side Effects:
+            Inserts a record into the migration history storage for auditing.
+
+        Timeout/Retry Notes:
+            No explicit timeout or retry handling is applied; adapter defaults are
+            used.
+        """
+
+        try:
+            self.adapter.record_migration(version, direction, script_hash, execution_time)
+        except MigrationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("SchemaMigrator failed to record migration %s (%s): %s", version, direction, exc)
+            raise MigrationError("Unable to persist migration execution metadata") from exc
     
     def _create_adapter(self) -> DatabaseAdapter:
         """
@@ -990,23 +1248,8 @@ class SchemaMigrator:
 
 
 if __name__ == "__main__":
-    """
-    Command-line interface for the schema migrator.
-    
-    Usage:
-        python schema_migrator.py [options]
-        
-    Options:
-        --config FILE       Path to database configuration file
-        --dir DIR           Path to migration directory
-        --to VERSION        Migrate to specific version
-        --latest            Migrate to latest version (default)
-        --rollback [VERSION] Roll back to previous or specific version
-        --dry-run           Simulate migration without applying changes
-        --history           Show migration history
-        --validate          Validate migrations
-        --verbose           Enable verbose logging
-    """
+    # CLI entry point for driving the schema migrator module directly.
+    # Matches the documented parameters in the project runbooks.
     import argparse
 
     # Configure logging

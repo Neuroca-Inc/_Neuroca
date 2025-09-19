@@ -9,21 +9,26 @@ This single document enumerates all actionable items required to finish the proj
 - [x] Version set to 1.0.0-rc1 and release notes updated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 - [x] Production configuration present and used by Docker/compose [config/production.yaml](config/production.yaml), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
 - [x] Security/quality gates pass (dependency audit via Codacy Trivy: zero vulns); pre-commit configured and CI job added [.pre-commit-config.yaml](.pre-commit-config.yaml)
+- [ ] All TODOs and placeholders are completely implemented and fully tested.
+- [ ] Project closely follows ARCHITECTURE_STANDARDS.md
+- [ ] One class per file, Clean-Hybrid Architecture
+- [ ] Fully resolved COdacy / Sourcery warnings.
+- [ ] <=500 LOC per file, offending large files directly broken into packaged subfolders. All imports must be immediately updated, all tests must pass
 
 1. Database and Migrations
 
 - [ ] Implement upgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:524)
 - [ ] Implement downgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:534)
-- [ ] Implement SchemaMigrator.connect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:104)
-- [ ] Implement SchemaMigrator.disconnect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:109)
-- [ ] Implement SchemaMigrator.execute() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:123)
-- [ ] Implement SchemaMigrator.transaction_begin() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:128)
-- [ ] Implement SchemaMigrator.transaction_commit() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:133)
-- [ ] Implement SchemaMigrator.transaction_rollback() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:138)
-- [ ] Implement SchemaMigrator.ensure_migration_table() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:143)
-- [ ] Implement SchemaMigrator.get_current_version() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:153)
-- [ ] Implement SchemaMigrator.record_migration() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:167)
-- [ ] Tests for migrations [tests/unit/memory/migrations/test_schema_migration.py](tests/unit/memory/migrations/test_schema_migration.py)
+- [x] Implement SchemaMigrator.connect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:104)
+- [x] Implement SchemaMigrator.disconnect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:109)
+- [x] Implement SchemaMigrator.execute() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:123)
+- [x] Implement SchemaMigrator.transaction_begin() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:128)
+- [x] Implement SchemaMigrator.transaction_commit() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:133)
+- [x] Implement SchemaMigrator.transaction_rollback() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:138)
+- [x] Implement SchemaMigrator.ensure_migration_table() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:143)
+- [x] Implement SchemaMigrator.get_current_version() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:153)
+- [x] Implement SchemaMigrator.record_migration() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:167)
+- [x] Tests for migrations [tests/unit/tools/migration/test_schema_migrator.py](tests/unit/tools/migration/test_schema_migrator.py), [tests/unit/db/migrations/test_migration_manager.py](tests/unit/db/migrations/test_migration_manager.py)
 
 2. Summarization Pipeline
 
@@ -62,13 +67,13 @@ This single document enumerates all actionable items required to finish the proj
 
 8. Cognitive Control
 
-- [ ] Planner adaptation logic: implement or explicitly defer with docs [src/neuroca/core/cognitive_control/planner.py](src/neuroca/core/cognitive_control/planner.py:179)
-- [ ] Tests: planner behavior [tests/unit/cognitive_control/test_planner.py](tests/unit/cognitive_control/test_planner.py)
+- [x] Planner adaptation logic: minimal episodic adaptation implemented [src/neuroca/core/cognitive_control/planner.py](src/neuroca/core/cognitive_control/planner.py:179)
+- [x] Tests: planner behavior [tests/unit/cognitive_control/test_planner.py](tests/unit/cognitive_control/test_planner.py)
 
 9. Lymphatic / Consolidation
 
 - [x] Provide minimal Consolidator strategy (NoOp or simple policy) or gate feature [src/neuroca/memory/lymphatic/consolidator.py](src/neuroca/memory/lymphatic/consolidator.py:64)
-- [ ] Tests: consolidation scheduling/strategy [tests/unit/memory/manager/test_transactional_consolidation.py](tests/unit/memory/manager/test_transactional_consolidation.py)
+- [x] Tests: consolidation scheduling/strategy [tests/unit/memory/manager/test_transactional_consolidation.py](tests/unit/memory/manager/test_transactional_consolidation.py)
 
 10. Storage Optional Capabilities (scope decision)
 
@@ -107,6 +112,8 @@ This single document enumerates all actionable items required to finish the proj
 - [ ] Events: verify MemoryCreated and consolidation events traverse the event bus
 - [ ] Version/tag: bump to 1.0.0, update `docs/RELEASE_NOTES.md`, tag build
 - [ ] Final sign‑off: attach artifacts (image digest, test summaries), record checklist URL
+- [ ] Entire codebase is clean, no lingering dev artifacts / notes.
+- [ ] 100% Tests pass w/ 95%+ Code coverage
 
 18. Soak Test (Pre‑GA)
 
@@ -127,6 +134,7 @@ This single document enumerates all actionable items required to finish the proj
 - [ ] Update README with final install/usage examples [README.md](README.md)
 - [ ] Update release notes to 1.0 [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 - [ ] Ensure docs build and publish without warnings [docs/mkdocs.yml](docs/mkdocs.yml), [docs/](docs/)
+- [ ] All docs are accurate, MkDocs are operational and docs web pages are smooth.
 
 14. CI/CD and Quality Gates
 
@@ -140,12 +148,12 @@ This single document enumerates all actionable items required to finish the proj
 - [x] Docker image builds reproducibly and runs demo [Dockerfile](Dockerfile)
 - [x] docker-compose up succeeds with production config [docker-compose.yml](docker-compose.yml)
 - [x] Add agent compose for Postgres + Neuroca [docker-compose.agent.yml](docker-compose.agent.yml)
-- [ ] Ops runbooks validated (backup/restore, scaling) [docs/operations/runbooks/backup-restore.md](docs/operations/runbooks/backup-restore.md), [docs/operations/runbooks/scaling.md](docs/operations/runbooks/scaling.md)
+- [x] Ops runbooks validated (backup/restore, scaling) [docs/operations/runbooks/backup-restore.md](docs/operations/runbooks/backup-restore.md), [docs/operations/runbooks/scaling.md](docs/operations/runbooks/scaling.md)
   - [x] Soak test runbook added [docs/operations/runbooks/soak-test.md](docs/operations/runbooks/soak-test.md)
 
-16. Final Benchmarks (optional but recommended)
+16. Final Benchmarks
 
-- [ ] Run and record memory system benchmarks for regression tracking [benchmarks/memory_systems_comparison/](benchmarks/memory_systems_comparison/)
+- [ ] Run and record memory system benchmarks on all tiers in the same run for regression tracking [benchmarks/memory_systems_comparison/](benchmarks/memory_systems_comparison/)
 
 Notes
 

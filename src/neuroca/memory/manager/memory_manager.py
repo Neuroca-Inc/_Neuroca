@@ -6,7 +6,9 @@ the central orchestration layer for the entire memory system, coordinating
 operations across all memory tiers (STM, MTM, LTM) and providing a unified API.
 """
 
+
 import asyncio
+import contextlib
 import inspect
 import logging
 import time
@@ -105,42 +107,42 @@ class MemoryManager(MemoryManagerInterface):
         """
         self._config = config or {}
         self._backend_config = backend_config or {}
-        
+
         # Handle tier-specific storage types (NEW API)
         self._stm_storage_type = stm_storage_type or backend_type or BackendType.MEMORY
         self._mtm_storage_type = mtm_storage_type or backend_type or BackendType.MEMORY
         self._ltm_storage_type = ltm_storage_type or backend_type or BackendType.MEMORY
         self._vector_storage_type = vector_storage_type or backend_type or BackendType.MEMORY
-        
+
         # Handle direct tier instances (TEST API)
         self._stm_instance = stm
         self._mtm_instance = mtm
         self._ltm_instance = ltm
-        
+
         # Additional configuration
         self._working_buffer_size = working_buffer_size
         self._embedding_dimension = embedding_dimension
-        
+
         # Set default tier configurations
         self._stm_config = self._config.get("stm", {})
         self._mtm_config = self._config.get("mtm", {})
         self._ltm_config = self._config.get("ltm", {})
-        
+
         # Legacy support - store for backwards compatibility
         self._backend_type = backend_type
-        
+
         # Initialize tiers to None
         self._stm = None
         self._mtm = None
         self._ltm = None
         self._ltm_retrieval_cache: dict[str, Callable[..., Any] | None] = {}
-        
+
         # Initialize working memory buffer
         self._working_memory = WorkingMemoryBuffer()
-        
+
         # Initialization flag
         self._initialized = False
-        
+
         # Background tasks
         self._maintenance_task = None
         self._maintenance_orchestrator: MaintenanceOrchestrator | None = None
@@ -275,7 +277,7 @@ class MemoryManager(MemoryManagerInterface):
             breaker_config = breaker_defaults
         else:
             merged = dict(breaker_defaults)
-            merged.update(breaker_config)
+            merged |= breaker_config
             breaker_config = merged
 
         self._consolidation_breaker = MaintenanceCircuitBreaker.from_config(
@@ -310,7 +312,7 @@ class MemoryManager(MemoryManagerInterface):
 
         base: dict[str, Any] = {}
         if isinstance(metadata, dict):
-            base.update(metadata)
+            base |= metadata
         elif metadata is not None:
             base["legacy_metadata"] = metadata
 
@@ -428,7 +430,7 @@ class MemoryManager(MemoryManagerInterface):
         return task
 
     # ------------------------------------------------------------------
-    # Legacy public API compatibility
+    # Legacy public API compatibility TODO Retire and modernize all legacy code
     # ------------------------------------------------------------------
 
     def store(
@@ -602,7 +604,7 @@ class MemoryManager(MemoryManagerInterface):
         if not self._initialized:
             logger.warning("Memory Manager not initialized, nothing to shut down")
             return
-        
+
         try:
             logger.info("Shutting down Memory Manager")
 
@@ -623,10 +625,8 @@ class MemoryManager(MemoryManagerInterface):
                         "Timed out waiting for maintenance task to finish; cancelling",
                     )
                     self._maintenance_task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await self._maintenance_task
-                    except asyncio.CancelledError:
-                        pass
                 except asyncio.CancelledError:
                     pass
                 except Exception:
@@ -648,10 +648,10 @@ class MemoryManager(MemoryManagerInterface):
 
             if self._mtm:
                 await self._mtm.shutdown()
-            
+
             if self._ltm:
                 await self._ltm.shutdown()
-            
+
             self._initialized = False
             logger.info("Memory Manager shutdown complete")
         except Exception as e:
@@ -788,18 +788,14 @@ class MemoryManager(MemoryManagerInterface):
         """Return the cached quality report from the most recent evaluation."""
 
         report = getattr(self._quality_state, "last_report", None)
-        if isinstance(report, dict):
-            return dict(report)
-        return None
+        return dict(report) if isinstance(report, dict) else None
 
     @property
     def last_drift_report(self) -> Optional[Dict[str, Any]]:
         """Return the cached embedding drift evaluation report."""
 
         report = getattr(self._drift_state, "last_report", None)
-        if isinstance(report, dict):
-            return dict(report)
-        return None
+        return dict(report) if isinstance(report, dict) else None
 
     async def evaluate_memory_quality(self, *, limit: int | None = None) -> Dict[str, Any]:
         """Evaluate LTM quality and return structured metrics."""
@@ -890,14 +886,16 @@ class MemoryManager(MemoryManagerInterface):
         if signature is None:
             return True
 
-        for parameter in signature.parameters.values():
-            if parameter.kind in (
+        return not any(
+            parameter.kind
+            in (
                 inspect.Parameter.POSITIONAL_ONLY,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 inspect.Parameter.KEYWORD_ONLY,
-            ) and parameter.default is inspect._empty:
-                return False
-        return True
+            )
+            and parameter.default is inspect._empty
+            for parameter in signature.parameters.values()
+        )
 
     async def _resolve_counter_value(
         self, counter: Callable[[], Any], tier_name: str
@@ -1043,17 +1041,12 @@ class MemoryManager(MemoryManagerInterface):
                 logger.exception("Failed to coerce LTM snapshot from %s", method_name)
                 continue
 
-            if limit is not None:
-                return sequence[: limit]
-            return sequence
-
+            return sequence[: limit] if limit is not None else sequence
         logger.debug("LTM storage does not expose bulk retrieval; skipping quality analysis")
         return []
 
     def _configure_drift_monitor(self) -> None:
-        backend = None
-        if self._ltm is not None:
-            backend = getattr(self._ltm, "_backend", None)
+        backend = None if self._ltm is None else getattr(self._ltm, "_backend", None)
         self._drift_monitor.configure(
             vector_backend=backend,
             metrics=self._metrics,
@@ -1083,15 +1076,12 @@ class MemoryManager(MemoryManagerInterface):
 
         try:
             while not self._shutdown_event.is_set():
-                try:
+                with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(
                         self._shutdown_event.wait(),
                         timeout=delay,
                     )
                     break
-                except asyncio.TimeoutError:
-                    pass
-
                 result = await orchestrator.run_cycle(triggered_by="scheduler")
                 if result.get("status") == "error":
                     logger.error(
@@ -1343,13 +1333,13 @@ class MemoryManager(MemoryManagerInterface):
             MemoryManagerOperationError: If the add operation fails
         """
         self._ensure_initialized()
-        
+
         # Determine initial tier
         initial_tier = initial_tier or self.STM_TIER
-        
+
         # Get tier instance
         tier = self._get_tier_by_name(initial_tier)
-        
+
         # Sanitize core payload
         sanitized_summary = self._sanitizer.sanitize_optional_text(
             "summary", summary
@@ -1412,18 +1402,15 @@ class MemoryManager(MemoryManagerInterface):
                 memory_metadata.additional_metadata[key] = value
 
         # Ensure tier is set on metadata for downstream search filters
-        try:
+        with contextlib.suppress(Exception):
             if not getattr(memory_metadata, "tier", None):
                 memory_metadata.tier = initial_tier
-        except Exception:
-            pass
-
         # Create memory item
         memory_item = MemoryItem(
             content=memory_content,
             metadata=memory_metadata,
         )
-        
+
         # Serialize memory item robustly across Pydantic/runtime combos.
         # Prefer model_dump (v2) but gracefully degrade to dict() or manual mapping
         # to avoid rare serializer incompatibilities (e.g., 'MockValSer').
@@ -1475,27 +1462,24 @@ class MemoryManager(MemoryManagerInterface):
                     serialized_memory,
                 )
 
-            # Update working memory with new memory if it's relevant to current context
-            # This would require calculating relevance, which we're keeping simple for now
-            if self._current_context and memory_id is not None:
-                # For demonstration, we'll add any memory with importance > 0.7 to working memory
-                if importance > 0.7:
-                    memory_data = await tier.retrieve(memory_id)
-                    if memory_data:
-                        # Convert to MemoryItem if needed
-                        memory_item = (
-                            memory_data
-                            if isinstance(memory_data, MemoryItem)
-                            else MemoryItem.model_validate(memory_data)
+            # For demonstration, we'll add any memory with importance > 0.7 to working memory
+            if importance > 0.7 and (self._current_context and memory_id is not None):
+                memory_data = await tier.retrieve(memory_id)
+                if memory_data:
+                    # Convert to MemoryItem if needed
+                    memory_item = (
+                        memory_data
+                        if isinstance(memory_data, MemoryItem)
+                        else MemoryItem.model_validate(memory_data)
+                    )
+            
+                    self._working_memory.add_item(
+                        WorkingMemoryItem(
+                            memory=memory_item,
+                            source_tier=initial_tier,
+                            relevance=0.9,  # High relevance for highly important memories
                         )
-
-                        self._working_memory.add_item(
-                            WorkingMemoryItem(
-                                memory=memory_item,
-                                source_tier=initial_tier,
-                                relevance=0.9,  # High relevance for highly important memories
-                            )
-                        )
+                    )
 
             if memory_id is None:
                 raise MemoryManagerOperationError(
