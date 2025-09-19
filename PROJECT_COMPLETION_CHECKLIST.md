@@ -127,6 +127,7 @@ This single document enumerates all actionable items required to finish the proj
 
 - [x] Confirm Python version markers (< 3.13) and dependency constraints [pyproject.toml](pyproject.toml), [requirements.txt](requirements.txt)
 - [ ] Verify CLI entry points and top-level commands work in a fresh install [src/neuroca/cli/main.py](src/neuroca/cli/main.py), [tests/unit/integration/test_cli_llm.py](tests/unit/integration/test_cli_llm.py), [tests/unit/cli/test_memory_cli.py](tests/unit/cli/test_memory_cli.py)
+- [x] Verify CLI entry points and top-level commands work in a fresh install [src/neuroca/cli/main.py](src/neuroca/cli/main.py), [tests/unit/integration/test_cli_llm.py](tests/unit/integration/test_cli_llm.py), [tests/unit/cli/test_memory_cli.py](tests/unit/cli/test_memory_cli.py), [tests/unit/cli/test_system_backup.py](tests/unit/cli/test_system_backup.py)
 - [ ] Pre-commit hooks and linters pass locally and in CI [.pre-commit-config.yaml](.pre-commit-config.yaml)
 
 13. Documentation
