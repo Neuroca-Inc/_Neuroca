@@ -56,8 +56,8 @@ This single document enumerates all actionable items required to finish the proj
 
 7. Integrations
 
-- [ ] Decide scope for LangChain “combined memory type”: implement minimal aggregator or gate/disable [src/neuroca/integration/langchain/memory.py](src/neuroca/integration/langchain/memory.py:694)
-- [ ] Ollama function-calling remains unsupported: ensure clear docs and guards [src/neuroca/integration/adapters/ollama.py](src/neuroca/integration/adapters/ollama.py:512)
+- [x] Decide scope for LangChain “combined memory type”: gate for 1.0 (docs added) [docs/integration/langchain.md](docs/integration/langchain.md)
+- [x] Ollama function-calling unsupported: docs and guards present [docs/integration/ollama.md](docs/integration/ollama.md), [src/neuroca/integration/adapters/ollama.py](src/neuroca/integration/adapters/ollama.py:512)
 - [ ] Tests: integration adapters [tests/unit/integration/test_ollama_adapter.py](tests/unit/integration/test_ollama_adapter.py)
 
 8. Cognitive Control
