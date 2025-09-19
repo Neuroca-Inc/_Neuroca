@@ -1239,7 +1239,12 @@ def _execute_database_command(
     safe_command = _finalize_database_command(sanitized)
 
     try:
-        run_validated_command(safe_command, check=True, env=env)
+        run_validated_command(
+            safe_command,
+            check=True,
+            env=env,
+            allowed_executables=_SAFE_DATABASE_EXECUTABLES,
+        )
     except subprocess.CalledProcessError as exc:  # pragma: no cover - subprocess failure path
         raise BackupRestoreError(
             f"Database utility exited with status {exc.returncode}."

@@ -55,6 +55,7 @@ def test_run_validated_command_validates_and_executes(monkeypatch: pytest.Monkey
     env = {"HOME": Path("/tmp/sandbox"), "FLAG": "1"}
     result = run_validated_command(
         ["/bin/echo", "hello"],
+        allowed_executables={"echo"},
         check=True,
         capture_output=True,
         text=True,
@@ -75,4 +76,24 @@ def test_run_validated_command_validates_and_executes(monkeypatch: pytest.Monkey
 
 def test_run_validated_command_rejects_non_positive_timeout() -> None:
     with pytest.raises(UnsafeSubprocessError):
-        run_validated_command(["/bin/echo", "hello"], timeout=0)
+        run_validated_command(
+            ["/bin/echo", "hello"],
+            allowed_executables={"echo"},
+            timeout=0,
+        )
+
+
+def test_run_validated_command_rejects_unlisted_executable() -> None:
+    with pytest.raises(UnsafeSubprocessError):
+        run_validated_command(
+            ["/bin/echo", "hello"],
+            allowed_executables={"/usr/bin/python"},
+        )
+
+
+def test_run_validated_command_rejects_relative_executable() -> None:
+    with pytest.raises(UnsafeSubprocessError):
+        run_validated_command(
+            ["echo", "hello"],
+            allowed_executables={"echo"},
+        )

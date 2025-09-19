@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+import subprocess
+from pathlib import Path
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
-from subprocess import CompletedProcess, run as _system_run
+from subprocess import CompletedProcess
 
 __all__ = [
     "UnsafeSubprocessError",
@@ -73,27 +75,112 @@ def _sanitize_environment(env: Mapping[str, Any] | None) -> dict[str, str] | Non
     return sanitized
 
 
+def _normalize_allowed_executables(
+    allowed_executables: Collection[str],
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return canonical allow-lists for absolute paths and executable basenames."""
+
+    allowed_paths: set[str] = set()
+    allowed_names: set[str] = set()
+
+    for entry in allowed_executables:
+        if not isinstance(entry, str) or not entry:
+            raise UnsafeSubprocessError(
+                "Allowed executables must be provided as non-empty strings."
+            )
+        if "\x00" in entry or any(control in entry for control in ("\r", "\n")):
+            raise UnsafeSubprocessError(
+                "Allowed executable definitions cannot contain control characters."
+            )
+
+        candidate = Path(entry)
+        if candidate.is_absolute():
+            allowed_paths.add(os.fspath(candidate))
+            continue
+
+        if os.sep in entry or (os.altsep and os.altsep in entry):
+            raise UnsafeSubprocessError(
+                "Allowed executable names must not contain path separators."
+            )
+        allowed_names.add(entry.lower())
+
+    if not allowed_paths and not allowed_names:
+        raise UnsafeSubprocessError(
+            "At least one executable must be explicitly allow-listed before execution."
+        )
+
+    return frozenset(allowed_paths), frozenset(allowed_names)
+
+
+def _ensure_allowed_executable(
+    command: tuple[str, ...], allowed_executables: Collection[str]
+) -> tuple[str, ...]:
+    """Validate that the command's executable is explicitly allow-listed."""
+
+    if not command:
+        raise UnsafeSubprocessError("Validated command must not be empty.")
+
+    executable_component = command[0]
+    executable_path = Path(executable_component)
+
+    if not executable_path.is_absolute():
+        raise UnsafeSubprocessError("Executable path must be absolute.")
+    if not executable_path.exists():
+        raise UnsafeSubprocessError("Executable path does not exist.")
+    if not executable_path.is_file():
+        raise UnsafeSubprocessError("Executable path must reference a file.")
+
+    allowed_paths, allowed_names = _normalize_allowed_executables(allowed_executables)
+    sanitized_executable = os.fspath(executable_path)
+    canonical_name = executable_path.name.lower()
+
+    if sanitized_executable not in allowed_paths and canonical_name not in allowed_names:
+        raise UnsafeSubprocessError(
+            f"Executable '{sanitized_executable}' is not permitted for execution."
+        )
+
+    if sanitized_executable == executable_component:
+        return command
+
+    sanitized_command = list(command)
+    sanitized_command[0] = sanitized_executable
+    return tuple(sanitized_command)
+
+
 def _invoke_subprocess(
     command: tuple[str, ...],
     run_kwargs: Mapping[str, Any],
 ) -> CompletedProcess[Any]:
     """Invoke ``subprocess.run`` using the sanitized command and options."""
 
-    return _system_run(command, **dict(run_kwargs))
+    return subprocess.run(command, **dict(run_kwargs))
 
 
 def run_validated_command(
     command: Sequence[str],
     *,
+    allowed_executables: Collection[str],
     check: bool = False,
     capture_output: bool | None = None,
     text: bool | None = None,
     timeout: float | None = None,
     env: Mapping[str, Any] | None = None,
 ) -> CompletedProcess[Any]:
-    """Execute a validated command with ``shell=False`` enforced."""
+    """Execute a validated command with ``shell=False`` enforced.
+
+    Args:
+        command: Candidate command sequence to execute.
+        allowed_executables: Explicit allow-list of absolute paths or executable
+            basenames permitted for execution.
+        check: Propagate ``CalledProcessError`` on non-zero exit when true.
+        capture_output: Capture stdout/stderr when set.
+        text: Request text-mode streams when set.
+        timeout: Maximum duration to wait for the process to finish.
+        env: Optional environment overrides to provide the subprocess.
+    """
 
     normalized_command = normalize_command(command)
+    normalized_command = _ensure_allowed_executable(normalized_command, allowed_executables)
     sanitized_env = _sanitize_environment(env)
 
     if timeout is not None and timeout <= 0:

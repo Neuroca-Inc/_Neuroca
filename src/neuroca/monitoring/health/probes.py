@@ -538,10 +538,14 @@ class CompositeHealthProbe(HealthProbe):
 class NetworkHealthProbe(HealthProbe):
     """
     Probe for checking network connectivity and performance.
-    
+
     This probe tests network connections to critical services and measures
     latency and packet loss.
     """
+
+    _SAFE_PING_EXECUTABLES: frozenset[str] = frozenset(
+        {"ping", "ping.exe", "ping6", "ping6.exe"}
+    )
     
     def __init__(
         self, 
@@ -859,6 +863,7 @@ class NetworkHealthProbe(HealthProbe):
             capture_output=True,
             text=True,
             timeout=timeout,
+            allowed_executables=cls._SAFE_PING_EXECUTABLES,
         )
 
     @staticmethod
@@ -888,6 +893,9 @@ class NetworkHealthProbe(HealthProbe):
             raise ValueError("Ping executable must resolve to an absolute path")
         if not executable_path.exists():
             raise ValueError("Ping executable does not exist")
+        canonical_name = executable_path.name.lower()
+        if canonical_name not in NetworkHealthProbe._SAFE_PING_EXECUTABLES:
+            raise ValueError("Ping executable is not in the allow-list of permitted binaries")
         return os.fspath(executable_path)
 
     @staticmethod

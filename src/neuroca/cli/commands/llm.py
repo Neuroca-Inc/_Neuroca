@@ -219,7 +219,11 @@ def _launch_editor(command: Sequence[str]) -> None:
     sanitized_command = [executable_path, *safe_arguments, safe_config_path]
     safe_command = _finalize_editor_command(sanitized_command)
 
-    run_validated_command(safe_command, check=True)
+    run_validated_command(
+        safe_command,
+        check=True,
+        allowed_executables={editor_key},
+    )
 
 
 def _finalize_editor_command(command: Sequence[str]) -> tuple[str, ...]:

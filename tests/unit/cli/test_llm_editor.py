@@ -51,7 +51,14 @@ def test_launch_editor_sanitizes_command(monkeypatch: pytest.MonkeyPatch, tmp_pa
             self.returncode = returncode
 
     def fake_run(
-        command, *, check, capture_output=None, text=None, timeout=None, env=None
+        command,
+        *,
+        check,
+        allowed_executables,
+        capture_output=None,
+        text=None,
+        timeout=None,
+        env=None,
     ):  # type: ignore[no-untyped-def]
         recorded["command"] = command
         recorded["kwargs"] = {
@@ -61,6 +68,7 @@ def test_launch_editor_sanitizes_command(monkeypatch: pytest.MonkeyPatch, tmp_pa
             "env": env,
         }
         assert check is True
+        assert allowed_executables == {"nano"}
         return _StubCompletedProcess(command, 0)
 
     monkeypatch.setattr(llm, "run_validated_command", fake_run)
