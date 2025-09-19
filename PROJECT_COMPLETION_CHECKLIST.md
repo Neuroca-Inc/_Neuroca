@@ -17,8 +17,8 @@ This single document enumerates all actionable items required to finish the proj
 
 1. Database and Migrations
 
-- [ ] Implement upgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:524)
-- [ ] Implement downgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:534)
+- [x] Implement upgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:46)
+- [x] Implement downgrade() logic [src/neuroca/db/migrations/__init__.py](src/neuroca/db/migrations/__init__.py:73)
 - [x] Implement SchemaMigrator.connect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:104)
 - [x] Implement SchemaMigrator.disconnect() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:109)
 - [x] Implement SchemaMigrator.execute() [src/neuroca/tools/migration/schema_migrator.py](src/neuroca/tools/migration/schema_migrator.py:123)
@@ -45,7 +45,7 @@ This single document enumerates all actionable items required to finish the proj
 
 - [x] Implement database backup for supported engine(s) (SQLite at minimum) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1344)
 - [x] Implement database restore for supported engine(s) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1381)
-- [ ] Tests: CLI backup/restore [tests/unit/cli/test_system_backup.py](tests/unit/cli/test_system_backup.py)
+- [x] Tests: CLI backup/restore [tests/unit/cli/test_system_backup.py](tests/unit/cli/test_system_backup.py)
 
 5. Observability and Metrics
 

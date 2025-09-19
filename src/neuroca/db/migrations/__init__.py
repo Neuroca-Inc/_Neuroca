@@ -23,6 +23,9 @@ from .errors import (
     MigrationExecutionError,
     MigrationVersionError,
 )
+from pathlib import Path
+from typing import Any, Optional
+
 from .manager import MIGRATION_VERSION_PATTERN, MigrationManager, create_migration
 from .migration import Migration
 
@@ -35,4 +38,61 @@ __all__ = [
     "MigrationDependencyError",
     "create_migration",
     "MIGRATION_VERSION_PATTERN",
+    "upgrade",
+    "downgrade",
 ]
+
+
+def upgrade(
+    connection: Any,
+    migrations_dir: Optional[Path | str] = None,
+    target_version: Optional[int] = None,
+) -> None:
+    """Summary: Apply migrations up to ``target_version`` using the manager.
+    Parameters:
+        connection: Context-manageable database connection supplied by caller.
+        migrations_dir: Optional directory housing migration scripts; defaults to
+            the package directory.
+        target_version: Optional highest version to apply; ``None`` applies all
+            pending migrations.
+    Returns:
+        None.
+    Raises:
+        MigrationError: Propagated when migration execution or bookkeeping fails.
+        MigrationVersionError: Raised when ``target_version`` is unknown.
+    Side Effects:
+        Executes migration ``upgrade`` routines and records metadata.
+    Timeout/Retries:
+        Delegated to the provided database connection implementation.
+    """
+
+    manager = MigrationManager(connection, migrations_dir=migrations_dir)
+    manager.migrate(target_version=target_version)
+
+
+def downgrade(
+    connection: Any,
+    migrations_dir: Optional[Path | str] = None,
+    target_version: Optional[int] = None,
+    steps: int = 1,
+) -> None:
+    """Summary: Roll back migrations to ``target_version`` or by ``steps``.
+    Parameters:
+        connection: Context-manageable database connection supplied by caller.
+        migrations_dir: Optional directory containing migration scripts.
+        target_version: Optional version to retain after rollback (defaults to
+            removing ``steps`` migrations when ``None``).
+        steps: Number of migrations to undo when ``target_version`` is absent.
+    Returns:
+        None.
+    Raises:
+        MigrationError: Propagated when downgrade execution or bookkeeping fails.
+        MigrationVersionError: Raised for unknown ``target_version`` values.
+    Side Effects:
+        Executes migration ``downgrade`` routines and updates the tracking table.
+    Timeout/Retries:
+        Managed wholly by the supplied database connection.
+    """
+
+    manager = MigrationManager(connection, migrations_dir=migrations_dir)
+    manager.rollback(target_version=target_version, steps=steps)

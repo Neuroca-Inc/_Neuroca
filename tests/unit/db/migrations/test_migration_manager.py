@@ -23,6 +23,7 @@ from textwrap import dedent
 import pytest
 
 from neuroca.db.migrations.errors import MigrationVersionError
+from neuroca.db.migrations import downgrade, upgrade
 from neuroca.db.migrations.manager import MigrationManager
 
 
@@ -188,3 +189,20 @@ def test_migrate_rejects_unknown_target_version(tmp_path: Path) -> None:
 
     with pytest.raises(MigrationVersionError):
         manager.migrate(target_version=99999999999999)
+
+
+def test_package_upgrade_and_downgrade_wrappers(tmp_path: Path) -> None:
+    """Verify top-level convenience functions apply and roll back migrations."""
+
+    migrations_dir = tmp_path / "migrations"
+    version, _ = _write_migration(migrations_dir)
+    db_path = tmp_path / "demo.sqlite"
+    connection = SQLiteConnectionWrapper(db_path)
+
+    upgrade(connection, migrations_dir=migrations_dir)
+    rows = _read_tracking_rows(db_path)
+    assert rows == [(int(version), "create_demo_table")]
+
+    downgrade(connection, migrations_dir=migrations_dir, target_version=0)
+    rows = _read_tracking_rows(db_path)
+    assert rows == []

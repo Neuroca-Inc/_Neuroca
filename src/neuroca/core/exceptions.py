@@ -18,6 +18,8 @@ Each exception includes descriptive messages and context to aid in troubleshooti
 import logging
 from typing import Optional, Dict, Any
 
+# pylint: disable=redefined-builtin
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,7 +51,8 @@ class NeuroCAError(Exception):
 
 class MemoryError(NeuroCAError):
     """Base exception for memory system errors."""
-    pass
+
+    ...
 
 
 class MemoryNotFoundError(MemoryError):
@@ -249,7 +252,8 @@ class ReasoningError(PromptError):
 
 class APIError(NeuroCAError):
     """Base exception for API-related errors."""
-    pass
+
+    ...
 
 
 class InvalidRequestError(APIError):
@@ -301,7 +305,8 @@ class RateLimitExceededError(APIError):
 
 class AuthenticationError(NeuroCAError):
     """Base exception for authentication errors."""
-    pass
+
+    ...
 
 
 class InvalidTokenError(AuthenticationError):
@@ -377,7 +382,8 @@ class InsufficientPermissionsError(AuthenticationError):
 
 class StorageError(NeuroCAError):
     """Base exception for storage backend errors."""
-    pass
+
+    ...
 
 
 class StorageConnectionError(StorageError):
@@ -428,11 +434,39 @@ class StorageConfigurationError(StorageError):
         )
 
 
+class BackupRestoreError(StorageError):
+    """Summary: Raised when database backup or restore operations fail.
+    Parameters:
+        message: Human-readable explanation for the failure.
+        error_code: Optional code to aid telemetry correlation.
+        context: Optional mapping containing structured debugging metadata.
+    Attributes:
+        message: Stored description of the failure.
+        error_code: String identifier (defaults to ``BACKUP_RESTORE_ERROR``).
+        context: Supplemental metadata dictionary.
+    Side Effects:
+        Logs the error through the base ``NeuroCAError`` initialiser.
+    Timeout/Retries:
+        This exception layers no retry or timeout handling; callers determine
+        remediation strategies.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: Optional[str] = "BACKUP_RESTORE_ERROR",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message, error_code=error_code, context=context)
+
+
 # Health System Exceptions
 
 class HealthSystemError(NeuroCAError):
     """Base exception for health system errors."""
-    pass
+
+    ...
 
 
 class HealthMetricError(HealthSystemError):
@@ -493,7 +527,8 @@ class HealthThresholdExceededError(HealthSystemError):
 
 class LLMError(NeuroCAError):
     """Base exception for LLM integration errors."""
-    pass
+
+    ...
 
 
 class LLMProviderError(LLMError):
@@ -552,24 +587,28 @@ class LLMQuotaExceededError(LLMError):
 
 class DatabaseError(NeuroCAError):
     """Base exception for database errors."""
-    pass
+
+    ...
 
 
 class ConnectionError(DatabaseError):
     """Raised when database connection fails."""
-    pass
+
+    ...
 
 
 class QueryError(DatabaseError):
     """Raised when database query fails."""
-    pass
+
+    ...
 
 
 # Configuration Exceptions
 
 class ConfigurationError(NeuroCAError):
     """Base exception for configuration errors."""
-    pass
+
+    ...
 
 
 class MissingConfigurationError(ConfigurationError):
