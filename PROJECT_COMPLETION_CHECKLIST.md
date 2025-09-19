@@ -7,7 +7,7 @@ Definition of Done
 - [ ] End-to-end demo runs with zero warnings/errors and prints at least one found memory [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
 - [ ] All unit/integration/performance tests green locally and in CI [tests/](tests/)
 - [ ] Version set to 1.0.0 and release notes updated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
-- [ ] Production configuration present and used by Docker/compose [config/production.yaml](config/production.yaml), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
+- [x] Production configuration present and used by Docker/compose [config/production.yaml](config/production.yaml), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
 - [ ] Security/quality gates pass (pre-commit, type checks, linters, dependency audit) [.pre-commit-config.yaml](.pre-commit-config.yaml)
 
 1. Database and Migrations
@@ -27,19 +27,19 @@ Definition of Done
 
 2. Summarization Pipeline
 
-- [ ] Implement summarize_batch() [src/neuroca/memory/manager/summarization.py](src/neuroca/memory/manager/summarization.py:161)
-- [ ] Unit tests green [tests/unit/memory/manager/test_summarization.py](tests/unit/memory/manager/test_summarization.py)
+- [x] Implement summarize_batch() [src/neuroca/memory/manager/summarization.py](src/neuroca/memory/manager/summarization.py:161)
+- [x] Unit tests green [tests/unit/memory/manager/test_summarization.py](tests/unit/memory/manager/test_summarization.py)
 
 3. Audit Events and Telemetry
 
-- [ ] Align MemoryAuditTrail publisher with event bus contract (publish Event objects) [src/neuroca/memory/manager/audit.py](src/neuroca/memory/manager/audit.py), [src/neuroca/core/events/handlers.py](src/neuroca/core/events/handlers.py)
-- [ ] Fix audit metadata (tags shape) to satisfy pydantic without warnings [src/neuroca/memory/manager/audit.py](src/neuroca/memory/manager/audit.py)
-- [ ] Tests: audit logging/events [tests/unit/memory/manager/test_audit_logging.py](tests/unit/memory/manager/test_audit_logging.py), [tests/unit/memory/manager/test_events.py](tests/unit/memory/manager/test_events.py)
+- [x] Align MemoryAuditTrail publisher with event bus contract (publish Event objects) [src/neuroca/memory/manager/audit.py](src/neuroca/memory/manager/audit.py), [src/neuroca/core/events/handlers.py](src/neuroca/core/events/handlers.py)
+- [x] Fix audit metadata (tags shape) to satisfy pydantic without warnings [src/neuroca/memory/manager/audit.py](src/neuroca/memory/manager/audit.py)
+- [x] Tests: audit logging/events [tests/unit/memory/manager/test_audit_logging.py](tests/unit/memory/manager/test_audit_logging.py), [tests/unit/memory/manager/test_events.py](tests/unit/memory/manager/test_events.py)
 
 4. CLI System Operations
 
-- [ ] Implement database backup for supported engine(s) (SQLite at minimum) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1344)
-- [ ] Implement database restore for supported engine(s) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1381)
+- [x] Implement database backup for supported engine(s) (SQLite at minimum) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1344)
+- [x] Implement database restore for supported engine(s) [src/neuroca/cli/commands/system.py](src/neuroca/cli/commands/system.py:1381)
 - [ ] Tests: CLI backup/restore [tests/unit/cli/test_system_backup.py](tests/unit/cli/test_system_backup.py)
 
 5. Observability and Metrics
@@ -49,9 +49,9 @@ Definition of Done
 
 6. Production Configuration and Deployment
 
-- [ ] Add production configuration file [config/production.yaml](config/production.yaml)
-- [ ] Wire production config into settings loader [src/neuroca/config/settings.py](src/neuroca/config/settings.py)
-- [ ] Verify Docker uses production config by default [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
+- [x] Add production configuration file [config/production.yaml](config/production.yaml)
+- [x] Wire production config into settings loader [src/neuroca/config/settings.py](src/neuroca/config/settings.py)
+- [x] Verify Docker uses production config by default [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
 - [ ] Docs: deployment instructions updated [docs/operations/deployment.md](docs/operations/deployment.md)
 
 7. Integrations
@@ -67,7 +67,7 @@ Definition of Done
 
 9. Lymphatic / Consolidation
 
-- [ ] Provide minimal Consolidator strategy (NoOp or simple policy) or gate feature [src/neuroca/memory/lymphatic/consolidator.py](src/neuroca/memory/lymphatic/consolidator.py:64)
+- [x] Provide minimal Consolidator strategy (NoOp or simple policy) or gate feature [src/neuroca/memory/lymphatic/consolidator.py](src/neuroca/memory/lymphatic/consolidator.py:64)
 - [ ] Tests: consolidation scheduling/strategy [tests/unit/memory/manager/test_transactional_consolidation.py](tests/unit/memory/manager/test_transactional_consolidation.py)
 
 10. Storage Optional Capabilities (scope decision)
@@ -88,7 +88,7 @@ Definition of Done
 
 12. Packaging and Runtime
 
-- [ ] Confirm Python version markers (< 3.13) and dependency constraints [pyproject.toml](pyproject.toml), [requirements.txt](requirements.txt)
+- [x] Confirm Python version markers (< 3.13) and dependency constraints [pyproject.toml](pyproject.toml), [requirements.txt](requirements.txt)
 - [ ] Verify CLI entry points and top-level commands work in a fresh install [src/neuroca/cli/main.py](src/neuroca/cli/main.py), [tests/unit/integration/test_cli_llm.py](tests/unit/integration/test_cli_llm.py), [tests/unit/cli/test_memory_cli.py](tests/unit/cli/test_memory_cli.py)
 - [ ] Pre-commit hooks and linters pass locally and in CI [.pre-commit-config.yaml](.pre-commit-config.yaml)
 

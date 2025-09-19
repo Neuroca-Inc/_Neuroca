@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 
 from neuroca.core.events.base import BaseEvent, EventPriority, EventType
 
@@ -90,6 +90,8 @@ class MemoryEventMetadata(BaseModel):
         default_factory=list, 
         description="IDs of related context elements"
     )
+    # Allow arbitrary extra keys (e.g., 'tier', 'scope', adapter-specific fields)
+    model_config = ConfigDict(extra='allow')
     
     @validator('importance', 'emotional_valence', 'emotional_arousal')
     def round_to_two_decimals(cls, v):

@@ -35,6 +35,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Optional, Union
 
+# Import lightweight BaseEvent to support publishing from modules that
+# define events on the shared base type rather than this module's Event
+try:  # Local import to avoid circulars in limited runtimes
+    from neuroca.core.events.base import BaseEvent as _BaseEvent
+except Exception:  # pragma: no cover - defensive import guard
+    _BaseEvent = None  # type: ignore
+
 # Setup module logger
 logger = logging.getLogger(__name__)
 
@@ -331,7 +338,7 @@ class EventBus:
             # Sort by priority
             return sorted(handlers, key=lambda h: h.priority)
     
-    async def publish(self, event: Event) -> EventContext:
+    async def publish(self, event: Any) -> EventContext:
         """Publish an event to all registered handlers.
         
         Args:
@@ -343,8 +350,11 @@ class EventBus:
         Raises:
             EventBusError: If there's an error publishing the event
         """
-        if not isinstance(event, Event):
-            raise EventBusError(f"Can only publish Event objects, got {type(event)}")
+        # Accept either this module's Event type or the shared BaseEvent
+        if not (isinstance(event, Event) or (_BaseEvent is not None and isinstance(event, _BaseEvent))):
+            raise EventBusError(
+                f"Can only publish Event/BaseEvent objects, got {type(event)}"
+            )
         
         # Create event context
         parent_context_id = getattr(_event_context, 'current_context_id', None)
@@ -505,7 +515,7 @@ class EventBusWithMiddleware(EventBus):
             self._middleware.remove(middleware)
             logger.debug(f"Removed middleware: {middleware.__class__.__name__}")
     
-    async def publish(self, event: Event) -> EventContext:
+    async def publish(self, event: Any) -> EventContext:
         """Publish an event through middleware and to all registered handlers.
         
         Args:
@@ -514,8 +524,10 @@ class EventBusWithMiddleware(EventBus):
         Returns:
             The event context containing results and execution information
         """
-        if not isinstance(event, Event):
-            raise EventBusError(f"Can only publish Event objects, got {type(event)}")
+        if not (isinstance(event, Event) or (_BaseEvent is not None and isinstance(event, _BaseEvent))):
+            raise EventBusError(
+                f"Can only publish Event/BaseEvent objects, got {type(event)}"
+            )
         
         # Create event context
         parent_context_id = getattr(_event_context, 'current_context_id', None)

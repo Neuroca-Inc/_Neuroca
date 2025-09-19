@@ -101,7 +101,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     VENV_PATH="/opt/pysetup/.venv" \
-    PATH="/opt/pysetup/.venv/bin:$PATH"
+    PATH="/opt/pysetup/.venv/bin:$PATH" \
+    ENV=production \
+    NCA_ENV=production
 
 # Install system runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
