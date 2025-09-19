@@ -65,16 +65,18 @@ cp langchain/*.md pages/langchain/
 To preview the documentation locally with live reloading:
 
 1. Navigate to the docs directory:
+
    ```bash
    cd Neuroca/docs
    ```
 
 2. Start the MkDocs development server:
+
    ```bash
    mkdocs serve
    ```
 
-3. Open your browser and go to http://127.0.0.1:8000
+3. Open your browser and go to <http://127.0.0.1:8000>
 
 The server will automatically reload when you make changes to the documentation.
 
@@ -83,11 +85,13 @@ The server will automatically reload when you make changes to the documentation.
 To build the static site for production deployment:
 
 1. Navigate to the docs directory:
+
    ```bash
    cd Neuroca/docs
    ```
 
 2. Build the site:
+
    ```bash
    mkdocs build
    ```
@@ -146,6 +150,7 @@ graph TD
     A[Start] --> B[Process]
     B --> C[End]
 ```
+
 ```
 
 ## MathJax

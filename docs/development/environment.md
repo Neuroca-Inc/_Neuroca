@@ -35,26 +35,32 @@ Before setting up the development environment, ensure you have the following ins
 ## Initial Setup
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/your-organization/neuroca.git
    cd neuroca
    ```
 
 2. **Set up Git hooks**:
+
    ```bash
    pre-commit install
    ```
 
 3. **Install dependencies using Poetry**:
+
    ```bash
    poetry install --with dev,test
    ```
+
    Use `poetry install` without extras when preparing a runtime-only environment.
 
 4. **Create local environment file**:
+
    ```bash
    cp .env.example .env
    ```
+
    Edit the `.env` file to configure your local environment variables.
 
 ## Environment Configuration
@@ -90,6 +96,7 @@ Configuration files are located in the `config/` directory:
 #### Visual Studio Code
 
 Recommended extensions:
+
 - Python
 - Pylance
 - Docker
@@ -99,6 +106,7 @@ Recommended extensions:
 - Python Test Explorer
 
 Recommended settings (`.vscode/settings.json`):
+
 ```json
 {
   "python.linting.enabled": true,
@@ -115,6 +123,7 @@ Recommended settings (`.vscode/settings.json`):
 #### PyCharm
 
 Recommended plugins:
+
 - Poetry
 - Docker
 - Makefile Support
@@ -122,17 +131,20 @@ Recommended plugins:
 ### Linting and Formatting
 
 The project uses the following tools:
+
 - **Black**: Code formatting
 - **isort**: Import sorting
 - **Flake8**: Linting
 - **mypy**: Type checking
 
 Run all checks:
+
 ```bash
 make lint
 ```
 
 Format code:
+
 ```bash
 make format
 ```
@@ -148,6 +160,7 @@ docker-compose up -d
 ```
 
 This will start all required services:
+
 - PostgreSQL database
 - Redis cache
 - Development server
@@ -155,13 +168,14 @@ This will start all required services:
 
 ### Accessing Services
 
-- **API**: http://localhost:8000
-- **Documentation**: http://localhost:8000/docs
-- **Monitoring Dashboard**: http://localhost:9090
+- **API**: <http://localhost:8000>
+- **Documentation**: <http://localhost:8000/docs>
+- **Monitoring Dashboard**: <http://localhost:9090>
 
 ### Rebuilding Containers
 
 After dependency changes:
+
 ```bash
 docker-compose build
 docker-compose up -d
@@ -227,6 +241,7 @@ docker-compose -f docker-compose.test.yml up -d
 ### Logging
 
 Logs are written to:
+
 - Console (during development)
 - `logs/` directory
 - Centralized logging service in containerized environments
@@ -236,6 +251,7 @@ Configure log level in `.env` file or via `NCA_LOG_LEVEL` environment variable.
 ### Debugging with VS Code
 
 Launch configurations are provided in `.vscode/launch.json` for:
+
 - API server
 - CLI tools
 - Test debugging
@@ -243,6 +259,7 @@ Launch configurations are provided in `.vscode/launch.json` for:
 ### Debugging with PyCharm
 
 Run/Debug configurations are included for:
+
 - API server
 - Common test scenarios
 
@@ -251,6 +268,7 @@ Run/Debug configurations are included for:
 ### Database Connection Issues
 
 If you encounter database connection problems:
+
 1. Ensure the database container is running: `docker-compose ps`
 2. Check database logs: `docker-compose logs db`
 3. Verify connection settings in `.env`
@@ -258,12 +276,14 @@ If you encounter database connection problems:
 ### Dependency Conflicts
 
 If you encounter dependency conflicts:
+
 1. Update Poetry lock file: `poetry update`
 2. Recreate virtual environment: `poetry env remove python && poetry install --with dev,test`
 
 ### Docker Memory Issues
 
 If Docker containers crash due to memory constraints:
+
 1. Increase Docker memory allocation in Docker Desktop settings
 2. For Linux, check system memory limits
 

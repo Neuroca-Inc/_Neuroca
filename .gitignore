@@ -222,3 +222,6 @@ reports/unified_analysis.html
 neuroca_temporal_analysis.db-wal
 neuroca_temporal_analysis.db-wal
 neuroca_temporal_analysis.db-wal
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

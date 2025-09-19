@@ -180,18 +180,10 @@ async def retrieve_memory(
             memory_item = await mtm_storage.retrieve(memory_id)
         elif tier == MemoryTier.LTM:
             # Try standard LTM, then vector
-            memory_item = await ltm_storage.retrieve(memory_id)
-            if not memory_item:
-                memory_item = await vector_storage.retrieve(memory_id)
+            memory_item = await ltm_storage.retrieve(memory_id) or await vector_storage.retrieve(memory_id)
         else:
             # Search all tiers
-            memory_item = await stm_storage.retrieve(memory_id)
-            if not memory_item:
-                memory_item = await mtm_storage.retrieve(memory_id)
-            if not memory_item:
-                memory_item = await ltm_storage.retrieve(memory_id)
-            if not memory_item:
-                memory_item = await vector_storage.retrieve(memory_id)
+            memory_item = await stm_storage.retrieve(memory_id) or await mtm_storage.retrieve(memory_id) or await ltm_storage.retrieve(memory_id) or await vector_storage.retrieve(memory_id)
 
     except Exception as e:
         logger.error(f"Error retrieving memory {memory_id}: {str(e)}")
@@ -216,7 +208,7 @@ async def search_memories(
     tags: Optional[List[str]] = None,
     limit: int = 10,
     min_relevance: float = 0.0,
-) -> SearchResults: # Changed return type hint
+) -> SearchResults:    # Changed return type hint
     """
     Search for memories across all tiers.
 
@@ -278,11 +270,6 @@ async def search_memories(
     try:
         # Build filter criteria based on query and tags
         filter_criteria = {}
-        if tags:
-            # Note: InMemorySearch text_search doesn't directly support complex filters like this.
-            # Tag filtering will be applied manually after retrieval for InMemory.
-            pass # filter_criteria["metadata.tags"] = {"$in": tags} # This won't work with text_search
-
         # Use text_search method on the search attribute (Corrected)
         stm_results_raw = await stm_storage.search.text_search(
             query=query,
@@ -360,8 +347,7 @@ async def search_memories(
 
     # Apply limit and construct MemorySearchResult objects
     final_results: List[MemorySearchResult] = []
-    rank = 1
-    for item, tier in all_result_tuples[:limit]:
+    for rank, (item, tier) in enumerate(all_result_tuples[:limit], start=1):
         search_result = MemorySearchResult(
             memory=item,
             relevance=getattr(item.metadata, 'relevance', 0.0),
@@ -370,8 +356,6 @@ async def search_memories(
             # similarity/distance could be added here if available from vector search
         )
         final_results.append(search_result)
-        rank += 1
-
     total_found_count = len(all_result_tuples) # Total unique items found before limit
 
     search_options = MemorySearchOptions(

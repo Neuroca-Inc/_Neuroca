@@ -5,6 +5,7 @@ This sandbox contains an advanced LLM client that demonstrates the full power of
 ## Features Demonstrated
 
 ### 🧠 Core Cognitive Architecture
+
 - **3-Tier Memory System**: STM → MTM → LTM with automatic consolidation
 - **Cognitive Control**: Attention management, goal setting, planning, decision making
 - **Metacognitive Monitoring**: Self-reflection and performance tracking
@@ -12,6 +13,7 @@ This sandbox contains an advanced LLM client that demonstrates the full power of
 - **Health Monitoring**: System health tracking and optimization
 
 ### 🎯 Advanced Capabilities
+
 - **10-Phase Cognitive Pipeline**: Complete processing workflow for each user input
 - **Memory Consolidation**: Automatic movement of memories between tiers
 - **Relationship Management**: Semantic connections between memories
@@ -27,18 +29,21 @@ This sandbox contains an advanced LLM client that demonstrates the full power of
 ## Usage
 
 ### Basic Usage
+
 ```bash
 cd sandbox
 python advanced_nca_llm_client.py
 ```
 
 ### Interactive Commands
+
 - Type any message to process through the full cognitive pipeline
 - `demo` - Run comprehensive cognitive features demonstration
 - `status` - Show current cognitive state and performance metrics
 - `quit` - Exit gracefully with session summary
 
 ### Example Session
+
 ```
 🎮 Starting Interactive NCA Session
 Type 'quit' to exit, 'demo' for feature demo, 'status' for cognitive state
@@ -106,11 +111,13 @@ The client implements a complete cognitive architecture with:
 ## Memory System
 
 ### Three-Tier Architecture
+
 - **STM (Short-Term Memory)**: Working memory for immediate context
 - **MTM (Medium-Term Memory)**: Intermediate consolidation layer
 - **LTM (Long-Term Memory)**: Permanent semantic storage with relationships
 
 ### Memory Operations
+
 - **Store**: Add new memories with rich metadata
 - **Retrieve**: Get specific memories by ID
 - **Search**: Find relevant memories across all tiers
@@ -119,31 +126,37 @@ The client implements a complete cognitive architecture with:
 ## Cognitive Control Components
 
 ### Attention Manager
+
 - Focus management for incoming stimuli
 - Context-aware attention allocation
 - Attention state tracking
 
 ### Goal Manager
+
 - Dynamic goal setting and tracking
 - Priority-based goal management
 - Goal-driven behavior
 
 ### Decision Maker
+
 - Multi-option decision making
 - Confidence scoring
 - Context-informed decisions
 
 ### Cognitive Planner
+
 - Task planning and decomposition
 - Goal-oriented plan generation
 - Adaptive planning strategies
 
 ### Response Inhibitor
+
 - Safety checks for generated responses
 - Content filtering and appropriateness
 - Risk assessment
 
 ### Metacognitive Monitor
+
 - Performance reflection and analysis
 - Error logging and pattern recognition
 - Self-optimization recommendations
@@ -158,6 +171,7 @@ The client implements a complete cognitive architecture with:
 ## Error Handling
 
 The client includes robust error handling with:
+
 - Graceful degradation for missing components
 - Stub implementations for unavailable features
 - Comprehensive logging
@@ -186,6 +200,7 @@ python advanced_nca_llm_client.py
 ```
 
 This will run through demonstrations of:
+
 1. Multi-tier memory system
 2. Cognitive control components
 3. Metacognitive monitoring
@@ -205,6 +220,7 @@ The client is designed to be extensible. You can:
 ## Performance
 
 The client tracks comprehensive performance metrics:
+
 - Processing time per cognitive phase
 - Memory retrieval efficiency
 - Decision confidence scores

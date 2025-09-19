@@ -102,10 +102,12 @@ class DatabaseAdapter:
     
     def connect(self) -> None:
         """Establish a connection to the database."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement connect()")
     
     def disconnect(self) -> None:
         """Close the database connection."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement disconnect()")
     
     def execute(self, query: str, params: Optional[dict[str, Any]] = None) -> Any:
@@ -119,22 +121,27 @@ class DatabaseAdapter:
         Returns:
             Query result
         """
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement execute()")
     
     def transaction_begin(self) -> None:
         """Begin a database transaction."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_begin()")
     
     def transaction_commit(self) -> None:
         """Commit the current transaction."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_commit()")
     
     def transaction_rollback(self) -> None:
         """Roll back the current transaction."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_rollback()")
     
     def ensure_migration_table(self) -> None:
         """Ensure the migration tracking table exists."""
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement ensure_migration_table()")
     
     def get_current_version(self) -> Optional[str]:
@@ -144,6 +151,7 @@ class DatabaseAdapter:
         Returns:
             Current version string or None if no migrations have been applied
         """
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement get_current_version()")
     
     def record_migration(self, version: str, direction: MigrationDirection, 
@@ -157,6 +165,7 @@ class DatabaseAdapter:
             script_hash: Hash of the migration script
             execution_time: Time taken to execute the migration in seconds
         """
+        # TODO Finish this
         raise NotImplementedError("Subclasses must implement record_migration()")
 
 

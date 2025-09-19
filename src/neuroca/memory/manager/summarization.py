@@ -159,6 +159,7 @@ class SummarizationBackend:
         *,
         options: SummarizationOptions,
     ) -> BatchSummary:
+        # TODO Finish this
         raise NotImplementedError
 
 

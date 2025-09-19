@@ -62,6 +62,7 @@ class ConsolidationStrategy:
         Returns:
             List of consolidated memories
         """
+        # TODO Finish this
         raise NotImplementedError("Consolidation strategies must implement apply()")
 
 

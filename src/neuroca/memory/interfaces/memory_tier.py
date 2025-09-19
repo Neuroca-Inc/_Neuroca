@@ -452,4 +452,5 @@ class MemoryTierInterface(abc.ABC):
             MemoryNotFoundError: If the memory does not exist
             TierOperationError: If the operation fails
         """
+        # TODO Finish this
         raise NotImplementedError("This tier does not support relationships")
