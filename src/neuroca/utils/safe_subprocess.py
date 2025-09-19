@@ -153,7 +153,9 @@ def _invoke_subprocess(
 ) -> CompletedProcess[Any]:
     """Invoke ``subprocess.run`` using the sanitized command and options."""
 
-    return subprocess.run(command, **dict(run_kwargs))
+    options = dict(run_kwargs)
+    options["args"] = command
+    return subprocess.run(**options)
 
 
 def run_validated_command(
