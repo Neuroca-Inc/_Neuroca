@@ -102,12 +102,10 @@ class DatabaseAdapter:
     
     def connect(self) -> None:
         """Establish a connection to the database."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement connect()")
     
     def disconnect(self) -> None:
         """Close the database connection."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement disconnect()")
     
     def execute(self, query: str, params: Optional[dict[str, Any]] = None) -> Any:
@@ -121,27 +119,22 @@ class DatabaseAdapter:
         Returns:
             Query result
         """
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement execute()")
     
     def transaction_begin(self) -> None:
         """Begin a database transaction."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_begin()")
     
     def transaction_commit(self) -> None:
         """Commit the current transaction."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_commit()")
     
     def transaction_rollback(self) -> None:
         """Roll back the current transaction."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement transaction_rollback()")
     
     def ensure_migration_table(self) -> None:
         """Ensure the migration tracking table exists."""
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement ensure_migration_table()")
     
     def get_current_version(self) -> Optional[str]:
@@ -151,7 +144,6 @@ class DatabaseAdapter:
         Returns:
             Current version string or None if no migrations have been applied
         """
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement get_current_version()")
     
     def record_migration(self, version: str, direction: MigrationDirection, 
@@ -165,7 +157,6 @@ class DatabaseAdapter:
             script_hash: Hash of the migration script
             execution_time: Time taken to execute the migration in seconds
         """
-        # TODO Finish this
         raise NotImplementedError("Subclasses must implement record_migration()")
 
 
@@ -176,13 +167,13 @@ class PostgresAdapter(DatabaseAdapter):
         """Establish a connection to PostgreSQL."""
         if not POSTGRES_AVAILABLE:
             raise ImportError("psycopg2 is required for PostgreSQL support")
-        
+
         try:
             self.connection = psycopg2.connect(**self.connection_params)
             logger.info("Connected to PostgreSQL database")
         except psycopg2.Error as e:
             logger.error(f"Failed to connect to PostgreSQL: {e}")
-            raise MigrationError(f"Database connection failed: {e}")
+            raise MigrationError(f"Database connection failed: {e}") from e
     
     def disconnect(self) -> None:
         """Close the PostgreSQL connection."""
@@ -195,14 +186,14 @@ class PostgresAdapter(DatabaseAdapter):
         """Execute a query on PostgreSQL."""
         if not self.connection:
             self.connect()
-            
+
         cursor = self.connection.cursor()
         try:
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
-                
+
             if query.strip().upper().startswith(("SELECT", "RETURNING")):
                 return cursor.fetchall()
             return None
@@ -211,7 +202,7 @@ class PostgresAdapter(DatabaseAdapter):
             logger.debug(f"Failed query: {query}")
             if params:
                 logger.debug(f"Query parameters: {params}")
-            raise MigrationExecutionError(f"Query execution failed: {e}")
+            raise MigrationExecutionError(f"Query execution failed: {e}") from e
         finally:
             cursor.close()
     
@@ -256,9 +247,7 @@ class PostgresAdapter(DatabaseAdapter):
         LIMIT 1
         """
         result = self.execute(query)
-        if result and result[0]:
-            return result[0][0]
-        return None
+        return result[0][0] if result and result[0] else None
     
     def record_migration(self, version: str, direction: MigrationDirection, 
                          script_hash: str, execution_time: float) -> None:
@@ -285,7 +274,7 @@ class SQLiteAdapter(DatabaseAdapter):
         """Establish a connection to SQLite."""
         if not SQLITE_AVAILABLE:
             raise ImportError("sqlite3 is required for SQLite support")
-        
+
         try:
             db_path = self.connection_params.get("database", ":memory:")
             self.connection = sqlite3.connect(db_path)
@@ -293,7 +282,7 @@ class SQLiteAdapter(DatabaseAdapter):
             logger.info(f"Connected to SQLite database at {db_path}")
         except sqlite3.Error as e:
             logger.error(f"Failed to connect to SQLite: {e}")
-            raise MigrationError(f"Database connection failed: {e}")
+            raise MigrationError(f"Database connection failed: {e}") from e
     
     def disconnect(self) -> None:
         """Close the SQLite connection."""
@@ -306,14 +295,14 @@ class SQLiteAdapter(DatabaseAdapter):
         """Execute a query on SQLite."""
         if not self.connection:
             self.connect()
-            
+
         cursor = self.connection.cursor()
         try:
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
-                
+
             if query.strip().upper().startswith("SELECT"):
                 return cursor.fetchall()
             return None
@@ -322,7 +311,7 @@ class SQLiteAdapter(DatabaseAdapter):
             logger.debug(f"Failed query: {query}")
             if params:
                 logger.debug(f"Query parameters: {params}")
-            raise MigrationExecutionError(f"Query execution failed: {e}")
+            raise MigrationExecutionError(f"Query execution failed: {e}") from e
         finally:
             cursor.close()
     
@@ -367,9 +356,7 @@ class SQLiteAdapter(DatabaseAdapter):
         LIMIT 1
         """
         result = self.execute(query)
-        if result and len(result) > 0:
-            return result[0]['version']
-        return None
+        return result[0]['version'] if result and len(result) > 0 else None
     
     def record_migration(self, version: str, direction: MigrationDirection, 
                          script_hash: str, execution_time: float) -> None:
@@ -396,17 +383,17 @@ class MongoDBAdapter(DatabaseAdapter):
         """Establish a connection to MongoDB."""
         if not MONGODB_AVAILABLE:
             raise ImportError("pymongo is required for MongoDB support")
-        
+
         try:
             connection_string = self.connection_params.get("connection_string", "mongodb://localhost:27017/")
             db_name = self.connection_params.get("database", "neuroca")
-            
+
             self.client = pymongo.MongoClient(connection_string)
             self.db = self.client[db_name]
             logger.info(f"Connected to MongoDB database: {db_name}")
         except pymongo.errors.ConnectionFailure as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
-            raise MigrationError(f"Database connection failed: {e}")
+            raise MigrationError(f"Database connection failed: {e}") from e
     
     def disconnect(self) -> None:
         """Close the MongoDB connection."""
@@ -424,22 +411,20 @@ class MongoDBAdapter(DatabaseAdapter):
         """
         if not hasattr(self, 'db'):
             self.connect()
-            
+
         try:
             operation = json.loads(query)
             collection_name = operation.get("collection")
             action = operation.get("action")
-            
+
             if not collection_name or not action:
                 raise MigrationExecutionError("MongoDB operation requires 'collection' and 'action' fields")
-                
+
             collection = self.db[collection_name]
-            
+
             if action == "insert":
                 documents = operation.get("documents", [])
-                if documents:
-                    return collection.insert_many(documents)
-                return None
+                return collection.insert_many(documents) if documents else None
             elif action == "update":
                 filter_doc = operation.get("filter", {})
                 update_doc = operation.get("update", {})
@@ -463,14 +448,14 @@ class MongoDBAdapter(DatabaseAdapter):
                 return self.db.drop_collection(collection_name)
             else:
                 raise MigrationExecutionError(f"Unsupported MongoDB action: {action}")
-                
+
         except json.JSONDecodeError as e:
             logger.error(f"Invalid MongoDB operation JSON: {e}")
-            raise MigrationExecutionError(f"Invalid MongoDB operation JSON: {e}")
+            raise MigrationExecutionError(f"Invalid MongoDB operation JSON: {e}") from e
         except pymongo.errors.PyMongoError as e:
             logger.error(f"MongoDB operation failed: {e}")
             logger.debug(f"Failed operation: {query}")
-            raise MigrationExecutionError(f"MongoDB operation failed: {e}")
+            raise MigrationExecutionError(f"MongoDB operation failed: {e}") from e
     
     def transaction_begin(self) -> None:
         """Begin a MongoDB transaction."""
@@ -504,15 +489,13 @@ class MongoDBAdapter(DatabaseAdapter):
         """Get the current schema version from MongoDB."""
         if not hasattr(self, 'db'):
             self.connect()
-            
+
         latest_migration = self.db.schema_migrations.find_one(
             {"direction": "up"},
             sort=[("applied_at", pymongo.DESCENDING)]
         )
-        
-        if latest_migration:
-            return latest_migration.get("version")
-        return None
+
+        return latest_migration.get("version") if latest_migration else None
     
     def record_migration(self, version: str, direction: MigrationDirection, 
                          script_hash: str, execution_time: float) -> None:
@@ -560,7 +543,9 @@ class Migration:
                 return hashlib.sha256(content).hexdigest()
         except OSError as e:
             logger.error(f"Failed to read migration file {self.path}: {e}")
-            raise MigrationFileError(f"Failed to read migration file {self.path}: {e}")
+            raise MigrationFileError(
+                f"Failed to read migration file {self.path}: {e}"
+            ) from e
     
     def load(self) -> dict[str, Callable]:
         """
@@ -574,24 +559,24 @@ class Migration:
             spec = importlib.util.spec_from_file_location(module_name, self.path)
             if spec is None or spec.loader is None:
                 raise MigrationFileError(f"Failed to load migration module: {self.path}")
-                
+
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            
+
             # Verify that the module has up and down functions
             if not hasattr(module, 'up') or not callable(module.up):
                 raise MigrationFileError(f"Migration {self.path} is missing an 'up' function")
-            
+
             if not hasattr(module, 'down') or not callable(module.down):
                 raise MigrationFileError(f"Migration {self.path} is missing a 'down' function")
-            
+
             return {
                 'up': module.up,
                 'down': module.down
             }
         except Exception as e:
             logger.error(f"Failed to load migration {self.path}: {e}")
-            raise MigrationFileError(f"Failed to load migration {self.path}: {e}")
+            raise MigrationFileError(f"Failed to load migration {self.path}: {e}") from e
     
     def __str__(self) -> str:
         """String representation of the migration."""
@@ -666,23 +651,22 @@ class SchemaMigrator:
         """
         # Clear existing migrations
         self.migrations = {}
-        
+
         # Pattern for migration files: v1.0.0_description.py
         pattern = re.compile(r'^v(\d+\.\d+\.\d+)_(.*)\.py$')
-        
+
         for file_path in self.migration_dir.glob("*.py"):
-            match = pattern.match(file_path.name)
-            if match:
-                version = match.group(1)
-                description = match.group(2).replace('_', ' ')
-                
+            if match := pattern.match(file_path.name):
+                version = match[1]
+                description = match[2].replace('_', ' ')
+
                 if version in self.migrations:
                     logger.warning(f"Duplicate migration version {version} found: {file_path}")
                     continue
-                
+
                 self.migrations[version] = Migration(version, file_path, description)
                 logger.debug(f"Loaded migration: {version} - {description}")
-        
+
         logger.info(f"Loaded {len(self.migrations)} migrations")
     
     def _sort_versions(self, versions: list[str]) -> list[str]:
@@ -858,36 +842,31 @@ class SchemaMigrator:
         """
         # Connect to the database
         self.adapter.connect()
-        
+
         try:
             # Ensure migration table exists
             self.adapter.ensure_migration_table()
-            
+
             # Get current version
             current_version = self.adapter.get_current_version()
-            
+
             if current_version is None:
                 logger.info("No migrations have been applied")
                 return
-            
+
             all_versions = self._sort_versions(list(self.migrations.keys()))
-            
+
             # If no target version specified, roll back one version
             if target_version is None:
                 current_index = all_versions.index(current_version)
-                if current_index > 0:
-                    target_version = all_versions[current_index - 1]
-                else:
-                    # Rolling back from the first version means going to initial state
-                    target_version = None
-            
+                target_version = all_versions[current_index - 1] if current_index > 0 else None
             if target_version == current_version:
                 logger.info(f"Database is already at version {target_version}")
                 return
-                
+
             # Migrate to the target version (which will handle rollbacks)
             self.migrate_to_version(target_version, dry_run)
-            
+
         finally:
             # Disconnect from the database
             self.adapter.disconnect()
@@ -905,35 +884,37 @@ class SchemaMigrator:
         """
         migration = self.migrations[version]
         logger.info(f"Applying {direction.value} migration to version {version} ({migration.description})")
-        
+
         # Load migration module
         migration_module = migration.load()
         migration_func = migration_module[direction.value]
-        
+
         # Begin transaction if supported
         self.adapter.transaction_begin()
-        
+
         start_time = time.time()
         try:
             # Apply migration
             migration_func(self.adapter)
-            
+
             # Record migration
             execution_time = time.time() - start_time
             self.adapter.record_migration(version, direction, migration.hash, execution_time)
-            
+
             # Commit transaction
             self.adapter.transaction_commit()
-            
+
             logger.info(f"Successfully applied {direction.value} migration to version {version} "
                        f"in {execution_time:.2f} seconds")
-                       
+
         except Exception as e:
             # Roll back transaction
             self.adapter.transaction_rollback()
-            
+
             logger.error(f"Failed to apply {direction.value} migration to version {version}: {e}")
-            raise MigrationExecutionError(f"Failed to apply {direction.value} migration to version {version}: {e}")
+            raise MigrationExecutionError(
+                f"Failed to apply {direction.value} migration to version {version}: {e}"
+            ) from e
     
     def get_migration_history(self) -> list[dict[str, Any]]:
         """
@@ -943,10 +924,10 @@ class SchemaMigrator:
             List of migration history entries
         """
         self.adapter.connect()
-        
+
         try:
             self.adapter.ensure_migration_table()
-            
+
             # This is a simplified implementation - actual implementation would
             # need to be adapter-specific to retrieve the history
             query = """
@@ -954,12 +935,8 @@ class SchemaMigrator:
             FROM schema_migrations 
             ORDER BY applied_at DESC
             """
-            
-            result = self.adapter.execute(query)
-            
-            # Format depends on the adapter, so we'll return a generic result
-            return result
-            
+
+            return self.adapter.execute(query)
         finally:
             self.adapter.disconnect()
     
@@ -1031,13 +1008,13 @@ if __name__ == "__main__":
         --verbose           Enable verbose logging
     """
     import argparse
-    
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
     parser = argparse.ArgumentParser(description="Database Schema Migration Tool")
     parser.add_argument("--config", required=True, help="Path to database configuration file")
     parser.add_argument("--dir", default="migrations", help="Path to migration directory")
@@ -1048,13 +1025,13 @@ if __name__ == "__main__":
     parser.add_argument("--history", action="store_true", help="Show migration history")
     parser.add_argument("--validate", action="store_true", help="Validate migrations")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
-    
+
     args = parser.parse_args()
-    
+
     # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     # Load configuration
     try:
         with open(args.config) as f:
@@ -1062,14 +1039,14 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Failed to load configuration file: {e}")
         sys.exit(1)
-    
+
     # Create migrator
     try:
         migrator = SchemaMigrator(db_config, args.dir)
     except Exception as e:
         logger.error(f"Failed to initialize migrator: {e}")
         sys.exit(1)
-    
+
     # Execute requested action
     try:
         if args.history:
@@ -1078,8 +1055,7 @@ if __name__ == "__main__":
             for entry in history:
                 print(f"  {entry}")
         elif args.validate:
-            errors = migrator.validate_migrations()
-            if errors:
+            if errors := migrator.validate_migrations():
                 print("Validation Errors:")
                 for error in errors:
                     print(f"  {error}")

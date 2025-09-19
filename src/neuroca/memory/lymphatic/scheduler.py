@@ -89,13 +89,11 @@ class ScheduledTask:
     
     def __eq__(self, other):
         if not isinstance(other, ScheduledTask):
-            # TODO Finish this
             return NotImplemented
         return (self.next_run_time, self.priority) == (other.next_run_time, other.priority)
     
     def __lt__(self, other):
         if not isinstance(other, ScheduledTask):
-            # TODO Finish this
             return NotImplemented
         return (self.next_run_time, self.priority) < (other.next_run_time, other.priority)
     

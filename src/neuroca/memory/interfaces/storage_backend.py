@@ -277,7 +277,6 @@ class StorageBackendInterface(abc.ABC):
             NotImplementedError: If the backend does not support vector search
             StorageOperationError: If the vector search operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support vector search")
     
     async def store_embedding(
@@ -304,7 +303,6 @@ class StorageBackendInterface(abc.ABC):
             NotImplementedError: If the backend does not support embeddings
             StorageOperationError: If the store embedding operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support embedding storage")
     
     #-----------------------------------------------------------------------
@@ -330,7 +328,6 @@ class StorageBackendInterface(abc.ABC):
             ItemNotFoundError: If the item does not exist
             StorageOperationError: If the set expiry operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support item expiry")
     
     async def get_expiry(self, item_id: str) -> Optional[datetime]:
@@ -351,7 +348,6 @@ class StorageBackendInterface(abc.ABC):
             ItemNotFoundError: If the item does not exist
             StorageOperationError: If the get expiry operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support item expiry")
     
     async def clear_expiry(self, item_id: str) -> bool:
@@ -372,7 +368,6 @@ class StorageBackendInterface(abc.ABC):
             ItemNotFoundError: If the item does not exist
             StorageOperationError: If the clear expiry operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support item expiry")
     
     async def list_expired(self, before: datetime = datetime.now()) -> List[str]:
@@ -392,7 +387,6 @@ class StorageBackendInterface(abc.ABC):
             NotImplementedError: If the backend does not support expiry
             StorageOperationError: If the list expired operation fails
         """
-        # TODO Finish this
         raise NotImplementedError("This backend does not support item expiry")
     
     #-----------------------------------------------------------------------
