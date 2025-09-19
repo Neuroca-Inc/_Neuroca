@@ -178,49 +178,74 @@ nav:
     - Getting Started: user/getting-started.md
     - Configuration: user/configuration.md
     - Usage Examples: user/examples.md
+    - Extensions: user/extensions.md
+    - Advanced Usage: user/advanced-usage.md
     - Integration: user/integration.md
   - Architecture:
     - Overview: architecture/components.md
     - Data Flow: architecture/data_flow.md
-    - Diagrams:
-      - System Architecture: architecture/diagrams/system-architecture.md
-      - Health System:
-        - Overview: architecture/diagrams/health-system/overview.md
-        - Components: architecture/diagrams/health-system/index.md
-      - Memory System:
-        - Overview: architecture/diagrams/memory-system/overview.md
-        - Tiers: architecture/diagrams/memory-system/tiers.md
-      - Cognitive Control:
-        - Overview: architecture/diagrams/cognitive-control/overview.md
-      - Integration:
-        - LangChain: architecture/diagrams/integration/langchain.md
+    - Cognitive Control Lifecycle: architecture/cognitive_control_lifecycle.md
     - Memory System:
-      - Backend Config: architecture/memory_system_backend_configuration.md
-      - Interactions: architecture/memory_system_component_interactions.md
+      - Backend Configuration: architecture/memory_system_backend_configuration.md
+      - Component Interactions: architecture/memory_system_component_interactions.md
+      - Deployment Guide: architecture/memory_system_deployment_guide.md
+      - Directory Structure: architecture/memory_system_directory_structure.md
       - Refactoring: architecture/memory_system_refactoring.md
       - Thread Safety: architecture/memory_system_thread_safety_fixes.md
-    - Cognitive Control Lifecycle: architecture/cognitive_control_lifecycle.md
-    - Deployment Guide: architecture/memory_system_deployment_guide.md
-    - Directory Structure: architecture/memory_system_directory_structure.md
-    - Test Plan: architecture/memory_system_test_plan.md
-    - Decisions:
+      - Test Plan: architecture/memory_system_test_plan.md
+    - Architecture Decisions:
       - Overview: architecture/architecture_decisions.md
       - ADR-001 Memory Tiers: architecture/decisions/adr-001-memory-tiers.md
       - ADR-002 Health System: architecture/decisions/adr-002-health-system.md
       - ADR-003 Integration Approach: architecture/decisions/adr-003-integration-approach.md
+    - Diagrams:
+      - Overview: architecture/diagrams/index.md
+      - System Architecture: architecture/diagrams/system-architecture.md
+      - Data Flow: architecture/diagrams/data-flow/index.md
+      - Cognitive Control:
+        - Index: architecture/diagrams/cognitive-control/index.md
+        - Overview: architecture/diagrams/cognitive-control/overview.md
+        - Attention: architecture/diagrams/cognitive-control/attention.md
+        - Decision: architecture/diagrams/cognitive-control/decision.md
+        - Goals: architecture/diagrams/cognitive-control/components/goals.md
+        - Inhibition: architecture/diagrams/cognitive-control/components/inhibition.md
+        - Metacognition: architecture/diagrams/cognitive-control/components/metacognition.md
+        - Planning: architecture/diagrams/cognitive-control/components/planning.md
+      - Memory System:
+        - Index: architecture/diagrams/memory-system/index.md
+        - Overview: architecture/diagrams/memory-system/overview.md
+        - Tiers: architecture/diagrams/memory-system/tiers.md
+        - Backends: architecture/diagrams/memory-system/components/backends.md
+        - Lymphatic: architecture/diagrams/memory-system/components/lymphatic.md
+      - Health System:
+        - Index: architecture/diagrams/health-system/index.md
+        - Overview: architecture/diagrams/health-system/overview.md
+        - Dynamics: architecture/diagrams/health-system/components/dynamics.md
+        - Monitoring: architecture/diagrams/health-system/components/monitoring.md
+        - Registry: architecture/diagrams/health-system/components/registry.md
+      - Integration:
+        - Index: architecture/diagrams/integration/index.md
+        - Overview: architecture/diagrams/integration/overview.md
+        - APIs: architecture/diagrams/integration/apis.md
+        - Data Exchange: architecture/diagrams/integration/data-exchange.md
+        - LangChain: architecture/diagrams/integration/langchain.md
+        - LLM Providers: architecture/diagrams/integration/llm.md
+        - Plugins: architecture/diagrams/integration/plugins.md
+        - Component APIs: architecture/diagrams/integration/components/apis.md
+        - Component LLM: architecture/diagrams/integration/components/llm.md
+      - Infrastructure: architecture/diagrams/infrastructure/index.md
   - API Reference:
     - Endpoints: api/endpoints.md
     - Schemas: api/schemas.md
+    - Reference: api/reference.md
     - Examples: api/examples.md
   - Development:
-    - Contributing: development/contributing.md
     - Environment Setup: development/environment.md
-    - Standards: development/standards.md
     - Workflow: development/workflow.md
-    - Scroll Fix: development/scroll_fix.md
-    - HTTPS Setup: development/https_setup.md
-    - Guides:
-      - Publishing to PyPI: guides/publishing_to_pypi.md
+    - Standards: development/standards.md
+    - Contributing: development/contributing.md
+    - Documentation Guide: development/documentation-guide.md
+    - Publishing to PyPI: guides/publishing_to_pypi.md
   - Operations:
     - Deployment: operations/deployment.md
     - Monitoring: operations/monitoring.md
@@ -229,4 +254,16 @@ nav:
       - Backup & Restore: operations/runbooks/backup-restore.md
       - Incident Response: operations/runbooks/incident-response.md
       - Scaling: operations/runbooks/scaling.md
-  - Docs Build Info: docs-build-info.md
+      - Ollama Model Permissions: operations/runbooks/ollama-models-permissions.md
+      - Soak Test: operations/runbooks/soak-test.md
+  - Health System:
+    - Overview: health_system/README.md
+    - Implementation Guide: health_system/implementation_guide.md
+    - Technical Benefits: health_system/technical_benefits.md
+  - LangChain Integration:
+    - Overview: langchain/index.md
+    - Chains: langchain/chains.md
+    - Memory: langchain/memory.md
+    - Tools: langchain/tools.md
+  - Documentation:
+    - Build Info: docs-build-info.md

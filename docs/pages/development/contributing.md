@@ -25,7 +25,7 @@ Thank you for your interest in contributing to the NeuroCognitive Architecture (
 
 ## Code of Conduct
 
-We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](../community/code_of_conduct.md).
+We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/CODE_OF_CONDUCT.md).
 
 ## Getting Started
 

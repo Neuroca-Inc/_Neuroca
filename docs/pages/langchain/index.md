@@ -48,6 +48,7 @@ result = chain.run("Process this information")
 ## Available Tools
 
 The integration provides the following LangChain tools:
+
 - `MemoryStorageTool`: Store information in NCA's memory system
 - `MemoryRetrievalTool`: Retrieve information from NCA's memory
 - `HealthMonitorTool`: Interact with NCA's health monitoring system
@@ -56,6 +57,7 @@ The integration provides the following LangChain tools:
 ## Detailed Documentation
 
 For more detailed information, see the source code documentation in:
-- [chains.py](../../src/neuroca/integration/langchain/chains.py)
-- [memory.py](../../src/neuroca/integration/langchain/memory.py)
-- [tools.py](../../src/neuroca/integration/langchain/tools.py)
+
+- [chains.py](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/src/neuroca/integration/langchain/chains.py)
+- [memory.py](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/src/neuroca/integration/langchain/memory.py)
+- [tools.py](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/src/neuroca/integration/langchain/tools.py)
