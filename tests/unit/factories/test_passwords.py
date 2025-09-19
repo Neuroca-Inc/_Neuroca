@@ -24,7 +24,10 @@ MODULE_SPEC.loader.exec_module(passwords)
 def clear_password_cache(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Ensure each test starts with a clean password cache."""
 
-    monkeypatch.delenv(passwords.DEFAULT_PASSWORD_ENV_VAR, raising=False)
+    passwords.reset_default_user_password_cache()
+    monkeypatch.delenv("NEUROCA_TEST_PASSWORD_ENV_VAR_NAME", raising=False)
+    fallback_env = passwords.get_password_env_var_name()
+    monkeypatch.delenv(fallback_env, raising=False)
     passwords.reset_default_user_password_cache()
     yield
     passwords.reset_default_user_password_cache()
@@ -34,7 +37,8 @@ def test_get_default_user_password_returns_env_value(monkeypatch: pytest.MonkeyP
     """Environment variables should take precedence over generated passwords."""
 
     expected_password = "EnvSecret!123"
-    monkeypatch.setenv(passwords.DEFAULT_PASSWORD_ENV_VAR, expected_password)
+    env_var_name = passwords.get_password_env_var_name()
+    monkeypatch.setenv(env_var_name, expected_password)
 
     assert passwords.get_default_user_password() == expected_password
 
@@ -67,7 +71,8 @@ def test_get_default_user_password_rejects_blank_env(monkeypatch: pytest.MonkeyP
         return "GeneratedPasswordValue"
 
     monkeypatch.setattr(passwords.secrets, "token_urlsafe", fake_token_urlsafe)
-    monkeypatch.setenv(passwords.DEFAULT_PASSWORD_ENV_VAR, invalid_value)
+    env_var_name = passwords.get_password_env_var_name()
+    monkeypatch.setenv(env_var_name, invalid_value)
 
     assert passwords.get_default_user_password() == "GeneratedPasswordValue"
     assert generated_lengths == [32]

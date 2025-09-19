@@ -390,10 +390,10 @@ async def test_shutdown_waits_for_inflight_consolidation() -> None:
     original_store = mtm_tier.store
     assert callable(original_store), "MTM tier store must be callable for test setup"
 
-    async def blocking_store(self, payload: MemoryItem) -> str:
+    async def blocking_store(self, payload: MemoryItem, _delegate=original_store) -> str:
         store_started.set()
         await release_store.wait()
-        return await original_store(payload)
+        return await _delegate(payload)
 
     mtm_tier.store = MethodType(blocking_store, mtm_tier)
 

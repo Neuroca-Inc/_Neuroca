@@ -12,9 +12,12 @@ frequently used neural pathways and reuses recently computed results.
 
 import base64
 import binascii
+import builtins
+import datetime
 import functools
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -130,6 +133,52 @@ class CacheEntry:
         """Mark the entry as accessed."""
         self.last_accessed_at = time.time()
         self.access_count += 1
+
+
+_SAFE_PICKLE_BUILTINS = {
+    "bool",
+    "bytes",
+    "bytearray",
+    "complex",
+    "dict",
+    "float",
+    "frozenset",
+    "int",
+    "list",
+    "set",
+    "str",
+    "tuple",
+    "NoneType",
+}
+
+_SAFE_PICKLE_EXTERNALS = {
+    ("datetime", "datetime"): datetime.datetime,
+    ("datetime", "timedelta"): datetime.timedelta,
+}
+
+
+class _RestrictedCacheEntryUnpickler(pickle.Unpickler):
+    """Unpickler that restricts which globals can be loaded from cache entries."""
+
+    def find_class(self, module: str, name: str) -> Any:  # noqa: D401 - override behaviour
+        if module == "builtins" and name in _SAFE_PICKLE_BUILTINS:
+            return getattr(builtins, name)
+        external = _SAFE_PICKLE_EXTERNALS.get((module, name))
+        if external is not None:
+            return external
+        if module == CacheEntry.__module__ and name == CacheEntry.__name__:
+            return CacheEntry
+        raise pickle.UnpicklingError(
+            f"Attempted to load disallowed object '{module}.{name}' from cache."
+        )
+
+
+def _loads_cache_entry(payload: bytes) -> CacheEntry:
+    buffer = io.BytesIO(payload)
+    entry = _RestrictedCacheEntryUnpickler(buffer).load()
+    if not isinstance(entry, CacheEntry):
+        raise TypeError("Unexpected cache entry type")
+    return entry
 
 
 class CacheBackend(ABC):
@@ -565,9 +614,12 @@ class FileCache(CacheBackend):
     def _read_entry(self, cache_path: Path) -> CacheEntry:
         data = cache_path.read_bytes()
         payload = _verify_and_extract(self._signing_key, data)
-        entry = pickle.loads(payload)
-        if not isinstance(entry, CacheEntry):
-            raise TypeError("Unexpected cache entry type")
+        try:
+            entry = _loads_cache_entry(payload)
+        except (pickle.UnpicklingError, TypeError) as exc:
+            raise ValueError(
+                f"Cache payload could not be safely deserialized: {type(exc).__name__}: {exc}"
+            ) from exc
         return entry
 
     def _write_entry(self, cache_path: Path, entry: CacheEntry) -> None:
@@ -679,16 +731,19 @@ class RedisCache(CacheBackend):
             return None
 
         try:
-            # Deserialize the value
+            # Deserialize the value using the restricted cache loader
             payload = _verify_and_extract(self._signing_key, value)
-            entry = pickle.loads(payload)
+            entry = _loads_cache_entry(payload)
 
-            # No need to check expiration, Redis handles that
+            if entry.is_expired():
+                self._redis.delete(redis_key)
+                self._redis.hincrby(self._stats_key, "misses", 1)
+                return None
 
             # Increment hit counter
             self._redis.hincrby(self._stats_key, "hits", 1)
 
-            return entry
+            return entry.value
         except (pickle.UnpicklingError, ValueError, TypeError) as e:
             logger.warning(f"Failed to deserialize cache entry {key}: {e}")
             self._redis.hincrby(self._stats_key, "misses", 1)
@@ -710,16 +765,17 @@ class RedisCache(CacheBackend):
         redis_key = self._get_redis_key(key)
 
         try:
-            # Serialize the value
-            serialized = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+            expires_at = None if ttl is None else time.time() + float(ttl)
+            entry = CacheEntry(key=key, value=value, expires_at=expires_at)
+            serialized = pickle.dumps(entry, protocol=pickle.HIGHEST_PROTOCOL)
             signed_payload = _sign_payload(self._signing_key, serialized)
 
             # Store in Redis
             if ttl is not None:
-                self._redis.setex(redis_key, int(ttl), signed_payload)
+                self._redis.setex(redis_key, int(max(1, float(ttl))), signed_payload)
             else:
                 self._redis.set(redis_key, signed_payload)
-        except (pickle.PicklingError, redis.RedisError, ValueError) as e:
+        except (pickle.PicklingError, redis.RedisError, ValueError, TypeError) as e:
             logger.warning(f"Failed to store cache entry {key}: {e}")
 
     def delete(self, key: str) -> bool:

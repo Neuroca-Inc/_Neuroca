@@ -2,18 +2,43 @@
 
 Here are the actionable checklist items:
 
-- [ ] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 397) due to `subprocess.run` with user controlled data.
-- [ ] Address command injection vulnerability in `src/neuroca/cli/commands/system.py` (line 1145) due to `subprocess.run` without a static string.
-- [ ] Resolve "counter is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 1136).
-- [ ] Address SQL Injection vulnerability in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py` (line 224).
-- [ ] Resolve "handler is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 882).
-- [ ] Investigate and resolve "No value for argument 'user_id' in constructor call" in `src/neuroca/api/routes/memory_v1.py` (line 143).
-- [ ] Resolve "original_store is not callable" error in `tests/unit/memory/manager/test_transactional_consolidation.py` (line 396).
-- [ ] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 397) due to `subprocess.run` without a static string.
-- [ ] Address command injection vulnerability in `src/neuroca/monitoring/health/probes.py` (line 654) due to `subprocess.run` without a static string.
-- [ ] Address SQL Injection vulnerability in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py` (line 220).
-- [ ] Replace or secure usage of `pickle` module in `src/neuroca/tools/caching.py` (line 568) to mitigate deserialization attacks.
-- [ ] Remove or secure possible hardcoded password (`DEFAULT_PASSWORD_ENV_VAR`) in `tests/factories/passwords.py` (line 9).
+- [x] Investigate and fix 'No value for argument user_id in constructor call' in `src/neuroca/api/routes/memory_v1.py` (line 146).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/cli/commands/llm.py` (line 221).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/cli/commands/system.py` (line 1241).
+- [x] Address Command Injection vulnerability due to detected `subprocess.run` without a static string in `src/neuroca/monitoring/health/probes.py` (line 853).
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/cli/commands/llm.py` (line 137).
+- [x] Address Command Injection vulnerability (subprocess.run with user controlled data) in `src/neuroca/cli/commands/llm.py` (line 137).
+- [x] Fix "No value for argument 'user_id' in constructor call" in `src/neuroca/api/routes/memory_v1.py` (line 146).
+- [x] Fix "handler is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 974).
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/monitoring/health/probes.py` (line 683).
+- [x] Address Command Injection vulnerability (subprocess.run without a static string) in `src/neuroca/cli/commands/system.py` (line 1117).
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 397) due to `subprocess.run` with user controlled data.
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/system.py` (line 1145) due to `subprocess.run` without a static string.
+- [x] Resolve "counter is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 1136).
+- [x] Address SQL Injection vulnerability in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py` (line 224).
+- [x] Resolve "handler is not callable" error in `src/neuroca/memory/manager/memory_manager.py` (line 882).
+- [x] Investigate and resolve "No value for argument 'user_id' in constructor call" in `src/neuroca/api/routes/memory_v1.py` (line 143).
+- [x] Resolve "original_store is not callable" error in `tests/unit/memory/manager/test_transactional_consolidation.py` (line 396).
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 397) due to `subprocess.run` without a static string.
+- [x] Address command injection vulnerability in `src/neuroca/monitoring/health/probes.py` (line 654) due to `subprocess.run` without a static string.
+- [x] Address SQL Injection vulnerability in `benchmarks/memory_systems_comparison/competitors/sqlite_memory.py` (line 220).
+- [x] Replace or secure usage of `pickle` module in `src/neuroca/tools/caching.py` (line 568) to mitigate deserialization attacks.
+- [x] Remove or secure possible hardcoded password (`DEFAULT_PASSWORD_ENV_VAR`) in `tests/factories/passwords.py` (line 9).
+- [x] Address "counter is not callable" error (src/neuroca/memory/manager/memory_manager.py:1161)
+- [x] Mitigate Command Injection: `subprocess.run` detected with user-controlled data (src/neuroca/cli/commands/llm.py:430)
+- [x] Investigate and remediate possible hardcoded password (`_PASSWORD_ENV_VAR_NAME_OVERRIDE`) (tests/factories/passwords.py:9)
+- [x] Address "handler is not callable" error (src/neuroca/memory/manager/memory_manager.py:885)
+- [x] Investigate and remediate possible hardcoded password (`_DEFAULT_PASSWORD_ENV_VAR_NAME`) (tests/factories/passwords.py:10)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/cli/commands/llm.py:430)
+- [x] Address "counter is not callable" error (src/neuroca/memory/manager/memory_manager.py:1150)
+- [x] Resolve "No value for argument 'user_id' in constructor call" (src/neuroca/api/routes/memory_v1.py:146)
+- [x] Address Insecure Modules Libraries: `pickle` vulnerable to deserialization attacks (src/neuroca/tools/caching.py:734)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/monitoring/health/probes.py:665)
+- [x] Mitigate Command Injection: `subprocess.run` detected without a static string (src/neuroca/cli/commands/system.py:1156)
+- [x] Address command injection vulnerability in `src/neuroca/monitoring/health/probes.py` (line 852) due to `subprocess.run` without a static string.
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/llm.py` (line 220) due to `subprocess.run` without a static string and with user-controlled data.
+- [x] Address command injection vulnerability in `src/neuroca/cli/commands/system.py` (line 1240) due to `subprocess.run` without a static string.
+- [x] Resolve "No value for argument 'user_id'" error in constructor call in `src/neuroca/api/routes/memory_v1.py` (line 146).
 
 ## Key Highlights
 

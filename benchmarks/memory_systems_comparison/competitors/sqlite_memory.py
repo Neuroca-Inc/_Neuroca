@@ -206,14 +206,19 @@ class SQLiteMemory(MemorySystemInterface):
     def list_all(self, limit: Optional[int] = None) -> List[MemoryEntry]:
         """List all memory entries, optionally restricting the number returned."""
 
-        query = "SELECT id, content, metadata, timestamp FROM memories ORDER BY timestamp DESC"
-        params: tuple[Any, ...] = ()
-        if limit is not None:
+        if limit is None:
+            query = (
+                "SELECT id, content, metadata, timestamp FROM memories ORDER BY timestamp DESC"
+            )
+            params: tuple[Any, ...] = ()
+        else:
             if isinstance(limit, bool) or not isinstance(limit, int):
                 raise ValueError("limit must be a non-negative integer")
             if limit < 0:
                 raise ValueError("limit must be a non-negative integer")
-            query += " LIMIT ?"
+            query = (
+                "SELECT id, content, metadata, timestamp FROM memories ORDER BY timestamp DESC LIMIT ?"
+            )
             params = (limit,)
 
         if self._conn:
