@@ -1,4 +1,5 @@
-"""Context injection formatting helpers.
+"""
+Context injection formatting helpers.
 
 Purpose:
     Transform selected context elements into provider-ready prompt payloads
