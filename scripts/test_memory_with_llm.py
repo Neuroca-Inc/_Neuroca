@@ -47,13 +47,17 @@ except ImportError:
 class ConversationalAgent:
     """A simple conversational agent that uses the memory system to remember context."""
     
-    def __init__(self, use_sqlite: bool = False, fast_tiers: bool = False):
+    def __init__(self, use_sqlite: bool = False, fast_tiers: bool = False, history_window: int | None = None):
         """Initialize the agent with memory system."""
         self.conversation_history = []
         self.memory_manager = None
         self.backend_type = BackendType.SQLITE if use_sqlite else BackendType.MEMORY
         self.conversation_id = str(uuid.uuid4())
         self.fast_tiers = fast_tiers or os.getenv("FAST_TIERS", "").strip().lower() in ("1", "true", "yes")
+        try:
+            self.history_window = int(history_window) if history_window is not None else None
+        except Exception:
+            self.history_window = None
         
         # OpenAI setup if available
         self._openai_client = None
@@ -229,9 +233,12 @@ You can remember previous parts of the conversation.
 {memory_context if memory_context else "No relevant memories found."}
 
 Base your response on the conversation history and relevant memories."""
+                hist = self.conversation_history
+                if self.history_window is not None:
+                    hist = hist[-self.history_window:] if self.history_window > 0 else []
                 messages = [
                     {"role": "system", "content": system_message},
-                    *self.conversation_history
+                    *hist,
                 ]
                 client = self._openai_client
 
@@ -380,9 +387,12 @@ You can remember previous parts of the conversation.
 {memory_context if memory_context else "No relevant memories found."}
 
 Base your response on the conversation history and relevant memories."""
+                hist = self.conversation_history
+                if self.history_window is not None:
+                    hist = hist[-self.history_window:] if self.history_window > 0 else []
                 messages = [
                     {"role": "system", "content": system_message},
-                    *self.conversation_history
+                    *hist,
                 ]
                 result = ollama.chat(model=self.ollama_model, messages=messages)
                 msg = result.get("message", {})
@@ -514,13 +524,18 @@ async def main():
     parser.add_argument("--backend", choices=["sqlite", "memory"], help="Select memory backend")
     parser.add_argument("--fast-tiers", action="store_true", help="Use fast tier settings to exercise STM→MTM→LTM in demo")
     parser.add_argument("--prompt", help="Prompt to use in quick mode")
+    parser.add_argument(
+        "--history-window",
+        type=int,
+        help="Only include last N conversation turns in messages (curated context is always included)",
+    )
     parser.add_argument("--model", help="Model name for selected provider (e.g., gpt-5 or gemma3:4b)")
     parser.add_argument("--scope", choices=["all", "stm"], help="Memory scope: all tiers or STM only")
     args = parser.parse_args()
 
     # Backend selection (default: in-memory for easier testing)
     use_sqlite = (args.backend == "sqlite") if args.backend else False
-    agent = ConversationalAgent(use_sqlite=use_sqlite, fast_tiers=args.fast_tiers)
+    agent = ConversationalAgent(use_sqlite=use_sqlite, fast_tiers=args.fast_tiers, history_window=args.history_window)
 
     # Apply runtime overrides
     if args.provider:

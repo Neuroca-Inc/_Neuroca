@@ -1,8 +1,10 @@
 """Operational CLI commands for inspecting and managing the memory system."""
 
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Annotated, Any, Awaitable, Callable, Dict, List, Optional
@@ -74,6 +76,13 @@ def list_sample_packs_command() -> None:
         )
 
     console.print(table)
+    # Print a usage hint including default args so users see concrete flags
+    with contextlib.suppress(Exception):
+        first = packs[0]
+        console.print(
+            f"\n[blue]Hint:[/] Use default args when seeding, e.g.: --user {first.default_user}"
+            + (f" --session {first.default_session}" if first.default_session else "")
+        )
 
 
 @sample_pack_app.command("export")

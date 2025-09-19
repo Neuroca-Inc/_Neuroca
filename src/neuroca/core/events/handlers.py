@@ -275,9 +275,17 @@ class EventBus:
             
             # Register for each event type
             for event_type in handler.event_types:
-                if not issubclass(event_type, Event):
+                # Accept either this module's Event or the shared BaseEvent
+                is_handlers_event = issubclass(event_type, Event)
+                is_base_event = False
+                if _BaseEvent is not None:
+                    try:
+                        is_base_event = issubclass(event_type, _BaseEvent)  # type: ignore[arg-type]
+                    except Exception:
+                        is_base_event = False
+                if not (is_handlers_event or is_base_event):
                     raise EventHandlerRegistrationError(
-                        f"Event type must be a subclass of Event, got {event_type}"
+                        f"Event type must be a subclass of Event/BaseEvent, got {event_type}"
                     )
                 
                 if event_type not in self._handlers:

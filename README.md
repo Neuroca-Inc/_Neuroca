@@ -47,13 +47,13 @@
 ## Key Features
 
 - **Dynamic Multi-Tiered Memory System**: Unlike flat vector databases used in typical RAG, NCA features a structured memory hierarchy inspired by human cognition:
-    - **Short-Term Memory (STM)**: High-speed, temporary storage for immediate context (akin to working memory). Governed by TTL (Time-To-Live).
-    - **Medium-Term Memory (MTM)**: Intermediate storage for recently relevant information, acting as a buffer before long-term consolidation. Managed by capacity limits and decay.
-    - **Long-Term Memory (LTM)**: Persistent storage for consolidated knowledge and core facts. Supports efficient retrieval over large datasets.
+  - **Short-Term Memory (STM)**: High-speed, temporary storage for immediate context (akin to working memory). Governed by TTL (Time-To-Live).
+  - **Medium-Term Memory (MTM)**: Intermediate storage for recently relevant information, acting as a buffer before long-term consolidation. Managed by capacity limits and decay.
+  - **Long-Term Memory (LTM)**: Persistent storage for consolidated knowledge and core facts. Supports efficient retrieval over large datasets.
 - **Biologically-Inspired Processes**:
-    - **Memory Consolidation**: Automatic background process to move important memories from STM -> MTM -> LTM based on relevance, frequency, and importance scores.
-    - **Memory Decay**: Memories naturally lose relevance over time unless reinforced, mimicking forgetting and keeping the memory system focused.
-    - **Importance Scoring**: Allows explicit weighting of memories, influencing retrieval and consolidation priority.
+  - **Memory Consolidation**: Automatic background process to move important memories from STM -> MTM -> LTM based on relevance, frequency, and importance scores.
+  - **Memory Decay**: Memories naturally lose relevance over time unless reinforced, mimicking forgetting and keeping the memory system focused.
+  - **Importance Scoring**: Allows explicit weighting of memories, influencing retrieval and consolidation priority.
 - **Rich Memory Representation**: Stores not just content embeddings but also crucial metadata like timestamps, sources, tags, and importance scores, enabling more complex querying and context association.
 - **Dynamically Managed Backends**: The system automatically selects and manages the optimal storage backend (e.g., high-speed In-Memory for STM, persistent SQLite/Vector DBs for MTM/LTM) for each memory tier based on configuration. This happens transparently, ensuring the best balance of speed, persistence, and scalability for different types of memory without manual intervention. The architecture is designed for easy extension with new backend types.
 - **Advanced Search Capabilities**: Goes beyond simple vector similarity to allow filtering and searching based on metadata, time, importance, and tags across different memory tiers.
@@ -122,6 +122,7 @@ src/neuroca/
 ├── tools/                # Internal development/operational tools
 ├── utils/                # Shared utility functions
 ```
+
 *Note: Top-level directories like `docs/`, `tests/`, `scripts/` (project-level), etc., exist at the project root (`Neuroca/`).*
 
 ## Installation
@@ -210,6 +211,7 @@ docker-compose up -d
 ## Configuration
 
 1. Copy the example environment file:
+
    ```bash
    cp .env.example .env
    ```
@@ -362,7 +364,7 @@ cd Neuroca/docs
 mkdocs serve
 ```
 
-The documentation site will typically be available at `http://127.0.0.1:8000`. 
+The documentation site will typically be available at `http://127.0.0.1:8000`.
 **Note:** The `mkdocs.yml` configuration file may currently be out of sync with the actual documentation file structure and require updates to build correctly. Refer to the `mkdocs.yml` file for configuration details.
 
 ## Contributing
@@ -394,8 +396,8 @@ The NCA project is actively evolving. Key areas for future development include:
 - **Benchmarking**: Conducting rigorous benchmarks comparing NCA's performance (speed, scalability, retrieval accuracy, context quality) against other popular memory systems and RAG frameworks.
 - **Expanded Backend Support**: Adding support for more database and vector store backends (e.g., PostgreSQL, Redis, specialized vector databases like Weaviate or Pinecone) to provide greater flexibility.
 - **Framework Compatibility & Integrations**:
-    - **LangChain**: Enhancing the native integration with LangChain, providing seamless compatibility with LangChain's ecosystem of tools and agents. We aim to offer NCA as a sophisticated, stateful memory alternative within LangChain workflows.
-    - **Other Frameworks**: Exploring integrations with other popular AI/LLM frameworks (e.g., LlamaIndex, Haystack) to broaden NCA's applicability.
+  - **LangChain**: Enhancing the native integration with LangChain, providing seamless compatibility with LangChain's ecosystem of tools and agents. We aim to offer NCA as a sophisticated, stateful memory alternative within LangChain workflows.
+  - **Other Frameworks**: Exploring integrations with other popular AI/LLM frameworks (e.g., LlamaIndex, Haystack) to broaden NCA's applicability.
 - **Enhanced Tooling**: Developing better tools for monitoring memory state, debugging cognitive processes, and visualizing memory dynamics.
 
 ## License
@@ -418,10 +420,9 @@ For detailed performance comparisons and benchmarks demonstrating Neuroca’s pe
 - **Justin Lietz** - *Initial work & Lead Developer*
 - Justin's first prototype of the **Autonomous Project Generator** with **Claude 3.7 Sonnet** (who produced > 70% of the codebase in one prompt)
 
-
 ## Contact
 
-For questions, feedback, or collaboration opportunities, please open an issue on this repository or contact Justin Lietz. jlietz93@gmail.com
+For questions, feedback, or collaboration opportunities, please open an issue on this repository or contact Justin Lietz. <jlietz93@gmail.com>
 
 ---
 
@@ -450,3 +451,14 @@ docker run --rm -p 8000:8000 neuroca:1.0.0
 ```
 
 Prometheus metrics are disabled by default in the demo and can be enabled via configuration in production.
+
+### Deploy with Docker Compose (Production‑ready quick start)
+
+Run Neuroca with Postgres using the provided compose file:
+
+```bash
+docker compose -f docker-compose.agent.yml up -d --build
+curl -sf http://localhost:8000/health
+```
+
+Environment defaults select production settings and wire the DB connection. Health checks are enabled. For a multi‑day soak, see docs/operations/runbooks/soak-test.md.

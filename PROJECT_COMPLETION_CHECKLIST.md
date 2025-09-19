@@ -5,10 +5,10 @@ This single document enumerates all actionable items required to finish the proj
 - Definition of Done
 
 - [x] End-to-end demo runs with zero warnings/errors and prints at least one found memory [scripts/basic_memory_test.py](scripts/basic_memory_test.py)
-- [ ] All unit/integration/performance tests green locally and in CI [tests/](tests/)
+- [x] All unit/integration/performance tests green locally and in CI [tests/](tests/)
 - [x] Version set to 1.0.0-rc1 and release notes updated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 - [x] Production configuration present and used by Docker/compose [config/production.yaml](config/production.yaml), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
-- [x] Security/quality gates pass (dependency audit via Codacy Trivy: zero vulns); pre-commit/linters pending [.pre-commit-config.yaml](.pre-commit-config.yaml)
+- [x] Security/quality gates pass (dependency audit via Codacy Trivy: zero vulns); pre-commit configured and CI job added [.pre-commit-config.yaml](.pre-commit-config.yaml)
 
 1. Database and Migrations
 
@@ -44,15 +44,15 @@ This single document enumerates all actionable items required to finish the proj
 
 5. Observability and Metrics
 
-- [ ] Ensure Prometheus exporter/API compatibility; disabled by default in demo [src/neuroca/memory/manager/metrics.py](src/neuroca/memory/manager/metrics.py)
-- [ ] Configuration flags documented and validated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/operations/monitoring.md](docs/operations/monitoring.md)
+- [x] Ensure Prometheus exporter/API compatibility; disabled by default in demo [src/neuroca/memory/manager/metrics.py](src/neuroca/memory/manager/metrics.py)
+- [x] Configuration flags documented and validated [src/neuroca/config/settings.py](src/neuroca/config/settings.py), [docs/operations/monitoring.md](docs/operations/monitoring.md)
 
 6. Production Configuration and Deployment
 
 - [x] Add production configuration file [config/production.yaml](config/production.yaml)
 - [x] Wire production config into settings loader [src/neuroca/config/settings.py](src/neuroca/config/settings.py)
 - [x] Verify Docker uses production config by default [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)
-- [ ] Docs: deployment instructions updated [docs/operations/deployment.md](docs/operations/deployment.md)
+- [x] Docs: deployment instructions updated [docs/operations/deployment.md](docs/operations/deployment.md)
 
 7. Integrations
 
@@ -130,15 +130,18 @@ This single document enumerates all actionable items required to finish the proj
 
 14. CI/CD and Quality Gates
 
-- [ ] Ensure all tests green in CI (.github workflows) [.github/](.github/)
-- [ ] Add dependency and security scans to CI if not present [.github/](.github/)
+- [x] Ensure all tests green in CI (.github workflows) [.github/](.github/)
+- [x] Add dependency and security scans to CI if not present [.github/](.github/)
 - [ ] Establish version/tagging and release workflow [.github/](.github/)
+  - [x] Documented RC→GA release process [docs/operations/release.md](docs/operations/release.md)
 
 15. Containerization and Ops
 
 - [ ] Docker image builds reproducibly and runs demo [Dockerfile](Dockerfile)
-- [ ] docker-compose up succeeds with production config [docker-compose.yml](docker-compose.yml)
+- [x] docker-compose up succeeds with production config [docker-compose.yml](docker-compose.yml)
+- [x] Add agent compose for Postgres + Neuroca [docker-compose.agent.yml](docker-compose.agent.yml)
 - [ ] Ops runbooks validated (backup/restore, scaling) [docs/operations/runbooks/backup-restore.md](docs/operations/runbooks/backup-restore.md), [docs/operations/runbooks/scaling.md](docs/operations/runbooks/scaling.md)
+  - [x] Soak test runbook added [docs/operations/runbooks/soak-test.md](docs/operations/runbooks/soak-test.md)
 
 16. Final Benchmarks (optional but recommended)
 

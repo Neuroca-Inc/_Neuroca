@@ -15,7 +15,7 @@ default_language_version:
 repos:
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.6.0
     hooks:
       - id: trailing-whitespace
         description: Trims trailing whitespace
@@ -47,7 +47,7 @@ repos:
 
   # Python code formatting with Black
   - repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 24.8.0
     hooks:
       - id: black
         description: Python code formatter
@@ -56,7 +56,7 @@ repos:
 
   # Python import sorting with isort
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 5.13.2
     hooks:
       - id: isort
         description: Sort Python imports
@@ -65,7 +65,7 @@ repos:
 
   # Python code linting with flake8
   - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
+    rev: 7.1.1
     hooks:
       - id: flake8
         description: Python linter
@@ -79,7 +79,7 @@ repos:
 
   # Python type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.3.0
+    rev: v1.10.0
     hooks:
       - id: mypy
         description: Static type checker for Python
@@ -92,7 +92,7 @@ repos:
 
   # Security scanning with Bandit
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.5
+    rev: 1.7.9
     hooks:
       - id: bandit
         description: Security linter for Python code
@@ -139,7 +139,7 @@ repos:
 
   # YAML linting
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.32.0
+    rev: v1.33.0
     hooks:
       - id: yamllint
         description: Lint YAML files
@@ -147,7 +147,7 @@ repos:
 
   # Markdown linting
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.35.0
+    rev: v0.37.0
     hooks:
       - id: markdownlint
         description: Lint Markdown files
@@ -156,18 +156,18 @@ repos:
 
   # Validate GitHub workflows
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.23.3
+    rev: 0.28.6
     hooks:
       - id: check-github-workflows
         description: Validate GitHub workflow files
 
   # Validate dependencies for security issues
-  - repo: https://github.com/pyupio/safety
-    rev: 2.3.5
+  - repo: https://github.com/safety-ci/safety
+    rev: 3.2.14
     hooks:
       - id: safety
         description: Check Python dependencies for security vulnerabilities
-        args: [check, --full-report]
+        args: ["--full-report"]
 
   # Local hooks
   - repo: local
@@ -179,7 +179,7 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        stages: [push]
+        stages: [pre-push]
 
       - id: check-version-updated
         name: Check version updated
@@ -187,5 +187,5 @@ repos:
         entry: python scripts/check_version_updated.py
         language: system
         pass_filenames: false
-        stages: [push]
+        stages: [pre-push]
         files: ^(core/|memory/|integration/)

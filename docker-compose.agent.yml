@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: neuroca-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: neuroca
+      POSTGRES_PASSWORD: neurocapass
+      POSTGRES_DB: neuroca
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neuroca"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neuroca
+
+  neuroca:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: neuroca:1.0.0-rc1
+    container_name: neuroca-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NCA_ENV: production
+      ENV: production
+      NCA_DB_URL: postgresql://neuroca:neurocapass@postgres:5432/neuroca
+      # Optional: tune maintenance cadence for a soak/long-running agent
+      # NCA_MEMORY_STM_DEFAULT_TTL: "3600"
+      # NCA_MEMORY_MTM_CONSOLIDATION_INTERVAL: "1800"
+      # NCA_MEMORY_LTM_MAINTENANCE_INTERVAL: "86400"
+    ports:
+      - "8000:8000"
+    networks:
+      - neuroca
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  pgdata:
+
+networks:
+  neuroca:
+    driver: bridge
+
