@@ -137,7 +137,7 @@ This single document enumerates all actionable items required to finish the proj
 
 15. Containerization and Ops
 
-- [ ] Docker image builds reproducibly and runs demo [Dockerfile](Dockerfile)
+- [x] Docker image builds reproducibly and runs demo [Dockerfile](Dockerfile)
 - [x] docker-compose up succeeds with production config [docker-compose.yml](docker-compose.yml)
 - [x] Add agent compose for Postgres + Neuroca [docker-compose.agent.yml](docker-compose.agent.yml)
 - [ ] Ops runbooks validated (backup/restore, scaling) [docs/operations/runbooks/backup-restore.md](docs/operations/runbooks/backup-restore.md), [docs/operations/runbooks/scaling.md](docs/operations/runbooks/scaling.md)
