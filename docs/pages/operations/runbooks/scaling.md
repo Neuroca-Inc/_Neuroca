@@ -430,6 +430,6 @@ If scaling operations cause system instability:
 
 ## Related Documents
 
-- [Monitoring Runbook](./monitoring.md)
-- [Disaster Recovery Procedures](./disaster_recovery.md)
-- [Performance Tuning Guide](./performance_tuning.md)
+- [Monitoring Overview](../monitoring.md)
+- Disaster recovery procedures (internal operations documentation)
+- Performance tuning guidelines (internal operations documentation)

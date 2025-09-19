@@ -361,6 +361,6 @@ except Exception as e:
 
 ---
 
-These examples demonstrate the core functionality of the NeuroCognitive Architecture. For more detailed information, please refer to the [API Reference](../api/reference.md) and [Conceptual Guide](../concepts/overview.md).
+These examples demonstrate the core functionality of the NeuroCognitive Architecture. For more detailed information, please refer to the [API Reference](../api/reference.md) and the [Architecture Overview](../architecture/components.md).
 
-If you encounter any issues or have questions, please check the [Troubleshooting Guide](../troubleshooting.md) or open an issue on our [GitHub repository](https://github.com/neuroca/neuroca).
+If you encounter any issues or have questions, please check the [Operations Troubleshooting Guide](../operations/troubleshooting.md) or open an issue on our [GitHub repository](https://github.com/neuroca/neuroca).

@@ -115,4 +115,4 @@ Notes
 
 Related Docs
 
-- Neuroca Quickstart: ['_Neuroca/docs/guides/local-llm-quickstart.md'](_Neuroca/docs/guides/local-llm-quickstart.md:1)
+- Neuroca Quickstart: [Local LLM Quickstart](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/docs/guides/local-llm-quickstart.md)

@@ -277,4 +277,4 @@ This will output the complete, merged configuration with sources for each settin
 
 ## Reference
 
-For a complete reference of all configuration options, see the [Configuration Reference](../reference/configuration.md) document.
+For a complete reference of all configuration options, see the comments within the default configuration files in the repository (`config/`) or consult the project README.
