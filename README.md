@@ -4,7 +4,7 @@
 </p>
 
 <h3 align="center"><i>Persistent Memory System for LLMs (NCA)</i></h3>
-<p align="center"><span style="color:green"><strong>NEW:</strong> Neuroca benchmarks results: <a href="https://github.com/justinlietz93/_Neuroca">here</a></span></p>
+<p align="center"><span style="color:green"><strong>NEW:</strong> Neuroca benchmarks results <a href="https://github.com/justinlietz93/_Neuroca/tree/main/benchmarks/memory_systems_comparison">here</a></span></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
