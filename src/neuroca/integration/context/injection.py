@@ -1,25 +1,18 @@
 """
-Context Injection Module for NeuroCognitive Architecture
+Context injection orchestration for NeuroCognitive Architecture.
 
-This module provides functionality for injecting relevant context into LLM prompts
-based on the current conversation state, memory retrieval, and cognitive processing.
-It handles context window management, prioritization of information, and seamless
-integration with the memory tiers of the NCA system.
-
-The module implements strategies for:
-1. Determining what context is relevant to inject
-2. Managing context window limitations
-3. Prioritizing information based on cognitive relevance
-4. Formatting context for different LLM providers
-5. Tracking context usage and effectiveness
-
-Usage:
-    context_manager = ContextInjectionManager(config)
-    enhanced_prompt = context_manager.inject_context(
-        prompt="Tell me about neural networks",
-        conversation_history=history,
-        memory_retrieval_results=memory_results
-    )
+Purpose:
+    Coordinate enrichment of LLM prompts with conversational history and memory
+    context while respecting configurable token budgets.
+External Dependencies:
+    No direct CLI or HTTP integrations; relies on standard library components
+    and internal NeuroCA data models.
+Fallback Semantics:
+    Failures raise explicit exceptions so callers can trigger their own fallback
+    strategies; no silent degradation is performed here.
+Timeout Strategy:
+    Operations run synchronously in memory and do not enforce additional timeouts
+    beyond the token budget heuristics.
 """
 
 import json
@@ -28,16 +21,26 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional, Union
 
-from neuroca.config.settings import ContextInjectionConfig
+from neuroca.config.context_injection import ContextInjectionConfig, get_default_context_injection_config
 from neuroca.core.exceptions import ContextWindowExceededError, InvalidContextFormatError
-from neuroca.memory.retrieval import MemoryRetrievalResult # TODO Fix this
+from neuroca.memory.models import MemoryRetrievalResult
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 
 class ContextPriority(Enum):
-    """Enumeration of priority levels for context elements."""
+    """
+    Priority buckets describing the relative importance of context elements.
+
+    Summary:
+        Encodes the ordering semantics used during selection so that higher
+        priority entries are retained when token budgets require trimming.
+    Side Effects:
+        None. Enum usage is read-only.
+    Timeout/Retry Notes:
+        Not applicable.
+    """
     CRITICAL = 0
     HIGH = 1
     MEDIUM = 2
@@ -47,20 +50,63 @@ class ContextPriority(Enum):
 
 @dataclass
 class ContextElement:
-    """Represents a single element of context to be injected."""
+    """
+    Data carrier for a single context element slated for injection.
+
+    Summary:
+        Captures the textual content, provenance metadata, and precomputed token
+        estimate used during prioritisation and formatting.
+    Attributes:
+        content (str): The human-readable text to inject.
+        source (str): Logical origin such as ``"working_memory"`` or ``"conversation_history"``.
+        priority (ContextPriority): Priority bucket relative to other elements.
+        token_count (int): Estimated token footprint for budget calculations.
+        metadata (dict[str, Any]): Optional structured metadata describing the element.
+    Side Effects:
+        None. Instances only store data.
+    Timeout/Retry Notes:
+        Not applicable.
+    """
     content: str
     source: str  # e.g., "working_memory", "episodic_memory", "semantic_memory"
     priority: ContextPriority
     token_count: int
     metadata: dict[str, Any] = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """
+        Normalise metadata container after dataclass initialisation.
+
+        Summary:
+            Guarantees that downstream consumers always interact with a dictionary
+            even when callers omit metadata during construction.
+        Parameters:
+            None
+        Returns:
+            None
+        Raises:
+            None
+        Side Effects:
+            Mutates ``self.metadata`` to an empty dictionary when ``None`` is supplied.
+        Timeout/Retry Notes:
+            Not applicable.
+        """
         if self.metadata is None:
             self.metadata = {}
 
 
 class ContextFormat(Enum):
-    """Supported context formatting styles for different LLM providers."""
+    """
+    Supported formatting styles mapped to downstream LLM providers.
+
+    Summary:
+        Signals how the assembled context should be serialized so the provider
+        receives a compatible payload representation.
+    Side Effects:
+        None. Enumeration values are constants.
+    Timeout/Retry Notes:
+        Not applicable.
+    """
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
@@ -68,7 +114,17 @@ class ContextFormat(Enum):
 
 
 class ContextInjectionStrategy(Enum):
-    """Different strategies for injecting context."""
+    """
+    Strategies describing how context is threaded into the prompt template.
+
+    Summary:
+        Enumerates merge approaches (prepend, append, interleave, structured) to
+        drive formatting logic in the injection manager.
+    Side Effects:
+        None. Values are pure metadata.
+    Timeout/Retry Notes:
+        Not applicable.
+    """
     PREPEND = "prepend"  # Add context before the prompt
     APPEND = "append"    # Add context after the prompt
     INTERLEAVE = "interleave"  # Mix context with conversation turns
@@ -77,19 +133,44 @@ class ContextInjectionStrategy(Enum):
 
 class ContextInjectionManager:
     """
-    Manages the injection of relevant context into LLM prompts.
-    
-    This class handles the selection, prioritization, formatting, and injection
-    of context elements into prompts sent to language models, ensuring optimal
-    use of the context window while maintaining relevance.
+    Coordinate context assembly and injection for outbound prompts.
+
+    Summary:
+        Wraps helper routines that prepare, select, and format contextual
+        elements prior to dispatching a prompt to an LLM provider.
+    Attributes:
+        config (ContextInjectionConfig): Resolved configuration payload.
+        max_tokens (int): Maximum tokens allowed for the final prompt plus context.
+        reserved_tokens (int): Tokens reserved for the LLM response window.
+        format (ContextFormat): Provider-specific formatting directive.
+        strategy (ContextInjectionStrategy): Strategy describing how context is merged.
+    Side Effects:
+        Emits structured debug/info logs describing prioritisation, selection,
+        and formatting behaviour.
+    Timeout/Retry Notes:
+        No explicit timeout or retry handling; callers should wrap invocation in
+        application-level timeout controls when necessary.
     """
     
     def __init__(self, config: ContextInjectionConfig):
         """
-        Initialize the context injection manager.
-        
-        Args:
-            config: Configuration settings for context injection
+        Initialise the context injection manager with validated configuration.
+
+        Summary:
+            Stores configuration-driven limits and prepares helper utilities that
+            orchestrate context assembly.
+        Parameters:
+            config (ContextInjectionConfig): Validated configuration describing
+                token budgets, formatting preferences, and selection strategy.
+        Returns:
+            None
+        Raises:
+            ValueError: Propagated if ``config`` fails its internal validation checks.
+        Side Effects:
+            Caches a token counting callable and emits a debug statement describing
+            the active strategy and token budget.
+        Timeout/Retry Notes:
+            No timeout handling occurs; construction completes synchronously.
         """
         self.config = config
         self.max_tokens = config.max_context_window_tokens
@@ -137,6 +218,10 @@ class ContextInjectionManager:
         Raises:
             ContextWindowExceededError: If the resulting context exceeds the maximum token limit
             InvalidContextFormatError: If the context cannot be properly formatted
+        Side Effects:
+            Emits debug and warning logs describing selection outcomes and token budget usage.
+        Timeout/Retry Notes:
+            Executes synchronously without retries; callers must wrap in their own timeout guards.
         """
         logger.debug(f"Injecting context for prompt: {prompt[:50]}...")
 
@@ -489,9 +574,10 @@ class ContextInjectionManager:
         non_conversation_elements = [e for e in selected_elements 
                                     if e.source != "conversation_history"]
         
-        # Get conversation history elements
-        [e for e in selected_elements # TODO Address Codacy warning "Statement seems to have no effect"
-                               if e.source == "conversation_history"]
+        # Get conversation history elements captured during selection
+        conversation_elements = [
+            element for element in selected_elements if element.source == "conversation_history"
+        ]
         
         # Build conversation with interleaved context
         formatted_context = ""
@@ -528,8 +614,15 @@ class ContextInjectionManager:
                 if not non_conversation_elements:
                     break
         
+        if not conversation_history and conversation_elements:
+            for element in conversation_elements:
+                formatted_context += f"[Conversation recap: {element.content}]\\n\\n"
+
+"
+
         # Add any remaining context elements
         for element in non_conversation_elements:
+
             if element.source == "memory_retrieval":
                 memory_type = element.metadata.get("memory_type", "Memory")
                 formatted_context += f"[Relevant {memory_type}: {element.content}]\n\n"
@@ -674,47 +767,77 @@ class ContextInjectionManager:
 
 class ContextInjector:
     """
-    Utility class for injecting context into prompts with a simpler interface.
-    
-    This class provides a simplified interface to the ContextInjectionManager
-    for common use cases.
+    Lightweight façade around :class:`ContextInjectionManager` for callers.
+
+    Summary:
+        Offers a narrowed surface optimised for integration points that need
+        prompt enrichment without managing the lower-level assembly workflow.
+    Attributes:
+        manager (ContextInjectionManager): Underlying manager responsible for
+            performing the injection steps.
+    Side Effects:
+        Delegates to the manager which logs diagnostic information regarding
+        selection and formatting operations.
+    Timeout/Retry Notes:
+        No additional timeout logic is implemented here beyond the manager.
     """
-    
-    def __init__(self, config: ContextInjectionConfig = None):
+    def __init__(self, config: ContextInjectionConfig | None = None):
         """
-        Initialize the context injector.
-        
-        Args:
-            config: Configuration for context injection (optional)
+        Create a context injector with an optional explicit configuration.
+
+        Summary:
+            Resolves the configuration to use for downstream prompt injection
+            and instantiates the shared :class:`ContextInjectionManager`.
+        Parameters:
+            config (ContextInjectionConfig | None): Caller-supplied configuration.
+                When omitted, the default helper is invoked to obtain a baseline.
+        Returns:
+            None
+        Raises:
+            ValueError: Propagates validation errors raised during configuration creation.
+        Side Effects:
+            Delegates to the manager constructor which logs the active strategy and budgets.
+        Timeout/Retry Notes:
+            Instantiation is synchronous and does not define retry behaviour.
         """
         if config is None:
             # Use default configuration
-            from neuroca.config.defaults import get_default_context_injection_config # TODO Fix bad import
             config = get_default_context_injection_config()
-        
+
         self.manager = ContextInjectionManager(config)
-    
     def inject(
         self,
         prompt: str,
-        conversation_history: list[dict[str, str]] = None,
-        memory_results: list[MemoryRetrievalResult] = None,
-        system_instructions: str = None,
-        additional_context: dict[str, Any] = None
+        conversation_history: list[dict[str, str]] | None = None,
+        memory_results: list[MemoryRetrievalResult] | None = None,
+        system_instructions: str | None = None,
+        additional_context: dict[str, Any] | None = None
     ) -> Union[str, dict[str, Any]]:
         """
-        Inject context into a prompt.
-        
-        Args:
-            prompt: The user's prompt
-            conversation_history: Previous conversation turns
-            memory_results: Results from memory retrieval
-            system_instructions: System instructions for the LLM
-            additional_context: Additional context to include
-            
+        Enrich a prompt with context using the encapsulated manager.
+
+        Summary:
+            Provides a single-call wrapper that forwards payloads to the manager
+            while preserving the public integration contract.
+        Parameters:
+            prompt (str): The original user prompt to enrich.
+            conversation_history (list[dict[str, str]] | None): Prior turns
+                represented as ``{"user": ..., "assistant": ...}``.
+            memory_results (list[MemoryRetrievalResult] | None): Retrieved memory
+                artifacts that may deepen the response.
+            system_instructions (str | None): System-level directives to include.
+            additional_context (dict[str, Any] | None): Arbitrary supplementary context.
         Returns:
-            Enhanced prompt with injected context
+            Union[str, dict[str, Any]]: Prompt or structured payload ready for the LLM.
+        Raises:
+            ContextWindowExceededError: Propagated when the manager detects a token overflow.
+            InvalidContextFormatError: Propagated when formatting fails for the chosen strategy.
+        Side Effects:
+            Emits logs through the manager describing selection and formatting decisions.
+        Timeout/Retry Notes:
+            Executes synchronously without retries; wrap in caller-managed timeout scopes if needed.
         """
+
         return self.manager.inject_context(
             prompt=prompt,
             conversation_history=conversation_history,
@@ -726,26 +849,38 @@ class ContextInjector:
 
 def inject_context(
     prompt: str,
-    conversation_history: list[dict[str, str]] = None,
-    memory_results: list[MemoryRetrievalResult] = None,
-    system_instructions: str = None,
-    additional_context: dict[str, Any] = None,
-    config: ContextInjectionConfig = None
+    conversation_history: list[dict[str, str]] | None = None,
+    memory_results: list[MemoryRetrievalResult] | None = None,
+    system_instructions: str | None = None,
+    additional_context: dict[str, Any] | None = None,
+    config: ContextInjectionConfig | None = None
 ) -> Union[str, dict[str, Any]]:
     """
-    Convenience function for injecting context into a prompt.
-    
-    Args:
-        prompt: The user's prompt
-        conversation_history: Previous conversation turns
-        memory_results: Results from memory retrieval
-        system_instructions: System instructions for the LLM
-        additional_context: Additional context to include
-        config: Configuration for context injection
-        
+    Convenience wrapper to enrich a prompt with contextual information.
+
+    Summary:
+        Builds a :class:`ContextInjector` if required and delegates the heavy
+        lifting while maintaining a function-oriented API.
+    Parameters:
+        prompt (str): The user's prompt awaiting enrichment.
+        conversation_history (list[dict[str, str]] | None): Prior dialogue turns
+            that may anchor the response.
+        memory_results (list[MemoryRetrievalResult] | None): Retrieved memory
+            snippets to surface in the final prompt.
+        system_instructions (str | None): System directives and guardrails.
+        additional_context (dict[str, Any] | None): Arbitrary auxiliary context.
+        config (ContextInjectionConfig | None): Optional configuration override.
     Returns:
-        Enhanced prompt with injected context
+        Union[str, dict[str, Any]]: Prompt or structured payload ready for the LLM.
+    Raises:
+        ContextWindowExceededError: Bubble-up from the injector when token budgets are exceeded.
+        InvalidContextFormatError: Propagated when formatting fails for the configured strategy.
+    Side Effects:
+        Emits logging via the underlying manager describing context assembly actions.
+    Timeout/Retry Notes:
+        Executes synchronously in-process without retries; wrap invocation if timeouts are required.
     """
+
     injector = ContextInjector(config)
     return injector.inject(
         prompt=prompt,
