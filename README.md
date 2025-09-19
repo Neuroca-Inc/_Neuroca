@@ -9,9 +9,8 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
   &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version: 3.9+"/></a>
+  &nbsp; <a href="https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img src="https://app.codacy.com/project/badge/Grade/4e0a3952e1464fc5b218571f8339e7f3" alt="Codacy Code Quality Badge"/></a>
 </p>
-
-<br/>
 
 **➡️ View the full [Table of Contents](TABLE_OF_CONTENTS.md) for easy navigation.**
 
