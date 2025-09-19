@@ -50,6 +50,8 @@ from neuroca.utils.safe_subprocess import run_validated_command
 # Configure module logger
 logger = logging.getLogger(__name__)
 
+MAX_PING_PACKET_COUNT = 100
+
 
 class HealthStatus(Enum):
     """
@@ -902,8 +904,10 @@ class NetworkHealthProbe(HealthProbe):
     def _sanitize_packet_count(packet_count: int) -> int:
         if not isinstance(packet_count, int):
             raise ValueError("Packet count must be an integer")
-        if packet_count <= 0 or packet_count > 100:
-            raise ValueError("Packet count must be between 1 and 100")
+        if packet_count <= 0 or packet_count > MAX_PING_PACKET_COUNT:
+            raise ValueError(
+                f"Packet count must be between 1 and {MAX_PING_PACKET_COUNT}"
+            )
         return packet_count
 
     @staticmethod

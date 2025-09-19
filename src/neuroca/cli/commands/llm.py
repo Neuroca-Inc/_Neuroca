@@ -160,8 +160,7 @@ def _build_editor_command(editor_cmd: Sequence[str], config_path: Path) -> list[
     executable_path, editor_key = _validate_editor_executable(editor_cmd[0])
     safe_arguments = _validate_editor_arguments(editor_key, editor_cmd[1:])
     safe_config_path = _sanitize_editor_config_path(config_path)
-    command = [executable_path, *safe_arguments, safe_config_path]
-    return command
+    return [executable_path, *safe_arguments, safe_config_path]
 
 
 def _validate_editor_executable(executable: str) -> tuple[str, str]:

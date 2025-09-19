@@ -616,8 +616,10 @@ class FileCache(CacheBackend):
         payload = _verify_and_extract(self._signing_key, data)
         try:
             entry = _loads_cache_entry(payload)
-        except (pickle.UnpicklingError, TypeError, ValueError) as exc:
-            raise ValueError("Cache payload could not be safely deserialized") from exc
+        except (pickle.UnpicklingError, TypeError) as exc:
+            raise ValueError(
+                f"Cache payload could not be safely deserialized: {type(exc).__name__}: {exc}"
+            ) from exc
         return entry
 
     def _write_entry(self, cache_path: Path, entry: CacheEntry) -> None:

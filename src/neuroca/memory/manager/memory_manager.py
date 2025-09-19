@@ -904,27 +904,26 @@ class MemoryManager(MemoryManagerInterface):
     ) -> float | None:
         """Invoke ``counter`` safely and coerce the result into a ``float`` if possible."""
 
+        if not callable(counter):
+            logger.debug("Skipping non-callable count handler for %s tier", tier_name)
+            return None
+
+        current: Any
         try:
             current = counter()
         except TypeError as exc:
-            message = str(exc)
-            if "not callable" in message:
-                logger.debug(
-                    "Skipping non-callable count handler for %s tier: %s",
-                    tier_name,
-                    message,
-                )
-            else:
-                logger.debug(
-                    "Count handler for %s tier rejected invocation: %s",
-                    tier_name,
-                    message,
-                    exc_info=True,
-                )
+            logger.debug(
+                "Count handler for %s tier rejected invocation: %s",
+                tier_name,
+                exc,
+                exc_info=True,
+            )
             return None
         except Exception:
             logger.debug(
-                "Count handler for %s tier raised an unexpected exception", tier_name, exc_info=True
+                "Count handler for %s tier raised an unexpected exception",
+                tier_name,
+                exc_info=True,
             )
             return None
 
@@ -961,14 +960,14 @@ class MemoryManager(MemoryManagerInterface):
                     cache[method_name] = None
                     continue
 
-                if not callable(handler):
-                    logger.debug(
-                        "Skipping non-callable LTM retrieval handler %s", method_name
-                    )
-                    cache[method_name] = None
-                    continue
+            if not callable(handler):
+                logger.debug(
+                    "Skipping non-callable LTM retrieval handler %s", method_name
+                )
+                cache[method_name] = None
+                continue
 
-                cache[method_name] = handler
+            cache[method_name] = handler
 
             result: Any = None
             attempted = False
@@ -977,32 +976,24 @@ class MemoryManager(MemoryManagerInterface):
                 ((), {})
             ]
             if limit is not None:
-                call_specs.append(((limit,), {}))
-                call_specs.append(((), {"limit": limit}))
+                call_specs.extend(
+                    [
+                        ((limit,), {}),
+                        ((), {"limit": limit}),
+                    ]
+                )
 
             for args, kwargs in call_specs:
                 if not self._is_signature_compatible(signature, args, kwargs):
                     continue
                 try:
                     result = handler(*args, **kwargs)  # type: ignore[misc]
-                except TypeError as exc:
-                    message = str(exc)
-                    if "not callable" in message:
-                        logger.debug(
-                            "Skipping LTM retrieval handler %s because it is not callable: %s",
-                            method_name,
-                            message,
-                        )
-                        attempted = False
-                        result = None
-                        cache[method_name] = None
-                        break
+                except TypeError:
                     logger.debug(
-                        "LTM retrieval handler %s rejected invocation with args=%s kwargs=%s: %s",
+                        "LTM retrieval handler %s rejected invocation with args=%s kwargs=%s",
                         method_name,
                         args,
                         kwargs,
-                        message,
                         exc_info=True,
                     )
                     continue
