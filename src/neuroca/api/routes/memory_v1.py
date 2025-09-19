@@ -135,15 +135,37 @@ def _to_memory_record(memory: MemoryResponse) -> MemoryRecordV1:
     return record
 
 
-def _ensure_access(record: MemoryRecordV1, current_user: User) -> None:
+def _ensure_access(
+    record: MemoryRecordV1, current_user: User, *, operation: str
+) -> None:
     """Ensure the current user can operate on the supplied record."""
 
     expected_user = record.user_id
     if expected_user is None:
         return
-    current_id = str(getattr(current_user, "id", ""))
-    if expected_user != current_id and not getattr(current_user, "is_admin", False):
-        raise MemoryAccessDeniedError("You don't have permission to access this memory")
+
+    if getattr(current_user, "is_admin", False):
+        return
+
+    expected_identifier = str(expected_user).strip()
+    if not expected_identifier:
+        # If the record does not advertise an owner after validation we treat it as
+        # unscoped and allow the operation to proceed.
+        return
+
+    raw_current_id = getattr(current_user, "id", None)
+    current_identifier = str(raw_current_id).strip() if raw_current_id is not None else ""
+
+    if not current_identifier:
+        raise MemoryAccessDeniedError(
+            record.id,
+            "<unknown>",
+            operation,
+            "Authenticated user is missing an identifier required for access validation.",
+        )
+
+    if expected_identifier != current_identifier:
+        raise MemoryAccessDeniedError(record.id, current_identifier, operation)
 
 
 def _list_params_dependency(
@@ -215,7 +237,7 @@ async def get_memory(
             user=current_user,
         )
         record = _to_memory_record(memory)
-        _ensure_access(record, current_user)
+        _ensure_access(record, current_user, operation="read")
         return record
     except MemoryNotFoundError as exc:
         logger.warning("Memory %s not found", memory_id)
@@ -289,7 +311,7 @@ async def update_memory(
             user=current_user,
         )
         record = _to_memory_record(existing)
-        _ensure_access(record, current_user)
+        _ensure_access(record, current_user, operation="update")
 
         update_payload = payload.to_service_payload()
         updated = await memory_service.update_memory(
@@ -343,7 +365,7 @@ async def delete_memory(
             user=current_user,
         )
         record = _to_memory_record(existing)
-        _ensure_access(record, current_user)
+        _ensure_access(record, current_user, operation="delete")
 
         await memory_service.delete_memory(memory_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -389,7 +411,7 @@ async def transfer_memory(
             user=current_user,
         )
         record = _to_memory_record(existing)
-        _ensure_access(record, current_user)
+        _ensure_access(record, current_user, operation="transfer")
 
         transferred = await memory_service.transfer_memory(
             UUID(str(request.memory_id)),

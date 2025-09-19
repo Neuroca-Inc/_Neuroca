@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
+from typing import Any, Mapping
 
 import pytest
 
+from neuroca.utils import safe_subprocess
 from neuroca.utils.safe_subprocess import (
     UnsafeSubprocessError,
     normalize_command,
@@ -37,12 +38,19 @@ def test_normalize_command_rejects_invalid(command: list[str]) -> None:
 def test_run_validated_command_validates_and_executes(monkeypatch: pytest.MonkeyPatch) -> None:
     observed: dict[str, object] = {}
 
-    def fake_run(cmd: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        observed["cmd"] = cmd
-        observed["kwargs"] = kwargs
-        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+    class _StubCompletedProcess:
+        def __init__(self, args, returncode, stdout=None, stderr=None):
+            self.args = args
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    def fake_invoke(cmd: tuple[str, ...], kwargs: Mapping[str, Any]) -> _StubCompletedProcess:
+        observed["cmd"] = cmd
+        observed["kwargs"] = dict(kwargs)
+        return _StubCompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(safe_subprocess, "_invoke_subprocess", fake_invoke)
 
     env = {"HOME": Path("/tmp/sandbox"), "FLAG": "1"}
     result = run_validated_command(
@@ -62,7 +70,7 @@ def test_run_validated_command_validates_and_executes(monkeypatch: pytest.Monkey
     assert kwargs["text"] is True
     assert kwargs["timeout"] == 1.5
     assert kwargs["env"] == {"HOME": os.fspath(env["HOME"]), "FLAG": "1"}
-    assert isinstance(result, subprocess.CompletedProcess)
+    assert result.returncode == 0
 
 
 def test_run_validated_command_rejects_non_positive_timeout() -> None:

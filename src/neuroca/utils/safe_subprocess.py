@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from subprocess import CompletedProcess, run as _system_run
 
 __all__ = [
     "UnsafeSubprocessError",
@@ -72,6 +73,15 @@ def _sanitize_environment(env: Mapping[str, Any] | None) -> dict[str, str] | Non
     return sanitized
 
 
+def _invoke_subprocess(
+    command: tuple[str, ...],
+    run_kwargs: Mapping[str, Any],
+) -> CompletedProcess[Any]:
+    """Invoke ``subprocess.run`` using the sanitized command and options."""
+
+    return _system_run(command, **dict(run_kwargs))
+
+
 def run_validated_command(
     command: Sequence[str],
     *,
@@ -80,7 +90,7 @@ def run_validated_command(
     text: bool | None = None,
     timeout: float | None = None,
     env: Mapping[str, Any] | None = None,
-) -> subprocess.CompletedProcess[Any]:
+) -> CompletedProcess[Any]:
     """Execute a validated command with ``shell=False`` enforced."""
 
     normalized_command = normalize_command(command)
@@ -102,4 +112,4 @@ def run_validated_command(
     if sanitized_env is not None:
         run_kwargs["env"] = sanitized_env
 
-    return subprocess.run(normalized_command, **run_kwargs)
+    return _invoke_subprocess(normalized_command, run_kwargs)
