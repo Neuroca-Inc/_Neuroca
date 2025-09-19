@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from functools import lru_cache
 from typing import Any
 
 from subprocess import CompletedProcess
@@ -147,6 +148,16 @@ def _ensure_allowed_executable(
     return tuple(sanitized_command)
 
 
+@lru_cache(maxsize=1)
+def _resolve_subprocess_runner() -> Callable[..., CompletedProcess[Any]]:
+    """Return the underlying ``subprocess.run`` callable when available."""
+
+    run_callable = getattr(subprocess, "run", None)
+    if not callable(run_callable):  # pragma: no cover - defensive guard
+        raise RuntimeError("subprocess.run is unavailable in this environment")
+    return run_callable
+
+
 def _invoke_subprocess(
     command: tuple[str, ...],
     run_kwargs: Mapping[str, Any],
@@ -155,7 +166,8 @@ def _invoke_subprocess(
 
     options = dict(run_kwargs)
     options["args"] = command
-    return subprocess.run(**options)
+    run_callable = _resolve_subprocess_runner()
+    return run_callable(**options)
 
 
 def run_validated_command(
