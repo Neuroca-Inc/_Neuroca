@@ -1,5 +1,37 @@
 # Neuroca Release Notes
 
+## 1.0.0 – General Availability
+
+Release date: 2025-09-19
+
+Highlights
+
+- Finalised the database migration toolchain with a production-ready
+  `MigrationManager`, convenience `upgrade`/`downgrade` wrappers, and
+  SQLite-backed tests that exercise apply/rollback flows end-to-end.
+- Hardened the system operations CLI: `_backup_database` / `_restore_database`
+  now have comprehensive unit coverage (Postgres and SQLite paths), and the
+  README usage section documents the supported command groups (`llm`, `memory`,
+  `system`).
+- Added `neuroca.core.utils.logging.configure_logger` for consistent module
+  logging and introduced `BackupRestoreError`/`run_health_checks` so CLI
+  commands no longer rely on ad-hoc stubs during testing.
+- Verified top-level entry points via smoke tests (`tests/unit/cli` and
+  `tests/unit/integration/test_cli_llm.py`) and updated the project checklist to
+  reflect the green state.
+
+Upgrade notes
+
+- Database automation can now be driven through
+  `neuroca.db.migrations.upgrade/downgrade`; integrate these helpers into your
+  deployment workflows for consistent schema management.
+- CLI environments should refresh their help text — commands such as
+  `neuroca llm query`, `neuroca memory seed`, and `neuroca system backup` are
+  now the canonical pathways referenced in the documentation.
+- No breaking configuration changes were introduced relative to 1.0.0-rc1; if
+  you were already validating the release candidate, upgrading is a drop-in
+  replacement.
+
 ## 1.0.0-rc1 – Release Candidate
 
 Release date: 2025-09-19 (candidate)

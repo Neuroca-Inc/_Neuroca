@@ -240,21 +240,32 @@ The API will be available at `http://localhost:8000` by default.
 
 ### CLI
 
-The NCA system provides a command-line interface for direct interaction:
+The `neuroca` binary exposes scoped command groups for day-to-day operations. After
+installing the project into a virtual environment run `neuroca --help` to see the
+available top-level groups (`llm`, `memory`, `system`). Common flows:
 
 ```bash
-# Get help
+# Display available commands and options
 neuroca --help
 
-# Initialize a new cognitive session
-neuroca session init
+# Run an LLM query using the local Ollama provider without touching the live memory tiers
+neuroca llm query "summarise the latest log entries" \
+  --provider ollama --model gemma3:4b --no-memory --no-health --no-goals
 
-# Process input through the cognitive architecture
-neuroca process "Your input text here"
+# Seed a short-term memory file and inspect stored entries
+neuroca memory seed ./examples/memories.json --tier stm --user demo-user
+neuroca memory inspect --tier stm --limit 5
 
-# View memory contents
-neuroca memory list --type=working
+# Create a database backup (PostgreSQL) or copy a local SQLite database
+neuroca system backup --path ./backups/$(date +%Y%m%d).sql
+
+# Restore from a previously created backup
+neuroca system restore ./backups/20250919.sql
 ```
+
+Each command supports `--help` for additional switches; for example,
+`neuroca memory --help` details vector-index maintenance utilities and other
+maintenance tasks covered by the automated tests.
 
 ### Python Library
 

@@ -126,7 +126,6 @@ This single document enumerates all actionable items required to finish the proj
 12. Packaging and Runtime
 
 - [x] Confirm Python version markers (< 3.13) and dependency constraints [pyproject.toml](pyproject.toml), [requirements.txt](requirements.txt)
-- [ ] Verify CLI entry points and top-level commands work in a fresh install [src/neuroca/cli/main.py](src/neuroca/cli/main.py), [tests/unit/integration/test_cli_llm.py](tests/unit/integration/test_cli_llm.py), [tests/unit/cli/test_memory_cli.py](tests/unit/cli/test_memory_cli.py)
 - [x] Verify CLI entry points and top-level commands work in a fresh install [src/neuroca/cli/main.py](src/neuroca/cli/main.py), [tests/unit/integration/test_cli_llm.py](tests/unit/integration/test_cli_llm.py), [tests/unit/cli/test_memory_cli.py](tests/unit/cli/test_memory_cli.py), [tests/unit/cli/test_system_backup.py](tests/unit/cli/test_system_backup.py)
 - [ ] Pre-commit hooks and linters pass locally and in CI [.pre-commit-config.yaml](.pre-commit-config.yaml)
 
@@ -135,6 +134,7 @@ This single document enumerates all actionable items required to finish the proj
 - [ ] Update README with final install/usage examples [README.md](README.md)
 - [ ] Update release notes to 1.0 [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md)
 - [ ] Ensure docs build and publish without warnings [docs/mkdocs.yml](docs/mkdocs.yml), [docs/](docs/)
+- [ ] Fix warnings about unmatched links and missing nav entries in documentation
 - [ ] All docs are accurate, MkDocs are operational and docs web pages are smooth.
 
 14. CI/CD and Quality Gates
