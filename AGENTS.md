@@ -1,3 +1,97 @@
+# Environment Setup and Build (Quick Start)
+
+This section provides a fast, reliable way to get the project running locally or in containers. Choose one option below.
+
+- Python version: use 3.10 or 3.11 (PyTorch isn’t available for 3.12 per project constraints)
+- OS: Linux/macOS recommended; Windows WSL2 works
+- Optional tools: Docker (for containerized runs), Poetry (alternative to pip), Make (convenience)
+
+## Option A: Local venv (recommended)
+
+```bash
+# from repo root
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install --upgrade pip
+pip install -e .
+
+# run API (either entrypoint or uvicorn)
+neuroca-api
+# or
+python -m uvicorn neuroca.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+## Option B: Poetry
+
+```bash
+curl -sSL https://install.python-poetry.org | python3 -  # if needed
+poetry env use 3.11  # or 3.10
+poetry install --with dev,test
+poetry run neuroca-api
+# or
+poetry run uvicorn neuroca.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+## Option C: Docker (single container)
+
+```bash
+# development image
+docker build --target development -t neuroca/dev .
+docker run --rm -it -p 8000:8000 --env-file .env --name neuroca-api neuroca/dev
+
+# production image
+docker build --target production -t neuroca/api:prod .
+docker run --rm -it -p 8000:8000 --env-file .env --name neuroca-api-prod neuroca/api:prod
+```
+
+## Option D: Docker Compose (subset)
+
+The provided compose file defines many services (DB, Redis, Milvus, monitoring, etc.). If you only need the API with Postgres and Redis:
+
+```bash
+docker compose up api postgres redis
+```
+
+Note: Some memory service Dockerfiles referenced in compose may not exist in every clone/branch; start only the services you need.
+
+## Environment variables (.env)
+
+Create a `.env` at the repo root for local/dev runs:
+
+```dotenv
+# Minimal dev example
+SECRET_KEY=change-me
+LLM_API_KEY=your-key-if-needed
+
+# Postgres (preferred for full stack)
+DATABASE_URL=postgresql+psycopg2://neuroca:${POSTGRES_PASSWORD:-password}@localhost:5432/neuroca
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# Optional Milvus (only if using vector store)
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
+```
+
+See `config/` for backend configuration presets (e.g., sqlite, in-memory) if you’re experimenting without external services.
+
+## Tests, lint, and types
+
+```bash
+pytest -q
+ruff check
+mypy --hide-error-context --no-error-summary
+```
+
+## Notes
+
+- If `neuroca-api` isn’t found, ensure your venv is active and reinstall with `pip install -e .` (or use Poetry).
+- The Makefile’s install target may assume a subfolder layout; if it fails, install locally via `pip install -e .` and run uvicorn directly.
+
+---
+
 ### Core Mission
 
 - The agent's primary goal is to guide, enforce, and analyze the implementation of software components against a set of predefined engineering standards, security policies, and architectural guidelines.
