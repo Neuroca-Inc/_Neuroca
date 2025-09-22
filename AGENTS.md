@@ -29,7 +29,7 @@
   - Each project/module should have a single responsibility.
   - **CRITICAL**: Never create "shims" when replacing deprecated functions or patterns. Always do a full replacement unless explicitly instructed otherwise to avoid technical debt.
   - Adopt a comprehensive, automated testing pyramid: heavy unit tests (fast, isolated), moderate integration (components interaction), light end-to-end (full flow).
-  - Use Test-Driven Development (TDD) or Behavior-Driven Development (BDD). Aim for 80%+ test coverage.
+  - Use Test-Driven Development (TDD) or Behavior-Driven Development (BDD). Aim for 95%++ test coverage.
   - Always add brief logged explanations for any programmatic test that explains what the test is actually attempting to prove/disprove.
   - Implement layered validation (client-side, server-side, DB-level) with a fail-early principle. Automate 90% of validation.
 - **Docstrings & Documentation:**
@@ -69,6 +69,9 @@
   - When calling `codacy_cli_analyze`, only send `provider`, `organization`, and `repository` if the project is a git repository.
   - If a call to a Codacy tool that uses `repository` or `organization` as a parameter returns a 404 error, offer to run the `codacy_setup_repository` tool to add the repository to Codacy. If the user accepts, run it. Do NOT ever try to run the `codacy_setup_repository` tool on your own. After setup, immediately retry the action that failed (only retry once).
   - If Codacy MCP Server tools are unavailable or unreachable, suggest the following troubleshooting steps: Try to reset the MCP on the extension; if using VSCode, suggest reviewing Copilot > MCP settings in GitHub (e.g., `https://github.com/settings/copilot/features`); if none work, suggest contacting Codacy support.
+  - All methods and functions should have <=50 LOC
+  - There should be NO MORE than 1 class per file
+  - Avoid having more than 10 files in a single folder, prefer to organize files into subfolders to avoid clutter
 - **GitHub Project Tracking:**
   - **CRITICAL**: All status moves and snapshot refreshes used for autonomous agent reasoning MUST go through `github_tools/cli.py` (`/mnt/samsung_ssd/notes/github_tools/cli.py`). Never hand-edit JSON snapshots.
   - **CRITICAL**: Never commit or echo the `GH_TOKEN` to logs or memory bank. Load it locally (e.g., from a `.env` file).
@@ -137,7 +140,7 @@
 - Following any successful `edit_file` or `reapply` operation, `codacy_cli_analyze` must be executed on the edited files to promptly identify and fix any newly introduced code quality or security issues.
 - Strict architectural enforcement includes a critical rule that no source code file shall exceed 500 lines of code, and dependencies must flow inward only, utilizing interfaces for cross-layer communication.
 - All functions and classes critically require full, professional, and descriptive docstrings, detailing purpose, parameters, returns, exceptions, and side effects to ensure code clarity and maintainability.
-- A comprehensive, automated testing pyramid (unit, integration, end-to-end) is mandated, leveraging Test-Driven Development (TDD) or Behavior-Driven Development (BDD), with an aim for 80%+ test coverage.
+- A comprehensive, automated testing pyramid (unit, integration, end-to-end) is mandated, leveraging Test-Driven Development (TDD) or Behavior-Driven Development (BDD), with an aim for 95%++ test coverage.
 - Subprocess execution must be secure: executables resolved via `shutil.which` to absolute paths, fixed whitelisted argument lists used, and `shell=True` strictly forbidden.
 - All GitHub project status moves and snapshot refreshes must be managed exclusively through `github_tools/cli.py`, preventing manual JSON edits to ensure auditability and avoid race conditions.
 - The agent operates autonomously, making safe, low-risk changes while diligently preserving project context and logging decisions using MemoriPilot tools, only asking clarifying questions when problems are ambiguous or high-risk.
