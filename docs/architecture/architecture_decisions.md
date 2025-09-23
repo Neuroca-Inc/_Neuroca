@@ -217,17 +217,85 @@ We've chosen Poetry for dependency management because:
 
 Our storage architecture employs multiple specialized systems:
 
-1. **Working Memory**: 
+1. **Working Memory**:
    - In-memory with Redis for distributed scenarios
    - Optimized for fast access and real-time operations
-   
-2. **Episodic Memory**: 
+
+2. **Episodic Memory**:
    - PostgreSQL with vector extension for similarity search
    - JSONB for flexible schema evolution
-   
-3. **Semantic Memory**: 
+
+3. **Semantic Memory**:
    - Neo4j graph database for relationship traversal
    - Property graph model for typed relationships
+
+### Vector Search Capability Decision
+
+Vector search remains in-scope for the 1.0 release. The `VectorBackend`
+implementation in `src/neuroca/memory/backends/vector/core.py` satisfies the
+storage backend interface by wiring specialized CRUD, indexing, integrity, and
+embedding model swap components. The accompanying regression suite in
+`tests/unit/memory/backends/test_vector_backend.py` validates registration,
+similarity queries, index maintenance, and embedding migration workflows,
+providing confidence that semantic memory tiers can depend on the vector
+backends during the release cycle.
+
+### Knowledge Graph Backend Decision
+
+Long-term memory requires durable relationship storage to expose the knowledge
+graph features described in the architecture briefs. To support this flow the
+1.0 release now ships with a dedicated knowledge graph backend interface plus
+an in-memory implementation and a Neo4j adapter. The LTM relationship manager
+obtains the backend during tier initialization, synchronises relationship CRUD
+through it, and mirrors graph metadata back into the tier’s memory records to
+preserve compatibility with existing metadata consumers. The regression suite
+(`tests/unit/memory/tiers/ltm/components/test_relationship.py` and
+`tests/unit/memory/backends/test_knowledge_graph_backend.py`) verifies node
+registration, bidirectional link maintenance, graph lookups, and backend
+cleanup operations, demonstrating the production readiness of the knowledge
+graph pipeline.
+
+### Embedding Storage Capability Decision
+
+Dedicated embedding persistence APIs remain **out of scope for the 1.0
+release**. The storage backend interface continues to surface the optional
+`store_embedding` hook that raises `NotImplementedError` by default, and the
+in-memory/vector backends embed vector data alongside the primary memory record
+rather than via the optional persistence channel. During the architecture audit
+we confirmed no production paths rely on direct embedding uploads, and deferring
+the capability keeps the clean architecture surface minimal while the async
+storage manager continues to stabilize.
+
+Post‑1.0, we will re-evaluate embedding persistence once a concrete external
+vector service (for example, Qdrant or Milvus) is integrated. That milestone
+will require:
+
+1. Finalizing the embedding CRUD contract across tiers so asynchronous
+   factories can orchestrate uploads without bypassing repository interfaces.
+2. Extending the backend registry so providers advertise whether embedding
+   operations are supported, preventing runtime discovery via exception
+   handling.
+3. Adding integration/regression coverage that exercises bulk embedding
+   updates and migration flows to validate data consistency guarantees.
+
+### Expiry Management Capability Decision
+
+The optional expiry management methods exposed on
+`StorageBackendInterface`—`set_expiry`, `get_expiry`, `clear_expiry`, and the
+listing helper—remain **out of scope for the 1.0 release**. During the audit we
+confirmed that no concrete backend implements these hooks and that tier-level
+time-to-live support is currently limited to the STM expiry manager, which
+stores expiry timestamps in metadata and synchronizes them through the tier
+lifecycle map (`STMExpiry` and `STMLifecycle` in
+`src/neuroca/memory/tiers/stm/components/`).
+
+To avoid exposing partially-implemented behaviour we will continue to raise
+`NotImplementedError` from the backend interface and treat TTL as a
+post‑release enhancement. The follow-up milestone will: (a) introduce capability
+flags so factories can route only through backends that advertise TTL support,
+(b) add repository-level expiry projections instead of in-memory maps, and (c)
+extend the integration suite with regression coverage that exercises set,
+extend, clear, and list operations across asynchronous tiers.
 
 ## Implementation Approach
 

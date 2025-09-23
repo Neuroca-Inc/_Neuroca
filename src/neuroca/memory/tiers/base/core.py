@@ -759,36 +759,36 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
     async def update_memory_strength(self, memory_id: str, delta: float) -> float:
         """
         Update the strength of a memory.
-        
+
         Args:
             memory_id: The ID of the memory
             delta: Amount to adjust strength by (positive or negative)
-            
+
         Returns:
             New strength value
-            
+
         Raises:
             ItemNotFoundError: If the memory does not exist
             TierOperationError: If the operation fails
         """
         self._ensure_initialized()
-        
+
         try:
             # Check if memory exists
             if not await self.exists(memory_id):
                 raise ItemNotFoundError(item_id=memory_id, tier=self._tier_name)
-            
+
             # Get existing memory
             data = await self._backend.read(memory_id)
             memory_item = MemoryItem.model_validate(data)
-            
+
             # Update tier-specific strength
             new_strength = await self._update_strength(memory_item, delta)
-            
+
             # Save to backend
             data = memory_item.model_dump()
             await self._backend.update(memory_id, data)
-            
+
             return new_strength
         except ItemNotFoundError:
             # Propagate backend errors
@@ -800,7 +800,53 @@ class BaseMemoryTier(MemoryTierInterface, abc.ABC):
                 tier_name=self._tier_name,
                 message=f"Failed to update memory strength: {str(e)}"
             ) from e
-    
+
+    async def decay(self, memory_id: str, decay_amount: float = 0.1) -> bool:
+        """Reduce the persisted strength for a memory item.
+
+        Args:
+            memory_id: Identifier of the memory subject to decay.
+            decay_amount: Amount of strength to subtract (0.0 to 1.0).
+
+        Returns:
+            ``True`` when the stored strength decreased, ``False`` when the
+            request resulted in no effective change (for example a zero
+            ``decay_amount``).
+
+        Raises:
+            ValueError: If ``decay_amount`` is negative.
+            ItemNotFoundError: If the memory does not exist in this tier.
+            TierOperationError: If the decay operation fails.
+        """
+
+        self._ensure_initialized()
+
+        normalized_amount = float(decay_amount)
+        if normalized_amount < 0.0:
+            raise ValueError("decay_amount must be non-negative")
+
+        normalized_amount = min(normalized_amount, 1.0)
+        if normalized_amount == 0.0:
+            return False
+
+        try:
+            previous_strength = await self.get_memory_strength(memory_id)
+            new_strength = await self.update_memory_strength(memory_id, -normalized_amount)
+        except (ItemNotFoundError, TierOperationError):
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Failed to decay memory %s in %s tier", memory_id, self._tier_name
+            )
+            raise TierOperationError(
+                operation="decay",
+                tier_name=self._tier_name,
+                message=f"Failed to decay memory: {str(exc)}"
+            ) from exc
+
+        epsilon = 1e-6
+        return new_strength < (previous_strength - epsilon)
+
     #-----------------------------------------------------------------------
     # Maintenance Operations
     #-----------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Ollama Integration
 
-Ollama function-calling is not supported in 1.0.0‑rc1. The adapter raises a clear NotImplemented error when function-calling is requested. This is currently in development and should be supported shortly.
+Ollama function-calling is not supported in the 1.0.0 release. The adapter raises a clear `NotImplementedError` when function-calling is requested. This is currently in development and should be supported shortly.
 
 ## Usage
 

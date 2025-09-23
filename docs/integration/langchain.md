@@ -1,6 +1,6 @@
 # LangChain Integration (Optional)
 
-LangChain support is optional in Neuroca and is not installed by default for the 1.0.0‑rc1 release. This keeps the core secure and lightweight.
+LangChain support is optional in Neuroca and is not installed by default for the 1.0.0 release. This keeps the core secure and lightweight.
 
 ## Install
 

@@ -44,6 +44,7 @@ class MemoryMetricsPublisher:
         if self._exporter is None:
             name = str(self._config.get("name", "memory_manager"))
             endpoint = str(self._config.get("endpoint", "/metrics"))
+            host = str(self._config.get("host", "0.0.0.0"))
             port = self._coerce_int(self._config.get("port", 9464), default=9464)
             batch_size = self._coerce_int(self._config.get("batch_size", 100), default=100)
             flush_interval = self._coerce_int(self._config.get("flush_interval", 15), default=15)
@@ -52,6 +53,7 @@ class MemoryMetricsPublisher:
                 self._exporter = PrometheusExporter(
                     name=name,
                     endpoint=endpoint,
+                    host=host,
                     port=port,
                     batch_size=batch_size,
                     flush_interval=flush_interval,

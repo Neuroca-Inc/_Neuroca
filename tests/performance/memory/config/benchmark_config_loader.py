@@ -6,7 +6,6 @@ operations in the configuration loader, including loading, merging,
 and accessing configuration values.
 """
 
-import os
 import time
 import tempfile
 import yaml
@@ -19,10 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from neuroca.memory.config.loader import (
     ConfigurationLoader,
-    get_backend_config,
-    get_config_value,
     _deep_copy_dict,
-    _deep_merge_dicts
+    _deep_merge_dicts,
 )
 
 
@@ -219,7 +216,7 @@ class ConfigLoaderBenchmarks:
             start_time = time.time()
             
             loader = ConfigurationLoader(config_dir)
-            config = loader.load_config("test_100")
+            loader.load_config("test_100")
             
             # Access some values
             loader.get_value("common.cache.enabled")
@@ -313,7 +310,7 @@ class ConfigLoaderBenchmarks:
 def run_benchmarks() -> None:
     """Run all configuration loader benchmarks."""
     benchmarks = ConfigLoaderBenchmarks(iterations=100)
-    results = benchmarks.run_all_benchmarks()
+    benchmarks.run_all_benchmarks()
     benchmarks.print_results()
     
     # To investigate performance bottlenecks, this would typically be run in isolation

@@ -32,20 +32,21 @@ class MemoryTier(str, Enum):
     _NORMALIZED_MAP: ClassVar[dict[str, 'MemoryTier']]
 
     def __str__(self) -> str:
-        return self.canonical_label
+        return _MEMORY_TIER_CANONICAL_LABELS[self]
 
     @property
     def canonical_label(self) -> str:
         """Return the canonical cognitive label for the tier."""
-        return self._CANONICAL_LABELS[self]
+        return _MEMORY_TIER_CANONICAL_LABELS[self]
 
     @property
     def storage_key(self) -> str:
         """Return the storage-layer key associated with this tier."""
-        return self.value
+        return str(self.value)
 
     @classmethod
     def _normalize_key(cls, tier_name: str) -> str:
+        """Return a normalized key for ``tier_name`` compatible with lookups."""
         return tier_name.strip().replace("-", "_").replace(" ", "_").lower()
 
     @classmethod
@@ -58,7 +59,7 @@ class MemoryTier(str, Enum):
             raise ValueError("Memory tier must be provided as a string")
 
         normalized_key = cls._normalize_key(tier_name)
-        tier = cls._NORMALIZED_MAP.get(normalized_key)
+        tier = _MEMORY_TIER_NORMALIZED_MAP.get(normalized_key)
         if tier is not None:
             return tier
 
@@ -72,7 +73,7 @@ class MemoryTier(str, Enum):
         except ValueError:
             valid_inputs = sorted(
                 {
-                    *cls._NORMALIZED_MAP.keys(),
+                    *_MEMORY_TIER_NORMALIZED_MAP.keys(),
                     *(member.storage_key for member in cls),
                     *(member.canonical_label for member in cls),
                 }
@@ -129,6 +130,7 @@ _MEMORY_TIER_ALIASES: dict[MemoryTier, tuple[str, ...]] = {
 
 
 def _build_memory_tier_normalized_map() -> dict[str, MemoryTier]:
+    """Construct the normalized lookup table for tier aliases."""
     normalized_map: dict[str, MemoryTier] = {}
     for tier, aliases in _MEMORY_TIER_ALIASES.items():
         augmented_aliases = set(aliases) | {

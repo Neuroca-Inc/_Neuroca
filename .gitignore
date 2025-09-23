@@ -219,9 +219,11 @@ reports/unified_analysis.html
 
 #Ignore vscode AI rules
 .github\copilot-instructions.md
-neuroca_temporal_analysis.db-wal
-neuroca_temporal_analysis.db-wal
-neuroca_temporal_analysis.db-wal
+
+# SQLite runtime artifacts and generated database backups
+DB_backup/
+*.db-wal
+*.db-shm
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
