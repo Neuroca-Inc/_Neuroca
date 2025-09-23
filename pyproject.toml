@@ -10,7 +10,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "neuroca"
-version = "1.0.0rc1"
+version = "1.0.0"
 description = "NeuroCognitive Architecture (NCA) for Large Language Models"
 authors = [
     {name = "Justin Lietz", email = "justin@neuroca.ai"},
@@ -60,6 +60,7 @@ dependencies = [
     # Optional integrations are defined in optional-dependencies below
     "tiktoken>=0.4.0",
     "faiss-cpu>=1.7.4",
+    "qdrant-client>=1.9.0,<2.0.0",
     "pyyaml>=6.0.1",
     "protobuf>=5.29.5",
     "aiohttp>=3.12.14",

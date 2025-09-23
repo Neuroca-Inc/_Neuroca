@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: neuroca:1.0.0-rc1
+    image: neuroca:1.0.0
     container_name: neuroca-api
     restart: unless-stopped
     depends_on:

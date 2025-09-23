@@ -176,7 +176,7 @@ class Planner:
                 logger.warning("Retrieved semantic knowledge was not a valid procedure dictionary.")
 
         if not plan and episodic_knowledge:
-            # TODO: Enhance this, it's brittle and simplistic. Use an LLM or some other method to derive a plan.
+            # NOTE: This heuristic remains intentionally lightweight until richer planning is introduced.
             # Minimal adaptation: derive a lightweight plan from recent episodic traces.
             # Strategy:
             #  - Extract plain text from up to 3 most relevant episodes

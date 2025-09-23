@@ -440,10 +440,10 @@ from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
 
 # Create an in-memory backend with default configuration
-backend = StorageBackendFactory.create_backend(BackendType.MEMORY)
+backend = StorageBackendFactory.create_storage(backend_type=BackendType.MEMORY)
 
 # Create a SQLite backend with default configuration
-sqlite_backend = StorageBackendFactory.create_backend(BackendType.SQLITE)
+sqlite_backend = StorageBackendFactory.create_storage(backend_type=BackendType.SQLITE)
 ```
 
 ## Environment-Specific Configuration

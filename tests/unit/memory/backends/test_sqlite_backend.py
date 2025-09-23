@@ -2,18 +2,13 @@
 Unit tests for memory storage backend.
 """
 
-import asyncio
-import os
 import pytest
 import pytest_asyncio
-import tempfile
 import uuid
-from typing import Dict, Any
 
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
 from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
-from neuroca.memory.models.search import MemorySearchOptions
 
 
 @pytest_asyncio.fixture
@@ -145,12 +140,12 @@ async def test_search(memory_backend):
     
     # Test that we can use search method
     try:
-        # Try directly accessing items 
+        # Try directly accessing items
         all_items = memory_backend.storage._items
+    except AttributeError:
+        pytest.skip("Backend does not expose an item collection for inspection")
+    else:
         assert len(all_items) == 3
-    except:
-        # Skip actual assertions as implementation varies
-        pass
 
 
 @pytest.mark.asyncio
@@ -218,12 +213,12 @@ async def test_count(memory_backend):
     
     # Test that we stored some memories
     try:
-        # Try directly accessing items 
+        # Try directly accessing items
         all_items = memory_backend.storage._items
+    except AttributeError:
+        pytest.skip("Backend does not expose an item collection for inspection")
+    else:
         assert len(all_items) == 3
-    except:
-        # Skip actual assertions as implementation varies
-        pass
 
 
 @pytest.mark.skip("Stats implementation varies across backends")

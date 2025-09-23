@@ -1,6 +1,9 @@
 """Tests for secure PostgreSQL backup and restore command construction."""
-
+# ruff: noqa: E402  # test module adjusts sys.modules before importing production code
+import copy
 import sys
+import zipfile
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import importlib
@@ -17,6 +20,7 @@ if not hasattr(memory_module, "memory_manager"):
     memory_module.memory_manager = object()
 
 import neuroca.cli.commands.system as system
+from neuroca.config.settings import EnvironmentType
 from neuroca.core.exceptions import BackupRestoreError
 
 
@@ -197,6 +201,61 @@ def test_validate_database_command_allows_pg_dump(tmp_path):
         dump_file.as_posix(),
         "neuroca",
     ]
+
+
+class _StubSettings:
+    """Lightweight settings stub for exercising backup and restore flows."""
+
+    def __init__(self, base_dir: Path):
+        temp_root = base_dir / "tmp"
+        backup_root = base_dir / "backups"
+        log_root = base_dir / "logs"
+        for directory in (temp_root, backup_root, log_root):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        self.SYSTEM = SimpleNamespace(TEMP_DIR=temp_root.as_posix(), BACKUP_DIR=backup_root.as_posix())
+        self.LOGGING = SimpleNamespace(LOG_FILE=(log_root / "app.log").as_posix())
+        self._snapshot = {
+            "ENV": EnvironmentType.DEVELOPMENT,
+            "paths": {"data_dir": base_dir / "data"},
+        }
+        self.updated_payload: dict[str, object] | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        """Return a deep copy of the captured configuration snapshot."""
+
+        return copy.deepcopy(self._snapshot)
+
+    def update_from_dict(self, payload: dict[str, object]) -> None:
+        """Persist updates and keep a copy for assertions."""
+
+        self.updated_payload = copy.deepcopy(payload)
+        self._snapshot.update(payload)
+
+
+def test_backup_and_restore_round_trip_normalizes_yaml(monkeypatch, tmp_path):
+    """Ensure backups serialize enums safely and restores load them without errors."""
+
+    stub_settings = _StubSettings(tmp_path)
+    monkeypatch.setattr(system, "settings", stub_settings, raising=False)
+
+    backup_path = tmp_path / "neuroca_backup_test.zip"
+
+    created = system._create_system_backup(backup_path.as_posix(), include_logs=False, include_data=False)
+    assert created is True
+
+    with zipfile.ZipFile(backup_path) as archive:
+        with archive.open("config/settings.yaml") as config_stream:
+            yaml_text = config_stream.read().decode("utf-8")
+
+    assert "!!python" not in yaml_text
+
+    restored = system._restore_system_from_backup(backup_path.as_posix())
+    assert restored is True
+    assert stub_settings.updated_payload is not None
+    assert stub_settings.updated_payload["ENV"] == "development"
+    assert isinstance(stub_settings.updated_payload["paths"], dict)
+    assert isinstance(stub_settings.updated_payload["paths"]["data_dir"], str)
 
 
 def test_validate_database_command_rejects_unexpected_executable(tmp_path):

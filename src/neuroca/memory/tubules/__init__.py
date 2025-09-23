@@ -36,6 +36,7 @@ Note:
 
 import enum
 import logging
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -242,10 +243,9 @@ class Tubule:
         """
         # This is a simplified implementation
         # In a real system, this would more accurately measure serialized data size
-        import sys
         try:
             return sys.getsizeof(data)
-        except:
+        except Exception:
             # Fallback for objects that don't support getsizeof
             return 1024  # Default assumption
     

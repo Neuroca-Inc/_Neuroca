@@ -8,10 +8,9 @@ different aspects of the STM functionality.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.backends import BackendType
-from neuroca.memory.backends.factory import StorageBackendFactory
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.tiers.base import BaseMemoryTier
 from neuroca.memory.tiers.stm.components import (
@@ -432,3 +431,15 @@ class ShortTermMemoryTier(BaseMemoryTier):
         
         # Query backend with empty filter to get all items
         return await self._backend.query({})
+
+
+# ---------------------------------------------------------------------------
+# Legacy Compatibility
+# ---------------------------------------------------------------------------
+
+# NOTE: Older integration tests and scripts still import ``ShortTermMemory``
+# directly from this module. The implementation was renamed to
+# ``ShortTermMemoryTier`` during the architecture refactor. This alias keeps the
+# historical import path working without re-introducing a second class
+# definition.
+ShortTermMemory = ShortTermMemoryTier

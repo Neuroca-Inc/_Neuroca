@@ -319,7 +319,6 @@ class SchemaGenerator:
         try:
             # Try to import pydantic
             try:
-                import pydantic
                 from pydantic import BaseModel
             except ImportError:
                 logger.error("Pydantic package is required for Pydantic schema generation")
@@ -437,7 +436,7 @@ class SchemaGenerator:
     
     def _dataclass_to_schema(self, dataclass_obj: type) -> dict[str, Any]:
         """Convert a dataclass to a JSON schema."""
-        from dataclasses import fields
+        from dataclasses import MISSING, fields
         
         schema = {
             "type": "object",
@@ -454,7 +453,7 @@ class SchemaGenerator:
             schema["properties"][field.name] = type_info
             
             # Check if field is required
-            if field.default == field.default_factory == dataclasses._MISSING_TYPE:
+            if field.default is MISSING and field.default_factory is MISSING:
                 schema["required"].append(field.name)
         
         return schema
@@ -462,37 +461,40 @@ class SchemaGenerator:
     def _python_type_to_json_schema(self, py_type: type) -> dict[str, Any]:
         """Convert a Python type to a JSON schema type definition."""
         # This is a simplified implementation
-        if py_type == str:
+        if py_type is str:
             return {"type": "string"}
-        elif py_type == int:
+        if py_type is int:
             return {"type": "integer"}
-        elif py_type == float:
+        if py_type is float:
             return {"type": "number"}
-        elif py_type == bool:
+        if py_type is bool:
             return {"type": "boolean"}
-        elif py_type in (list, list):
+        if py_type is list:
             return {"type": "array", "items": {}}
-        elif py_type in (dict, dict):
+        if py_type is dict:
             return {"type": "object"}
-        elif hasattr(py_type, "__origin__") and py_type.__origin__ == list:
+        if hasattr(py_type, "__origin__") and py_type.__origin__ is list:
             # Handle List[X]
             item_type = py_type.__args__[0]
             return {
                 "type": "array",
                 "items": self._python_type_to_json_schema(item_type)
             }
-        elif hasattr(py_type, "__origin__") and py_type.__origin__ == dict:
+        if hasattr(py_type, "__origin__") and py_type.__origin__ is dict:
             # Handle Dict[X, Y]
             return {"type": "object"}
-        elif hasattr(py_type, "__origin__") and py_type.__origin__ == Union:
+        if hasattr(py_type, "__origin__") and py_type.__origin__ is Union:
             # Handle Optional[X] and Union[X, Y, ...]
-            types = [self._python_type_to_json_schema(arg) for arg in py_type.__args__ if arg != type(None)]
+            types = [
+                self._python_type_to_json_schema(arg)
+                for arg in py_type.__args__
+                if arg is not type(None)
+            ]
             if len(types) == 1:
                 return types[0]
             return {"anyOf": types}
-        else:
-            # Default to string for complex types
-            return {"type": "string"}
+        # Default to string for complex types
+        return {"type": "string"}
     
     def _handle_sqlalchemy(self, source: Any, namespace: Optional[str] = None) -> dict[str, Any]:
         """
@@ -511,7 +513,6 @@ class SchemaGenerator:
         try:
             # Try to import SQLAlchemy
             try:
-                import sqlalchemy
                 from sqlalchemy.ext.declarative import DeclarativeMeta
             except ImportError:
                 logger.error("SQLAlchemy package is required for SQLAlchemy schema generation")

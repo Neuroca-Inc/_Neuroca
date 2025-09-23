@@ -8,10 +8,15 @@ handle different aspects of the LTM functionality.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union, Callable, Iterable, Mapping
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from neuroca.memory.backends import BackendType
-from neuroca.memory.backends.factory import StorageBackendFactory
+from neuroca.memory.backends.knowledge_graph import (
+    InMemoryKnowledgeGraphBackend,
+    KnowledgeGraphBackend,
+    Neo4jKnowledgeGraphBackend,
+)
+from neuroca.memory.exceptions import ConfigurationError
 from neuroca.memory.models.memory_item import MemoryItem, MemoryStatus
 from neuroca.memory.tiers.base import BaseMemoryTier
 from neuroca.memory.tiers.ltm.components import (
@@ -102,11 +107,12 @@ class LongTermMemoryTier(BaseMemoryTier):
         self._strength_calculator = LTMStrengthCalculator(self._tier_name)
         self._operations = LTMOperations(self._tier_name)
         self._snapshot = LTMSnapshotExporter(self._tier_name)
-    
+        self._graph_backend: KnowledgeGraphBackend | None = None
+
     async def _initialize_tier(self) -> None:
         """Initialize tier-specific components."""
         logger.info(f"Initializing LTM tier with {len(self.config['relationship_types'])} relationship types")
-        
+
         # Configure components - order matters due to dependencies
         
         # 1. Configure strength calculator with lifecycle
@@ -122,14 +128,16 @@ class LongTermMemoryTier(BaseMemoryTier):
             config=self.config,
         )
         
-        # 3. Configure relationship manager
+        # 3. Configure the knowledge graph backend and relationship manager
+        self._graph_backend = await self._build_graph_backend()
         self._relationship.configure(
             lifecycle=self._lifecycle,
             backend=self._backend,
             update_func=self.update,
             config=self.config,
+            graph_backend=self._graph_backend,
         )
-        
+
         # 4. Configure category manager
         self._category.configure(
             lifecycle=self._lifecycle,
@@ -160,18 +168,45 @@ class LongTermMemoryTier(BaseMemoryTier):
             lifecycle=self._lifecycle,
             batch_size=self.config.get("snapshot_batch_size"),
         )
-        
+
         logger.info("LTM tier initialization complete")
-    
+
+    async def _build_graph_backend(self) -> KnowledgeGraphBackend:
+        """Instantiate and initialize the configured knowledge graph backend."""
+
+        graph_config = dict(self.config.get("knowledge_graph", {}) or {})
+        backend_type = str(graph_config.get("backend", "memory")).lower()
+
+        if backend_type == "neo4j":
+            pool = graph_config.get("connection_pool")
+            if pool is None:
+                raise ConfigurationError(
+                    component="LongTermMemoryTier",
+                    message="Neo4j knowledge graph backend requires a 'connection_pool' entry",
+                )
+            backend = Neo4jKnowledgeGraphBackend(
+                pool=pool,
+                node_label=graph_config.get("node_label", "Memory"),
+                relationship_label=graph_config.get("relationship_label", "RELATED_TO"),
+            )
+        else:
+            backend = InMemoryKnowledgeGraphBackend()
+
+        await backend.initialize()
+        return backend
+
     async def _shutdown_tier(self) -> None:
         """Shutdown tier-specific components."""
         logger.info("Shutting down LTM tier")
-        
+
         # Shutdown lifecycle component (manages background tasks)
         await self._lifecycle.shutdown()
-        
+
+        if self._graph_backend is not None:
+            await self._graph_backend.shutdown()
+
         logger.info("LTM tier shutdown complete")
-    
+
     async def _pre_store(self, memory_item: MemoryItem) -> None:
         """
         Apply tier-specific behavior before storing a memory.
@@ -184,10 +219,10 @@ class LongTermMemoryTier(BaseMemoryTier):
         
         # Delegate to relationship component
         self._relationship.process_on_store(memory_item)
-        
+
         # Delegate to category component
         self._category.process_on_store(memory_item)
-    
+
     async def _post_store(self, memory_item: MemoryItem) -> None:
         """
         Apply tier-specific behavior after storing a memory.
@@ -197,9 +232,11 @@ class LongTermMemoryTier(BaseMemoryTier):
         """
         # Delegate to operations component
         self._operations.process_post_store(memory_item)
-        
+
         # Delegate to category component
         self._category.process_post_store(memory_item)
+
+        await self._relationship.register_memory(memory_item)
     
     async def _pre_delete(self, memory_id: str) -> None:
         """
@@ -250,12 +287,14 @@ class LongTermMemoryTier(BaseMemoryTier):
     async def _post_delete(self, memory_id: str) -> None:
         """
         Apply tier-specific behavior after deleting a memory.
-        
+
         Args:
             memory_id: The ID of the deleted memory
         """
         # Delegate to operations component
         self._operations.process_post_delete(memory_id)
+
+        await self._relationship.cleanup_memory(memory_id)
     
     async def _on_retrieve(self, memory_item: MemoryItem) -> None:
         """
@@ -398,7 +437,8 @@ class LongTermMemoryTier(BaseMemoryTier):
             related_id=target_id,
             relationship_type=relationship_type,
             strength=strength,
-            bidirectional=bidirectional
+            bidirectional=bidirectional,
+            metadata=metadata,
         )
     
     async def remove_relationship(
@@ -616,6 +656,15 @@ class LongTermMemoryTier(BaseMemoryTier):
             TierOperationError: If the operation fails
         """
         self._ensure_initialized()
-        
+
         # Delegate to maintenance component
         return await self._maintenance.get_maintenance_stats()
+
+
+# ---------------------------------------------------------------------------
+# Legacy Compatibility
+# ---------------------------------------------------------------------------
+
+# Maintain the historical ``LongTermMemory`` symbol for modules that still
+# reference the legacy name introduced before the tier refactor.
+LongTermMemory = LongTermMemoryTier

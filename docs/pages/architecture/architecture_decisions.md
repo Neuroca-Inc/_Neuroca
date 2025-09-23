@@ -225,9 +225,38 @@ Our storage architecture employs multiple specialized systems:
    - PostgreSQL with vector extension for similarity search
    - JSONB for flexible schema evolution
    
-3. **Semantic Memory**: 
+3. **Semantic Memory**:
    - Neo4j graph database for relationship traversal
    - Property graph model for typed relationships
+
+### Knowledge Graph Backend Decision
+
+To make the semantic relationship model production-ready, the release includes
+an explicit knowledge graph backend contract with an in-memory reference
+implementation and a Neo4j adapter. The LTM relationship component now
+coordinates relationship CRUD through the backend while still projecting
+metadata onto memory items for compatibility. Regression coverage in
+`tests/unit/memory/tiers/ltm/components/test_relationship.py` and
+`tests/unit/memory/backends/test_knowledge_graph_backend.py` validates
+bidirectional link maintenance, filtered graph queries, and cleanup flows,
+ensuring the knowledge graph pipeline behaves deterministically in production.
+
+### Expiry Management Capability Decision
+
+The optional expiry management methods on `StorageBackendInterface`
+(`set_expiry`, `get_expiry`, `clear_expiry`, and the listing helper) remain
+**out of scope for the 1.0 release**. No concrete backend implements the hooks
+today, and time-to-live handling is currently limited to the STM expiry
+manager, which stores timestamps in memory metadata and synchronizes them via
+the tier lifecycle map. Leaving the optional interface raising
+`NotImplementedError` prevents partial behaviour from leaking into production
+while the asynchronous memory manager continues to stabilize.
+
+Post‑1.0 we will revisit expiry once backend capability flags and repository
+projections are in place. That milestone will expand the registry so factories
+can select TTL-aware backends, add persistence-backed expiry projections, and
+extend integration tests to cover set, extend, clear, and list scenarios across
+async tiers.
 
 ## Implementation Approach
 

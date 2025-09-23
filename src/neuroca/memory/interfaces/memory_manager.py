@@ -16,7 +16,6 @@ this interface, without direct access to the underlying tiers or backends.
 """
 
 import abc
-from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 
@@ -368,6 +367,102 @@ class MemoryManagerInterface(abc.ABC):
         """
         pass
     
+    #-----------------------------------------------------------------------
+    # Long-Term Relationship Management
+    #-----------------------------------------------------------------------
+
+    @abc.abstractmethod
+    async def add_relationship(
+        self,
+        source_id: str,
+        target_id: str,
+        relationship_type: str,
+        *,
+        strength: float = 0.5,
+        bidirectional: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Create a semantic link between two long-term memories.
+
+        Args:
+            source_id: Identifier of the origin memory in long-term storage.
+            target_id: Identifier of the related memory that should be linked.
+            relationship_type: Canonical relationship key registered with the LTM tier.
+            strength: Relationship weight between 0.0 and 1.0.
+            bidirectional: Whether to also create the reverse relationship.
+            metadata: Optional structured metadata to persist alongside the relationship.
+
+        Returns:
+            bool: True if the relationship record was persisted.
+
+        Raises:
+            MemoryManagerOperationError: If the relationship cannot be stored.
+            ValueError: If the relationship parameters are invalid.
+        """
+        pass
+
+    @abc.abstractmethod
+    async def remove_relationship(
+        self,
+        source_id: str,
+        target_id: str,
+        *,
+        bidirectional: bool = True,
+    ) -> bool:
+        """Remove a relationship between two long-term memories.
+
+        Args:
+            source_id: Identifier of the origin memory.
+            target_id: Identifier of the related memory to unlink.
+            bidirectional: Whether to also remove the reverse relationship.
+
+        Returns:
+            bool: True if the relationship references were removed.
+
+        Raises:
+            MemoryManagerOperationError: If the relationship cannot be removed.
+            MemoryNotFoundError: If either memory is not stored in LTM.
+        """
+        pass
+
+    @abc.abstractmethod
+    async def get_related_memories(
+        self,
+        memory_id: str,
+        *,
+        relationship_type: Optional[str] = None,
+        min_strength: float = 0.0,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Return memories connected to the supplied long-term memory.
+
+        Args:
+            memory_id: Identifier of the reference memory.
+            relationship_type: Optional relationship type filter.
+            min_strength: Minimum relationship strength to include.
+            limit: Maximum number of related memories to return.
+
+        Returns:
+            List of related memory payloads annotated with relationship metadata.
+
+        Raises:
+            MemoryManagerOperationError: If related memories cannot be retrieved.
+            MemoryNotFoundError: If the anchor memory is missing from LTM.
+        """
+        pass
+
+    @abc.abstractmethod
+    async def list_relationship_types(self) -> Dict[str, str]:
+        """List the supported long-term memory relationship types.
+
+        Returns:
+            Mapping of relationship keys to human-readable descriptions.
+
+        Raises:
+            MemoryManagerOperationError: If the relationship catalogue cannot be retrieved.
+        """
+        pass
+
     #-----------------------------------------------------------------------
     # System Management
     #-----------------------------------------------------------------------

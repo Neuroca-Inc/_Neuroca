@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version: 3.9+"/></a>
+  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11-blue" alt="Python Version: 3.10 or 3.11"/></a>
   &nbsp; <a href="https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img src="https://app.codacy.com/project/badge/Grade/4e0a3952e1464fc5b218571f8339e7f3" alt="Codacy Code Quality Badge"/></a>
 </p>
 
@@ -129,39 +129,41 @@ src/neuroca/
 
 ### Prerequisites
 
-- Python 3.9+
-- Docker and Docker Compose (for containerized deployment, optional)
-- Access to LLM API credentials (if using external models)
+- Python **3.10 or 3.11** (primary tested targets for the 1.0.0 GA release; use 3.12 only for CPU-only
+  workflows because GPU-accelerated extras such as PyTorch do not yet ship wheels for 3.12)
+- Docker and Docker Compose (optional, for containerized deployment)
+- Access to LLM API credentials (if integrating remote providers)
 
-### Install as a Python Package
+### Quick Start (PyPI GA)
 
-#### From PyPI (Recommended)
+Set up a fresh virtual environment and install the general-availability build from
+PyPI. This is the simplest path to evaluate Neuroca with the default SQLite
+backends.
 
 ```bash
-# Install directly from PyPI
-pip install neuroca
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+pip install "neuroca==1.0.0"
 
-# Or in a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install neuroca
+# Verify the CLI entry point resolves and list the available groups
+neuroca --help
 ```
 
-#### From Source
+### Install from Source
 
 ```bash
-# Clone the repository
+# Clone the repository and enter the project root
 git clone https://github.com/justinlietz93/Neuro-Cognitive-Architecture.git
 cd Neuro-Cognitive-Architecture
 
-# Install as a package (development mode with extras)
+# Install the package in editable mode with tooling/test extras
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install --upgrade pip
 pip install -e ".[dev,test]"
 
-# Runtime-only installs can omit extras
-# pip install -e .
-
-# Or build and install the package
-pip install build
+# (Optional) Build a wheel if you need an artefact for deployment
 python -m build
 pip install dist/*.whl
 ```
@@ -226,9 +228,26 @@ docker-compose up -d
 
 ## Usage
 
+### Quick Verification
+
+After installing Neuroca, run the smoke tests below to confirm the environment is
+ready:
+
+```bash
+# Execute the curated memory system demo (writes to an ephemeral SQLite DB)
+python scripts/basic_memory_test.py
+
+# Capture a snapshot of the live tiers via the CLI
+neuroca memory inspect --tier stm --limit 3
+```
+
+Both commands should complete without warnings and print at least one stored
+memory entry.
+
 ### API
 
-Start the API server:
+Start the FastAPI-powered service using the provided helper or the module entry
+point:
 
 ```bash
 make run-api
@@ -236,12 +255,17 @@ make run-api
 python -m neuroca.api.server
 ```
 
-The API will be available at `http://localhost:8000` by default.
+Once booted, the API listens on `http://localhost:8000`. Probe the health check
+to validate the deployment:
+
+```bash
+curl -sf http://localhost:8000/health
+```
 
 ### CLI
 
-The `neuroca` binary exposes scoped command groups for day-to-day operations. After
-installing the project into a virtual environment run `neuroca --help` to see the
+The `neuroca` binary exposes scoped command groups for day-to-day operations.
+After activating your virtual environment, run `neuroca --help` to see the
 available top-level groups (`llm`, `memory`, `system`). Common flows:
 
 ```bash
@@ -265,7 +289,9 @@ neuroca system restore ./backups/20250919.sql
 
 Each command supports `--help` for additional switches; for example,
 `neuroca memory --help` details vector-index maintenance utilities and other
-maintenance tasks covered by the automated tests.
+maintenance tasks covered by the automated tests. The CLI always respects the
+active configuration file (development or production) so long as the
+`NCA_ENV` environment variable is exported.
 
 ### Python Library
 
@@ -337,9 +363,7 @@ pre-commit install
 
 ```bash
 # Run all tests
-make test
-# or
-pytest
+pytest -q
 
 # Run specific test modules
 pytest tests/memory/
@@ -349,14 +373,13 @@ pytest tests/memory/
 
 ```bash
 # Run linting
-make lint
-# or
-flake8 neuroca tests
+ruff check
+
+# Verify formatting
+black --check .
 
 # Run type checking
-make typecheck
-# or
-mypy neuroca
+mypy --hide-error-context --no-error-summary src
 ```
 
 ## Documentation

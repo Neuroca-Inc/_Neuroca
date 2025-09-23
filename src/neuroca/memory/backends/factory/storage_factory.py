@@ -10,9 +10,6 @@ import inspect
 import logging
 from typing import Any, Dict, Optional, Type
 
-# Set up logger first so we can use it in the try-except blocks below
-logger = logging.getLogger(__name__)
-
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.memory_tier import MemoryTier
@@ -22,14 +19,20 @@ from neuroca.memory.backends.factory.operation_policy import (
 )
 from neuroca.memory.backends.in_memory_backend import InMemoryBackend
 from neuroca.memory.backends.sqlite_backend import SQLiteBackend
+from neuroca.memory.backends.sql_backend import SQLBackend
+from neuroca.memory.exceptions import ConfigurationError
+
+logger = logging.getLogger(__name__)
+
 # Import Redis conditionally as it requires external dependencies
 try:
     from neuroca.memory.backends.redis_backend import RedisBackend
+
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
     logger.warning("Redis backend not available. Install redis for Redis support.")
-from neuroca.memory.backends.sql_backend import SQLBackend
+
 # Vector backend is optional depending on feature completeness
 try:
     from neuroca.memory.backends.vector_backend import VectorBackend
@@ -45,7 +48,19 @@ except ImportError:
     VECTOR_AVAILABLE = False
     logger.warning("Vector backend not available. Install vector extras for support.")
 
-from neuroca.memory.exceptions import ConfigurationError
+try:
+    from neuroca.memory.backends.qdrant import QdrantVectorBackend
+
+    _QDRANT_METHODS = ("store", "retrieve", "update", "delete", "similarity_search")
+    QDRANT_AVAILABLE = all(hasattr(QdrantVectorBackend, method) for method in _QDRANT_METHODS)
+    if not QDRANT_AVAILABLE:
+        logger.warning(
+            "Qdrant backend missing required methods %s; skipping registration until implementation is complete",
+            [method for method in _QDRANT_METHODS if not hasattr(QdrantVectorBackend, method)],
+        )
+except ImportError:
+    QDRANT_AVAILABLE = False
+    logger.warning("Qdrant backend not available. Install qdrant-client for support.")
 
 
 _SENSITIVE_KEYS = {"password", "secret", "token", "key", "api_key", "access_token"}
@@ -81,6 +96,8 @@ class StorageBackendFactory:
         _backend_registry[BackendType.REDIS] = RedisBackend
     if VECTOR_AVAILABLE:
         _backend_registry[BackendType.VECTOR] = VectorBackend
+    if 'QDRANT_AVAILABLE' in globals() and QDRANT_AVAILABLE:
+        _backend_registry[BackendType.QDRANT] = QdrantVectorBackend
     
     # Instances of created backends (for reuse)
     _instances: Dict[str, BaseStorageBackend] = {}
@@ -123,10 +140,9 @@ class StorageBackendFactory:
         
         # Get the backend class
         if backend_type not in cls._backend_registry:
+            supported = ", ".join(sorted(type_.value for type_ in cls._backend_registry))
             raise ConfigurationError(
-                component="StorageBackendFactory",
-                message=f"Unsupported backend type: {backend_type}. "
-                f"Supported types: {list(cls._backend_registry.keys())}"
+                f"Unsupported backend type: {backend_type}. Supported types: {supported}"
             )
         
         backend_class = cls._backend_registry[backend_type]

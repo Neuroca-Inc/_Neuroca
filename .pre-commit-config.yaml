@@ -10,7 +10,7 @@
 # For more information: https://pre-commit.com/
 
 default_language_version:
-  python: python3.10
+  python: python3.12
 
 repos:
   # Standard pre-commit hooks
@@ -24,6 +24,7 @@ repos:
         description: Ensures files end with a newline
       - id: check-yaml
         description: Validates YAML syntax
+        args: ['--allow-multiple-documents']
       - id: check-json
         description: Validates JSON syntax
       - id: check-toml
@@ -101,7 +102,7 @@ repos:
 
   # Check for secrets and credentials
   - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: detect-secrets
         description: Detects secrets in the codebase
@@ -152,7 +153,6 @@ repos:
       - id: markdownlint
         description: Lint Markdown files
         args: [--config=.markdownlint.yaml]
-        exclude: ^CHANGELOG\.md$
 
   # Validate GitHub workflows
   - repo: https://github.com/python-jsonschema/check-jsonschema
@@ -161,17 +161,16 @@ repos:
       - id: check-github-workflows
         description: Validate GitHub workflow files
 
-  # Validate dependencies for security issues
-  - repo: https://github.com/safety-ci/safety
-    rev: 3.2.14
-    hooks:
-      - id: safety
-        description: Check Python dependencies for security vulnerabilities
-        args: ["--full-report"]
-
   # Local hooks
   - repo: local
     hooks:
+      - id: safety-scan
+        name: Safety dependency scan
+        description: Check Python dependencies for security vulnerabilities
+        entry: python -m safety check --full-report
+        language: system
+        pass_filenames: false
+
       - id: pytest
         name: Run pytest
         description: Run pytest on changed files
@@ -188,4 +187,4 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
-        files: ^(core/|memory/|integration/)
+        files: ^src/neuroca/(core|memory|integration)/

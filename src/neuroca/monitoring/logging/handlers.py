@@ -45,6 +45,7 @@ import os
 import queue
 import re
 import shutil
+import sys
 import threading
 import traceback
 from typing import Any, Optional
@@ -613,8 +614,6 @@ class AsyncHandler(logging.Handler):
 
 
 # Ensure 'sys' is imported for error reporting
-import sys
-
 # Export all handlers
 __all__ = [
     'JsonFormatter',

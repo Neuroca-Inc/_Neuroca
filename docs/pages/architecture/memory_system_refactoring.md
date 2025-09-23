@@ -179,6 +179,38 @@ The goal is to create a cohesive, well-structured system without redundancy or c
 
 ---
 
+## Recommended Improvements
+
+The following improvements translate the architectural target into concrete, prioritized actions that can be delivered incrementally while preserving compatibility with the existing API surface:
+
+1. **Finalize backend boundaries**
+   - Promote `StorageBackendInterface` to the single abstraction consumed by every tier and refactor legacy helpers that still depend on tier-specific storage modules.
+   - Introduce capability flags (CRUD, vector search, TTL) so `StorageBackendFactory` can decline unsupported combinations at configuration time rather than failing at runtime.
+
+2. **Unify retrieval and consolidation flows**
+   - Route every retrieval path (tiers, manager facade, CLI commands) through the new `MemoryRetrievalCoordinator` to eliminate divergent ranking and filtering logic.
+   - Merge consolidation and decay policies into strategy objects that can be injected per tier, enabling testable heuristics and simplifying promotion rules.
+
+3. **Harden asynchronous orchestration**
+   - Replace ad-hoc `asyncio.create_task` usage with explicit task groups in the manager and CLI entry points so background promotions and cleanup share cancellation semantics.
+   - Add back-pressure controls to the consolidation scheduler to prevent queue growth when downstream tiers become unavailable.
+
+4. **Expand observability and health coverage**
+   - Emit structured metrics (`memory_tier_items`, `promotion_latency_seconds`, `decay_backlog_size`) from each tier implementation and register them with `MemoryMetricsExporter`.
+   - Integrate tier lifecycle events with `HealthMonitor` so component health reflects initialization failures, backoff states, and cache pressure.
+
+5. **Document migration pathways**
+   - Provide upgrade notes for integrators still importing from monolithic modules, highlighting new locations for memory models, tier helpers, and CLI utilities.
+   - Maintain compatibility facades with deprecation warnings for one release cycle and remove them once the published 1.0 API surface stabilizes.
+
+6. **Formalize expiry management roadmap**
+   - Keep backend-level expiry hooks gated for 1.0 and document the STM-only TTL behaviour until capability flags and repository-backed projections are delivered.
+   - Define follow-up work to add expiry-aware factories, persistence-backed projections, and regression coverage for set/extend/clear/list workflows across tiers.
+
+These improvements should be tracked against the checklist to ensure each milestone has associated tests (unit, integration, and performance) before the legacy code paths are removed.
+
+---
+
 ## Implementation Plan
 
 Instead of implementing incremental fixes, we will proceed directly to the target architecture. This ensures we avoid temporary solutions and maintain a clear path to our goal. The plan consists of five clear phases:

@@ -15,3 +15,4 @@ class BackendType(str, Enum):
     SQL = "sql"        # SQL database storage
     SQLITE = "sqlite"    # SQLite database storage
     VECTOR = "vector"  # Vector database storage
+    QDRANT = "qdrant"  # External Qdrant vector database

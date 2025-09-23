@@ -4,7 +4,6 @@ Pytest fixtures for memory configuration tests.
 This module provides fixtures specific to testing the memory configuration system.
 """
 
-import os
 import tempfile
 import yaml
 from pathlib import Path
