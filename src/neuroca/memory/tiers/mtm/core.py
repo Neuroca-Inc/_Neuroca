@@ -8,10 +8,9 @@ handle different aspects of the MTM functionality.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.backends import BackendType
-from neuroca.memory.backends.factory import StorageBackendFactory
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.tiers.base import BaseMemoryTier
 from neuroca.memory.tiers.mtm.components import (
@@ -374,6 +373,16 @@ class MediumTermMemoryTier(BaseMemoryTier):
             TierOperationError: If the operation fails
         """
         self._ensure_initialized()
-        
+
         # Delegate to promotion component
         return await self._promotion.get_promotion_candidates(limit)
+
+
+# ---------------------------------------------------------------------------
+# Legacy Compatibility
+# ---------------------------------------------------------------------------
+
+# Preserve the historic ``MediumTermMemory`` import for modules that have not
+# yet been migrated to the tier-specific naming convention introduced during
+# the refactor.
+MediumTermMemory = MediumTermMemoryTier

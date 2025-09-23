@@ -7,9 +7,8 @@ such as memory counts, database size, and access/modification times.
 
 import logging
 import os
-import sqlite3
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from neuroca.memory.interfaces import StorageStats
 

@@ -7,8 +7,6 @@ in memory tiers.
 
 from typing import Any, Dict, List, Optional
 
-from neuroca.memory.models.memory_item import MemoryItem
-
 
 class TierSearcher:
     """

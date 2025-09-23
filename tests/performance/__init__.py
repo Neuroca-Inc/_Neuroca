@@ -41,6 +41,7 @@ import functools
 import logging
 import time
 import tracemalloc
+import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -263,7 +264,7 @@ class PerformanceTestCase:
                 if result is not None:
                     try:
                         metric.metadata["result"] = str(result)
-                    except:
+                    except Exception:
                         metric.metadata["result"] = "unprintable"
             
             results.append(self.results[-1])

@@ -6,11 +6,16 @@ maintenance, and querying of relationships between memories in the LTM tier.
 """
 
 import logging
+from copy import deepcopy
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.models.memory_item import MemoryItem
-from neuroca.memory.backends import BaseStorageBackend
+from neuroca.memory.backends import (
+    BaseStorageBackend,
+    InMemoryKnowledgeGraphBackend,
+    KnowledgeGraphBackend,
+)
 from neuroca.memory.exceptions import TierOperationError
 
 
@@ -128,13 +133,15 @@ class LTMRelationship:
         self._lifecycle = None
         self._backend = None
         self._update_func = None  # Function to update a memory
+        self._graph_backend: KnowledgeGraphBackend | None = None
     
     def configure(
         self, 
         lifecycle: Any, 
         backend: BaseStorageBackend,
         update_func: Any,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        graph_backend: KnowledgeGraphBackend | None = None,
     ) -> None:
         """
         Configure the relationship manager.
@@ -144,10 +151,12 @@ class LTMRelationship:
             backend: The storage backend
             update_func: Function to call for updating a memory
             config: Configuration options
+            graph_backend: Optional knowledge graph backend implementation
         """
         self._lifecycle = lifecycle
         self._backend = backend
         self._update_func = update_func
+        self._graph_backend = graph_backend or InMemoryKnowledgeGraphBackend()
         
         # Load custom relationship types if configured
         if "relationship_types" in config:
@@ -181,7 +190,8 @@ class LTMRelationship:
         related_id: str,
         relationship_type: str = "semantic",
         strength: float = 0.5,
-        bidirectional: bool = True
+        bidirectional: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Add a relationship between two memories.
@@ -192,6 +202,7 @@ class LTMRelationship:
             relationship_type: Type of relationship
             strength: Relationship strength (0.0 to 1.0)
             bidirectional: Whether to create the reverse relationship too
+            metadata: Optional key/value metadata to persist with the relationship
             
         Returns:
             bool: True if the operation was successful
@@ -210,6 +221,8 @@ class LTMRelationship:
         if strength < 0.0 or strength > 1.0:
             raise ValueError("Strength must be between 0.0 and 1.0")
         
+        graph_backend = self._require_graph_backend()
+
         # Get the source memory
         source_data = await self._backend.retrieve(memory_id)
         if source_data is None:
@@ -228,6 +241,10 @@ class LTMRelationship:
                 message=f"Target memory {related_id} not found"
             )
         
+        graph_backend = self._require_graph_backend()
+        await graph_backend.upsert_node(memory_id)
+        await graph_backend.upsert_node(related_id)
+
         # Update source memory relationships
         source_memory = MemoryItem.model_validate(source_data)
         
@@ -236,38 +253,71 @@ class LTMRelationship:
             source_memory.metadata.tags["relationships"] = {}
         
         # Create or update the relationship
+        metadata_payload = None
+        if metadata is not None:
+            try:
+                metadata_payload = deepcopy(dict(metadata))
+            except TypeError:
+                metadata_payload = deepcopy(metadata)
+
         relationship_data = {
             "type": relationship_type,
-            "strength": strength
+            "strength": strength,
         }
+        if metadata_payload is not None:
+            relationship_data["metadata"] = metadata_payload
+
         source_memory.metadata.tags["relationships"][related_id] = relationship_data
-        
+
         # Update the memory
+        await graph_backend.add_relationship(
+            memory_id,
+            related_id,
+            relationship_type,
+            strength=strength,
+            metadata=metadata_payload,
+        )
+
         source_success = await self._update_func(memory_id, metadata=source_memory.metadata.tags)
-        
+
         # Update relationship map
         if source_success and self._lifecycle:
             self._lifecycle.update_relationship(memory_id, related_id, strength)
-        
+
         # Create bidirectional relationship if requested
         target_success = True
         if bidirectional:
             target_memory = MemoryItem.model_validate(target_data)
-            
+
             # Initialize relationships dict if not present
             if "relationships" not in target_memory.metadata.tags:
                 target_memory.metadata.tags["relationships"] = {}
-            
+
             # Create or update the reverse relationship
-            target_memory.metadata.tags["relationships"][memory_id] = relationship_data
-            
+            reverse_relationship = {
+                "type": relationship_type,
+                "strength": strength,
+            }
+            if metadata_payload is not None:
+                reverse_relationship["metadata"] = deepcopy(metadata_payload)
+
+            target_memory.metadata.tags["relationships"][memory_id] = reverse_relationship
+
             # Update the target memory
+            await graph_backend.add_relationship(
+                related_id,
+                memory_id,
+                relationship_type,
+                strength=strength,
+                metadata=metadata_payload,
+            )
+
             target_success = await self._update_func(related_id, metadata=target_memory.metadata.tags)
-            
+
             # Update relationship map
             if target_success and self._lifecycle:
                 self._lifecycle.update_relationship(related_id, memory_id, strength)
-        
+
         return source_success and target_success
     
     async def remove_relationship(
@@ -290,6 +340,8 @@ class LTMRelationship:
         Raises:
             TierOperationError: If the operation fails
         """
+        graph_backend = self._require_graph_backend()
+
         # Get the source memory
         source_data = await self._backend.retrieve(memory_id)
         if source_data is None:
@@ -309,7 +361,9 @@ class LTMRelationship:
         
         # Update the memory
         source_success = await self._update_func(memory_id, metadata=source_memory.metadata.tags)
-        
+
+        await graph_backend.remove_relationship(memory_id, related_id)
+
         # Update relationship map
         if source_success and self._lifecycle:
             # Update by directly modifying the map - remove_relationship not available
@@ -334,6 +388,8 @@ class LTMRelationship:
                         del target_memory.metadata.tags["relationships"][memory_id]
                 
                 # Update the target memory
+                await graph_backend.remove_relationship(related_id, memory_id)
+
                 target_success = await self._update_func(related_id, metadata=target_memory.metadata.tags)
                 
                 # Update relationship map
@@ -371,55 +427,59 @@ class LTMRelationship:
         Raises:
             TierOperationError: If the operation fails
         """
-        # Get the source memory
-        source_data = await self._backend.retrieve(memory_id)
-        if source_data is None:
-            raise TierOperationError(
-                operation="get_related_memories",
-                tier_name=self._tier_name,
-                message=f"Memory {memory_id} not found"
-            )
-        
-        source_memory = MemoryItem.model_validate(source_data)
-        
-        # Get relationships from memory
-        relationships = source_memory.metadata.tags.get("relationships", {})
-        
-        # Filter relationships
-        filtered_relationships = {}
-        for related_id, rel_data in relationships.items():
-            rel_type = rel_data.get("type", "semantic")
-            rel_strength = rel_data.get("strength", 0.5)
-            
-            # Apply filters
-            if relationship_type is not None and rel_type != relationship_type:
-                continue
-                
-            if rel_strength < min_strength:
-                continue
-                
-            filtered_relationships[related_id] = rel_data
-        
-        # Sort by strength (descending)
-        sorted_related_ids = sorted(
-            filtered_relationships.keys(),
-            key=lambda id: filtered_relationships[id].get("strength", 0.0),
-            reverse=True
+        graph_backend = self._require_graph_backend()
+
+        relationships = await graph_backend.get_related(
+            memory_id,
+            relationship_type=relationship_type,
+            min_strength=min_strength,
+            limit=limit,
         )
-        
-        # Limit the number of results
-        sorted_related_ids = sorted_related_ids[:limit]
-        
-        # Fetch related memories
-        related_memories = []
-        for related_id in sorted_related_ids:
-            related_data = await self._backend.retrieve(related_id)
-            if related_data is not None:
-                # Add relationship data to the memory
-                related_data["_relationship"] = filtered_relationships[related_id]
-                related_memories.append(related_data)
-        
-        return related_memories
+
+        related_memories: List[Dict[str, Any]] = []
+        for relation in relationships:
+            target_id = relation.get("target_id")
+            if not isinstance(target_id, str):
+                continue
+
+            related_data = await self._backend.retrieve(target_id)
+            if related_data is None:
+                continue
+
+            metadata_payload = {
+                "type": relation.get("relationship_type", relationship_type or "semantic"),
+                "strength": relation.get("strength", 0.5),
+                "metadata": dict(relation.get("metadata") or {}),
+            }
+
+            related_copy = dict(related_data)
+            related_copy["_relationship"] = metadata_payload
+        related_memories.append(related_copy)
+
+        return related_memories[: max(limit, 0)]
+
+    async def register_memory(self, memory_item: MemoryItem) -> None:
+        """Register *memory_item* with the knowledge graph backend."""
+
+        graph_backend = self._require_graph_backend()
+        await graph_backend.upsert_node(memory_item.id)
+
+    async def cleanup_memory(self, memory_id: str) -> None:
+        """Remove *memory_id* from the knowledge graph backend."""
+
+        graph_backend = self._require_graph_backend()
+        await graph_backend.remove_node(memory_id)
+
+    def _require_graph_backend(self) -> KnowledgeGraphBackend:
+        """Return the configured knowledge graph backend or raise an error."""
+
+        if self._graph_backend is None:
+            raise TierOperationError(
+                operation="knowledge_graph",
+                tier_name=self._tier_name,
+                message="Knowledge graph backend is not configured",
+            )
+        return self._graph_backend
     
     async def find_path(
         self,

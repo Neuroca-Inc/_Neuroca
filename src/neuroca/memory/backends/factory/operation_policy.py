@@ -21,6 +21,10 @@ _DEFAULT_POLICIES: Dict[BackendType, BackendOperationPolicy] = {
         timeout_seconds=6.0,
         retry=RetryPolicy(attempts=3, initial_delay_seconds=0.1, backoff_multiplier=1.5, max_delay_seconds=0.6),
     ),
+    BackendType.QDRANT: BackendOperationPolicy(
+        timeout_seconds=8.0,
+        retry=RetryPolicy(attempts=4, initial_delay_seconds=0.1, backoff_multiplier=1.5, max_delay_seconds=1.0),
+    ),
 }
 
 _POLICY_KEYS = {

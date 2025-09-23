@@ -26,6 +26,7 @@ opentelemetry-sdk>=1.18.0
 opentelemetry-exporter-otlp>=1.18.0
 tiktoken>=0.4.0
 faiss-cpu>=1.7.4
+qdrant-client>=1.9.0,<2.0.0
 pyyaml>=6.0.1
 protobuf>=5.29.5
 aiohttp>=3.12.14

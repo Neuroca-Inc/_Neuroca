@@ -1,13 +1,12 @@
-"""
-Memory Search Models
+"""Search-related Pydantic models for the memory system.
 
-This module defines data models related to memory search operations,
-including search criteria, options, and results.
+This module defines data models used to perform and represent memory
+search operations, including search criteria, options, and results.
 """
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 

@@ -16,7 +16,6 @@ def semantic_memory() -> SemanticMemory:
 
 def test_store_and_retrieve_concepts(semantic_memory: SemanticMemory) -> None:
     concept_a = Concept(id="concept_a", name="Alpha")
-    concept_b = Concept(id="concept_b", name="Beta")
 
     returned_a = semantic_memory.store(concept_a)
     returned_b = semantic_memory.store({"id": "concept_b", "name": "Beta"})
@@ -24,7 +23,9 @@ def test_store_and_retrieve_concepts(semantic_memory: SemanticMemory) -> None:
     assert returned_a == "concept_a"
     assert returned_b == "concept_b"
     assert semantic_memory.get_concept("concept_a") == concept_a
-    assert semantic_memory.get_concept("concept_b") is not None
+    retrieved_b = semantic_memory.get_concept("concept_b")
+    assert retrieved_b is not None
+    assert retrieved_b.name == "Beta"
 
 
 def test_store_relationships_requires_existing_concepts(

@@ -9,7 +9,7 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 

@@ -5,10 +5,7 @@ These tests verify that the configuration loader correctly loads, merges, and
 provides access to configuration values from YAML files.
 """
 
-import os
 import pytest
-import tempfile
-import yaml
 from pathlib import Path
 from unittest import mock
 
@@ -123,8 +120,8 @@ class TestConfigurationLoader:
     def test_invalid_yaml(self, test_config_dir):
         """Test error handling for invalid YAML content."""
         invalid_yaml_path = Path(test_config_dir) / "invalid_config.yaml"
-        
-        with open(invalid_yaml_path, 'w') as f:
+
+        with open(invalid_yaml_path, "w", encoding="utf-8") as f:
             f.write("invalid: yaml: content:")
         
         loader = ConfigurationLoader(test_config_dir)

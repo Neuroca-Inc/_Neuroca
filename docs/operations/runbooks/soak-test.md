@@ -52,5 +52,5 @@ curl -sf http://localhost:8000/health
 - Backup/restore produces a consistent state
 
 ```text
-If stable after several days, promote version from 1.0.0‑rc1 to 1.0.0 and publish.
+If stable after several days, finalize the GA tag (for example, promote `1.0.0-rc1` to `1.0.0`) and publish.
 ```

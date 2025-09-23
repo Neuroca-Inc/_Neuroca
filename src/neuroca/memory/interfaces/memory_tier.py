@@ -14,7 +14,7 @@ tier-specific behaviors, policies, and constraints.
 
 import abc
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 
 class MemoryTierInterface(abc.ABC):
@@ -283,20 +283,39 @@ class MemoryTierInterface(abc.ABC):
     async def update_memory_strength(self, memory_id: str, delta: float) -> float:
         """
         Update the strength of a memory.
-        
+
         Args:
             memory_id: The ID of the memory
             delta: Amount to adjust strength by (positive or negative)
-            
+
         Returns:
             New strength value
-            
+
         Raises:
             MemoryNotFoundError: If the memory does not exist
             TierOperationError: If the operation fails
         """
         pass
-    
+
+    @abc.abstractmethod
+    async def decay(self, memory_id: str, decay_amount: float = 0.1) -> bool:
+        """Reduce the stored strength of a memory item.
+
+        Args:
+            memory_id: Identifier of the memory to decay.
+            decay_amount: Amount of strength to subtract (0.0 to 1.0).
+
+        Returns:
+            ``True`` when the persisted strength decreased, ``False`` when the
+            operation resulted in no change (for example a zero ``decay_amount``).
+
+        Raises:
+            ValueError: If ``decay_amount`` is negative.
+            MemoryNotFoundError: If the memory does not exist in this tier.
+            TierOperationError: If the decay operation fails.
+        """
+        pass
+
     #-----------------------------------------------------------------------
     # Maintenance Operations
     #-----------------------------------------------------------------------

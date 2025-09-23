@@ -113,6 +113,7 @@ plugins:
       type: date
       fallback_to_build_date: true
       enable_creation_date: true
+      enable_git_follow: false
   # Commented out until mkdocstrings_handlers can be properly installed
   # - mkdocstrings:
   #     default_handler: python
@@ -174,6 +175,7 @@ extra:
 nav:
   - Home: index.md
   - Release Notes: about/release-notes.md
+  - Changelog: about/changelog.md
   - User Guide:
     - Getting Started: user/getting-started.md
     - Configuration: user/configuration.md
@@ -249,6 +251,7 @@ nav:
   - Operations:
     - Deployment: operations/deployment.md
     - Monitoring: operations/monitoring.md
+    - Final Sign-off: operations/final_signoff.md
     - Troubleshooting: operations/troubleshooting.md
     - Runbooks:
       - Backup & Restore: operations/runbooks/backup-restore.md

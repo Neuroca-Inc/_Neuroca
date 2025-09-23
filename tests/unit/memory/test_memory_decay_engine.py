@@ -141,6 +141,9 @@ def test_process_updates_episodic_and_semantic_tiers():
     statuses = {event.metadata["status"] for event in capture.events}
     assert statuses == {"removed"}
 
+    event_ids = {event.memory_id for event in capture.events}
+    assert relationship_id in event_ids
+
 
 @pytest.mark.asyncio
 async def test_process_async_allows_event_loop_execution():

@@ -5,10 +5,8 @@ This module provides the main SQLiteBackend class that integrates all SQLite com
 to implement the BaseStorageBackend interface for the memory system.
 """
 
-import asyncio
 import logging
-import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.sqlite.components.batch import SQLiteBatch
@@ -18,7 +16,6 @@ from neuroca.memory.backends.sqlite.components.schema import SQLiteSchema
 from neuroca.memory.backends.sqlite.components.search import SQLiteSearch
 from neuroca.memory.backends.sqlite.components.stats import SQLiteStats
 from neuroca.memory.exceptions import (
-    ItemNotFoundError,
     StorageBackendError,
     StorageInitializationError,
     StorageOperationError,
@@ -303,7 +300,7 @@ class SQLiteBackend(BaseStorageBackend):
         """
         try:
             # Initialize the connection
-            conn = self.connection.get_connection()
+            self.connection.get_connection()
             
             # Create components with the connection manager rather than a direct connection
             self.schema = SQLiteSchema(self.connection)

@@ -6,12 +6,11 @@ including storage, retrieval, and similarity-based search operations.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from neuroca.memory.backends.vector.components.models import VectorEntry
-from neuroca.memory.exceptions import StorageOperationError
 
 logger = logging.getLogger(__name__)
 

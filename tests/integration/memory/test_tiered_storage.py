@@ -11,15 +11,12 @@ NOTE: THIS TEST FILE REQUIRES MAJOR REFACTORING FOR THE NEW MEMORY ARCHITECTURE.
       the new memory system architecture.
 """
 
-import asyncio
 import os
 import shutil
 import tempfile
 from datetime import datetime
-from typing import Dict, Any, List
 
 import pytest
-pytest.skip("These tests use the old memory architecture and need to be refactored", allow_module_level=True)
 
 from neuroca.memory.backends import (
     BackendType,
@@ -27,7 +24,12 @@ from neuroca.memory.backends import (
     StorageBackendFactory,
 )
 from neuroca.memory.ltm.storage import MemoryItem, MemoryMetadata, MemoryStatus
-from neuroca.memory.mtm.storage import MTMMemory, MemoryPriority, MemoryStatus as MTMStatus
+from neuroca.memory.mtm.storage import MTMMemory, MemoryPriority
+
+pytest.skip(
+    "These tests use the old memory architecture and need to be refactored",
+    allow_module_level=True,
+)
 
 
 @pytest.fixture(scope="module")

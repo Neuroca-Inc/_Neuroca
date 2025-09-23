@@ -2,35 +2,49 @@
 
 ## 1.0.0 – General Availability
 
-Release date: 2025-09-19
+Release date: 2025-09-22
 
 Highlights
 
-- Finalised the database migration toolchain with a production-ready
-  `MigrationManager`, convenience `upgrade`/`downgrade` wrappers, and
-  SQLite-backed tests that exercise apply/rollback flows end-to-end.
-- Hardened the system operations CLI: `_backup_database` / `_restore_database`
-  now have comprehensive unit coverage (Postgres and SQLite paths), and the
-  README usage section documents the supported command groups (`llm`, `memory`,
-  `system`).
-- Added `neuroca.core.utils.logging.configure_logger` for consistent module
-  logging and introduced `BackupRestoreError`/`run_health_checks` so CLI
-  commands no longer rely on ad-hoc stubs during testing.
-- Verified top-level entry points via smoke tests (`tests/unit/cli` and
-  `tests/unit/integration/test_cli_llm.py`) and updated the project checklist to
-  reflect the green state.
+- **Async-first memory orchestration** – The `MemoryManager` and
+  `MemoryRetrieval` flows were rebuilt to normalise tier selection, surface
+  structured `MemoryRetrievalResult` payloads, and preserve metadata filters
+  across working, episodic, and semantic memories.
+- **Production vector search** – A dedicated `QdrantVectorBackend` now powers
+  similarity queries with deterministic UUID handling, batched CRUD
+  operations, and regression coverage for metadata-aware searches.
+- **Knowledge graph relationships** – Long-term relationship management stores
+  metadata bidirectionally, exposing create/update/delete helpers through the
+  manager interface and validating behaviour against the in-memory and Neo4j
+  backends.
+- **Operational tooling** – The asynchronous benchmark harness and end-to-end
+  validation suite exercise the full memory stack through the modern CLI
+  bootstrapper, providing release-ready performance signals.
+- **Documentation refresh** – README quick starts, backend guides, and API
+  references were aligned with the async storage factory and new retrieval
+  results so integrations reflect the shipped interfaces.
+
+Breaking changes
+
+- The legacy `MemoryRetrieval` stub now returns `MemoryRetrievalResult`
+  instances and enforces tier validation. Custom callers should update any
+  tuple-based unpacking logic accordingly.
+- Storage backends integrate through `StorageBackendFactory.create_storage()`
+  and the new `BackendType.QDRANT` option. Plugins that relied on
+  `create_backend()` must migrate to the asynchronous factory APIs.
+- Memory model compatibility shims moved into dedicated modules within
+  `neuroca.memory.models`. Direct imports from `neuroca.memory.memory_items`
+  should be updated to the re-exported package paths.
 
 Upgrade notes
 
-- Database automation can now be driven through
-  `neuroca.db.migrations.upgrade/downgrade`; integrate these helpers into your
-  deployment workflows for consistent schema management.
-- CLI environments should refresh their help text — commands such as
-  `neuroca llm query`, `neuroca memory seed`, and `neuroca system backup` are
-  now the canonical pathways referenced in the documentation.
-- No breaking configuration changes were introduced relative to 1.0.0-rc1; if
-  you were already validating the release candidate, upgrading is a drop-in
-  replacement.
+- Install optional extras (`pip install neuroca[vector,test]`) to pull in the
+  Qdrant client library when enabling the production vector backend.
+- Refresh tier configuration files to register the desired vector and knowledge
+  graph backends. The docs include sample configuration blocks for local and
+  managed deployments.
+- Re-run the provided benchmarks or smoke tests after upgrading to validate the
+  configured storage backends and confirm the async bootstrapper wiring.
 
 ## 1.0.0-rc1 – Release Candidate
 

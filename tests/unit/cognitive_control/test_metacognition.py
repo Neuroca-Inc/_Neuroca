@@ -15,7 +15,7 @@ from neuroca.core.health.dynamics import (
     HealthParameterType,
     HealthState,
 )
-from neuroca.memory.manager import MemoryItem, MemoryManager
+from neuroca.memory.manager import MemoryManager
 
 
 def create_context(health_state: HealthState = HealthState.NORMAL, **kwargs: Any) -> dict[str, Any]:

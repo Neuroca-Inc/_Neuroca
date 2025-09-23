@@ -235,7 +235,7 @@ For feature requests, please:
 
 ## License
 
-By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](../../LICENSE) file for details.
+By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/LICENSE) file for details.
 
 ---
 
