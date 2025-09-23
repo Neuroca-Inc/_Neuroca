@@ -7,10 +7,9 @@ operations on memory items in the SQLite database.
 
 import json
 import logging
-import sqlite3
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from neuroca.memory.models.memory_item import MemoryItem
 

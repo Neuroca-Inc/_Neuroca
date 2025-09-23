@@ -7,10 +7,7 @@ focusing on cross-tier operations and proper integration of components.
 
 import pytest
 import pytest_asyncio
-import time
-import asyncio
-from typing import Dict, List, Any, Generator
-from neuroca.memory.manager.consolidation import consolidate_stm_to_mtm
+from typing import Dict, List
 
 from neuroca.memory.interfaces.memory_tier import MemoryTierInterface
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata, MemoryContent

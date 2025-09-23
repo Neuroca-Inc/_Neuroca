@@ -26,6 +26,9 @@ This single document enumerates all actionable items required to finish the proj
   - Removed high-signal lint violations from configuration and storage tests by
     eliminating unused imports, asserting semantic-decay events with concrete
     IDs, and replacing bare exception handling with explicit pytest skips.
+  - Cleared the lingering unused-import warnings across the SQLite backend
+    components, vector index helper, and legacy integration test suites so
+    targeted `ruff check` runs now pass cleanly on those modules.
 - [STARTED] <=500 LOC per file, offending large files directly broken into packaged subfolders. All imports must be immediately updated, all tests must pass
   - First reduction complete: moved CLI manager bootstrapper into ``memory_utils`` to drop `src/neuroca/cli/commands/memory.py` to 475 lines.
   - Second reduction complete: extracted filtering utilities from `src/neuroca/memory/backends/qdrant/core.py` into ``qdrant/filtering.py``, lowering the backend core to 445 lines while preserving test coverage.
@@ -144,6 +147,7 @@ This single document enumerates all actionable items required to finish the proj
   - `ruff check` reports 409 violations spanning unused imports, undefined names in ad-hoc fixtures, and bare excepts that must be cleaned up before the gate can pass.
   - `black --check` would reformat 472 files across benchmarks, CLI, memory manager, and tests; repository-wide formatting cleanup remains outstanding.
   - Targeted cleanup resolved the `ruff` violations in the configuration loader, tubules transport helpers, logging handlers, schema generator, and performance harness; `ruff` now passes on those modules as a stepping stone toward a repo-wide green run.
+  - Additional cleanup drops the SQLite backend component and integration test suites from the unused-import list, shrinking the repo-wide violation count and keeping the modernization work focused on active modules.
 - [DONE] Type checks: run `mypy` (or configured type checker) across `src/`
   - ✅ `mypy --hide-error-context --no-error-summary src` after fixing `MemoryTier` lookup typing and the local `pytest_asyncio.fixture` decorator wrappers.
 - [STARTED] Pre‑commit: run all hooks locally, fix any violations
