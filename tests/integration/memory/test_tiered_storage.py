@@ -23,13 +23,16 @@ from neuroca.memory.backends import (
     MemoryTier,
     StorageBackendFactory,
 )
-from neuroca.memory.ltm.storage import MemoryItem, MemoryMetadata, MemoryStatus
-from neuroca.memory.mtm.storage import MTMMemory, MemoryPriority
 
-pytest.skip(
-    "These tests use the old memory architecture and need to be refactored",
-    allow_module_level=True,
-)
+try:
+    from neuroca.memory.ltm.storage import MemoryItem, MemoryMetadata, MemoryStatus
+    from neuroca.memory.mtm.storage import MTMMemory, MemoryPriority
+except ImportError:  # pragma: no cover - compatibility guard
+    pytest.skip(
+        "These tests rely on the legacy memory architecture and are skipped until"
+        " the compatibility shims are restored",
+        allow_module_level=True,
+    )
 
 
 @pytest.fixture(scope="module")

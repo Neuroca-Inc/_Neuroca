@@ -48,7 +48,7 @@ async def test_memory_pipeline_fix():
         }
         test_tags = ["conversation", "chat", "test"]
         
-        print(f"\n📝 Storing memory with content:")
+        print("\n📝 Storing memory with content:")
         print(f"   Text: '{test_content[:50]}...'")
         print(f"   Tags: {test_tags}")
         
@@ -141,7 +141,7 @@ async def test_memory_pipeline_fix():
         except Exception as e:
             print(f"⚠️ Stats retrieval failed (expected): {e}")
         
-        print(f"\n🎉 Memory pipeline test completed successfully!")
+        print("\n🎉 Memory pipeline test completed successfully!")
         print("✅ All core functionality working correctly")
         return True
         

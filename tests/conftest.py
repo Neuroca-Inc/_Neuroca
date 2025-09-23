@@ -5,7 +5,6 @@ This module configures the Python path and sets up fixtures that are used
 across all test modules.
 """
 
-import os
 import sys
 from pathlib import Path
 

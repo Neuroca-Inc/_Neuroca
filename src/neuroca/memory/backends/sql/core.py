@@ -6,7 +6,7 @@ component modules to implement the BaseStorageBackend interface for the memory s
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.sql.components.batch import SQLBatch

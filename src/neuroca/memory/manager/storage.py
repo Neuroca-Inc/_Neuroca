@@ -268,8 +268,6 @@ async def search_memories(
 
     # Search STM (simple text match for now) # Ensure this is correctly unindented
     try:
-        # Build filter criteria based on query and tags
-        filter_criteria = {}
         # Use text_search method on the search attribute (Corrected)
         stm_results_raw = await stm_storage.search.text_search(
             query=query,

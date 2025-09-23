@@ -9,13 +9,11 @@ This adapter is provided for backward compatibility during migration
 and will be removed in a future version.
 """
 
-import asyncio
 import logging
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from neuroca.memory.backends import BackendType
-from neuroca.memory.backends.factory import StorageBackendFactory
 from neuroca.memory.manager.memory_manager import MemoryManager
 from neuroca.memory.adapters.episodic_memory_adapter import EpisodicMemoryAdapter
 from neuroca.memory.adapters.semantic_memory_adapter import SemanticMemoryAdapter

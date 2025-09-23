@@ -4,9 +4,8 @@ SQL Batch Operations Component
 This module provides the SQLBatch class for handling batch operations on memory items.
 """
 
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 from neuroca.memory.backends.sql.components.connection import SQLConnection
 from neuroca.memory.backends.sql.components.crud import SQLCRUD

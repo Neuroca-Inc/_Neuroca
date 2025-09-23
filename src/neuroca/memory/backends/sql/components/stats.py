@@ -5,7 +5,7 @@ This module provides the SQLStats class for collecting statistics about SQL stor
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from neuroca.memory.backends.sql.components.connection import SQLConnection
 from neuroca.memory.backends.sql.components.schema import SQLSchema

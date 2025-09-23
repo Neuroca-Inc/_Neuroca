@@ -250,13 +250,13 @@ def test_temporal_database():
         print("✅ No critical blockers found!")
     
     # Test 2: Show data quality report
-    print(f"\n📊 DATA QUALITY REPORT:")
+    print("\n📊 DATA QUALITY REPORT:")
     print("-" * 30)
     quality_df = pd.read_sql_query("SELECT * FROM data_quality_report", conn)
     print(quality_df.to_string(index=False))
     
     # Test 3: Show component change history
-    print(f"\n📜 RECENT CHANGE HISTORY:")
+    print("\n📜 RECENT CHANGE HISTORY:")
     print("-" * 30)
     history_df = pd.read_sql_query("""
         SELECT 
@@ -270,7 +270,7 @@ def test_temporal_database():
     print(history_df.to_string(index=False))
     
     # Test 4: Test temporal functionality by making a change
-    print(f"\n🔧 TESTING TEMPORAL FUNCTIONALITY:")
+    print("\n🔧 TESTING TEMPORAL FUNCTIONALITY:")
     print("-" * 40)
     
     # Update a component to trigger temporal tracking
@@ -301,7 +301,7 @@ def test_temporal_database():
         print(change_df.to_string(index=False))
     
     # Test 5: Show constraint validation
-    print(f"\n✅ CONSTRAINT VALIDATION:")
+    print("\n✅ CONSTRAINT VALIDATION:")
     print("-" * 30)
     
     # Try to insert invalid data to test constraints
@@ -327,7 +327,7 @@ def test_temporal_database():
         print(f"   Error: {e}")
     
     # Test 7: Summary statistics
-    print(f"\n📈 DATABASE STATISTICS:")
+    print("\n📈 DATABASE STATISTICS:")
     print("-" * 25)
     
     stats = {}
@@ -344,7 +344,7 @@ def test_temporal_database():
     conn.commit()
     conn.close()
     
-    print(f"\n🎯 TEMPORAL DATABASE FEATURES VERIFIED:")
+    print("\n🎯 TEMPORAL DATABASE FEATURES VERIFIED:")
     print("   ✅ Data validation constraints")
     print("   ✅ Foreign key enforcement") 
     print("   ✅ Automatic change tracking")

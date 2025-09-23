@@ -194,19 +194,19 @@ class MemoryRetrievalScope:
         fields = ("shared_with", "permitted_users", "allowed_users")
 
         collected: FrozenSet[str] = frozenset()
-        for field in fields:
-            candidate = metadata.get(field)
+        for field_name in fields:
+            candidate = metadata.get(field_name)
             collected |= _as_string_set(candidate)
 
         tags = metadata.get("tags")
         if isinstance(tags, Mapping):
-            for field in fields:
-                collected |= _as_string_set(tags.get(field))
+            for field_name in fields:
+                collected |= _as_string_set(tags.get(field_name))
 
         additional = metadata.get("additional_metadata")
         if isinstance(additional, Mapping):
-            for field in fields:
-                collected |= _as_string_set(additional.get(field))
+            for field_name in fields:
+                collected |= _as_string_set(additional.get(field_name))
 
         return collected
 

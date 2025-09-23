@@ -431,7 +431,8 @@ class DataMigrator:
                     detected = handler.detect_version(data)
                     if detected:
                         return detected
-                except:
+                except Exception as exc:  # pragma: no cover - defensive safeguard
+                    logger.debug("Version detection handler raised %s", exc)
                     continue
         
         raise MigrationError("Could not detect data version")

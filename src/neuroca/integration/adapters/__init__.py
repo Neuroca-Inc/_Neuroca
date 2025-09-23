@@ -67,25 +67,63 @@ try:
         BaseAdapter,
     )
     from ..models import LLMResponse, ResponseType
-except ImportError as e:
-    logger.error(f"Failed to import adapter components: {e}. Adapters may not function correctly.")
-    # Minimal placeholders to avoid import-time failures
-    class BaseAdapter: pass
-    class AdapterRegistry:
+except ImportError as exc:
+    logger.error(
+        "Failed to import adapter components. Adapters may not function correctly.",
+        exc_info=exc,
+    )
+
+    class BaseAdapter:  # pragma: no cover - import fallback
+        """Fallback adapter base class used when core adapter components are unavailable."""
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            """Initialise the placeholder adapter without performing any work."""
+
+    class AdapterRegistry:  # pragma: no cover - import fallback
+        """Fallback registry that keeps module imports functional in degraded mode."""
+
         @classmethod
-        def register(cls, name=None):
+        def register(cls, name: str | None = None):
+            """Return a decorator that leaves the provided adapter class unchanged."""
+
             def decorator(adapter_cls):
+                """Return the provided adapter class unchanged."""
+
                 return adapter_cls
+
             return decorator
+
         @classmethod
-        def get_adapter_class(cls, name): return None
+        def get_adapter_class(cls, name: str):
+            """Return ``None`` while the real registry is unavailable."""
+
+            return None
+
         @classmethod
-        def list_adapters(cls): return []
-    class AdapterError(Exception): pass
-    class AdapterNotFoundError(AdapterError): pass
-    class AdapterConfigurationError(AdapterError): pass
-    class LLMResponse: pass
-    class ResponseType(Enum): pass
+        def list_adapters(cls):
+            """Return an empty list because no adapters can be discovered."""
+
+            return []
+
+    class AdapterError(Exception):  # pragma: no cover - import fallback
+        """Base placeholder error raised by the degraded adapter registry."""
+
+    class AdapterNotFoundError(AdapterError):  # pragma: no cover - import fallback
+        """Placeholder raised when an adapter cannot be located in degraded mode."""
+
+    class AdapterConfigurationError(AdapterError):  # pragma: no cover - import fallback
+        """Placeholder raised when adapter configuration fails in degraded mode."""
+
+    class LLMResponse:  # pragma: no cover - import fallback
+        """Lightweight response placeholder returned while adapters are unavailable."""
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            """Initialise the placeholder response with no behaviour."""
+
+    class ResponseType(Enum):  # pragma: no cover - import fallback
+        """Placeholder enumeration for response typing when adapters are unavailable."""
+
+        GENERIC = "generic"
 
 # --- Automatically register available built-in adapters ---
 # Ensure AdapterRegistry was imported successfully before trying to use it
@@ -115,7 +153,11 @@ __all__ = [
 ]
 
 # Dynamically add imported adapters to __all__
-if OpenAIAdapter: __all__.append("OpenAIAdapter")
-if AnthropicAdapter: __all__.append("AnthropicAdapter")
-if VertexAIAdapter: __all__.append("VertexAIAdapter")
-if OllamaAdapter: __all__.append("OllamaAdapter")
+if OpenAIAdapter:
+    __all__.append("OpenAIAdapter")
+if AnthropicAdapter:
+    __all__.append("AnthropicAdapter")
+if VertexAIAdapter:
+    __all__.append("VertexAIAdapter")
+if OllamaAdapter:
+    __all__.append("OllamaAdapter")

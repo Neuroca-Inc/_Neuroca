@@ -34,7 +34,6 @@ from typing import Any, Optional, Union
 
 # Visualization libraries
 try:
-    import matplotlib.colors as mcolors
     import matplotlib.pyplot as plt
     import networkx as nx
     from matplotlib.patches import Patch
@@ -44,7 +43,6 @@ except ImportError:
     logging.warning("Matplotlib not available. Some visualization features will be limited.")
 
 try:
-    import plotly.express as px
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
 except ImportError:
