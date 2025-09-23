@@ -6,7 +6,7 @@ while the main memory system uses the tier-based architecture.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)

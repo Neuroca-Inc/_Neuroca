@@ -148,6 +148,7 @@ This single document enumerates all actionable items required to finish the proj
   - `black --check` would reformat 472 files across benchmarks, CLI, memory manager, and tests; repository-wide formatting cleanup remains outstanding.
   - Targeted cleanup resolved the `ruff` violations in the configuration loader, tubules transport helpers, logging handlers, schema generator, and performance harness; `ruff` now passes on those modules as a stepping stone toward a repo-wide green run.
   - Additional cleanup drops the SQLite backend component and integration test suites from the unused-import list, shrinking the repo-wide violation count and keeping the modernization work focused on active modules.
+  - Normalized the working-memory helper defaults and removed unused imports across memory models and tier utilities; `ruff check src/neuroca/memory/manager/working_memory.py src/neuroca/memory/models.py src/neuroca/memory/models/search.py src/neuroca/memory/models/working_memory.py src/neuroca/memory/tiers/base/search.py src/neuroca/memory/tiers/base/stats.py src/neuroca/memory/tiers/ltm/components/category.py` now passes cleanly.
 - [DONE] Type checks: run `mypy` (or configured type checker) across `src/`
   - ✅ `mypy --hide-error-context --no-error-summary src` after fixing `MemoryTier` lookup typing and the local `pytest_asyncio.fixture` decorator wrappers.
 - [STARTED] Pre‑commit: run all hooks locally, fix any violations

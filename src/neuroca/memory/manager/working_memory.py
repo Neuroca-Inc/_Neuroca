@@ -9,12 +9,11 @@ based on the current context.
 
 import asyncio
 import logging
-from datetime import datetime
 from heapq import heappush, heappop
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from neuroca.memory.manager.models import RankedMemory
-from neuroca.memory.manager.utils import calculate_text_relevance, truncate_text
+from neuroca.memory.manager.utils import truncate_text
 from neuroca.memory.manager.decay import strengthen_memory
 
 # Configure logger
@@ -108,7 +107,7 @@ async def get_prompt_context_memories(
     working_memory_ids: Set[str],
     max_memories: int = 5,
     max_tokens_per_memory: int = 150,
-    strengthen_memory_func=None,
+    strengthen_memory_func=strengthen_memory,
     lock=None,
 ) -> List[Dict[str, Any]]:
     """
@@ -119,7 +118,9 @@ async def get_prompt_context_memories(
         working_memory_ids: Set of IDs in the working memory
         max_memories: Maximum number of memories to include
         max_tokens_per_memory: Maximum tokens per memory
-        strengthen_memory_func: Function to strengthen a memory
+        strengthen_memory_func: Function to strengthen a memory. Defaults to
+            :func:`neuroca.memory.manager.decay.strengthen_memory` to ensure
+            prompt accesses reinforce the retrieved memories.
         lock: Asyncio lock for the working memory
         
     Returns:

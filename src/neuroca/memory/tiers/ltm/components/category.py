@@ -6,7 +6,7 @@ of memories in the LTM tier.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List
 
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.backends import BaseStorageBackend
