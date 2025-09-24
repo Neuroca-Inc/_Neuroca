@@ -111,6 +111,7 @@ test = [
     "pytest-benchmark>=4.0.0",
     "responses>=0.23.1",
     "freezegun>=1.2.2",
+    "fakeredis>=2.23.2",
 ]
 integrations = [
     # Secure baseline for LangChain integration (optional)

@@ -345,7 +345,7 @@ class ComponentHealth:
                 # Recovery happens more effectively in non-optimal states (if not critical)
                 if self.state in [HealthState.FATIGUED, HealthState.STRESSED, HealthState.IMPAIRED]:
                      new_value += current_recovery_rate * elapsed_seconds
-            
+
             elif param.type == HealthParameterType.ATTENTION:
                 # Attention decays, recovery depends on state/strategy
                 attention_decay = current_decay_rate * elapsed_seconds
@@ -353,12 +353,28 @@ class ComponentHealth:
                 # Attention recovers better in normal/optimal states
                 if self.state in [HealthState.NORMAL, HealthState.OPTIMAL]:
                     new_value += current_recovery_rate * elapsed_seconds
-            
+
+            elif param.type == HealthParameterType.COGNITIVE_LOAD:
+                # Cognitive load should trend toward the optimal range rather than
+                # collapsing to zero when the update interval is long. When load is
+                # elevated we relieve it gradually but keep it above the optimal
+                # threshold; when it is low we allow it to recover toward the target.
+                if param.value > param.optimal_value:
+                    new_value = max(
+                        param.optimal_value,
+                        param.value - current_decay_rate * elapsed_seconds,
+                    )
+                else:
+                    new_value = min(
+                        param.optimal_value,
+                        param.value + current_recovery_rate * elapsed_seconds,
+                    )
+
             elif param.type == HealthParameterType.FATIGUE:
                 # Fatigue increases via decay, reduces via recovery (especially during rest)
                 fatigue_increase = current_decay_rate * elapsed_seconds
                 new_value = param.value + fatigue_increase
-                
+
                 # Recovery reduces fatigue, enhanced by coping strategies
                 recovery = current_recovery_rate * elapsed_seconds
                 new_value -= recovery

@@ -6,6 +6,7 @@ while the main memory system uses the tier-based architecture.
 """
 
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +46,57 @@ class MemoryDecayError(Exception):
 # Storage-related exceptions
 class StorageOperationError(Exception):
     """Exception raised when storage operations fail."""
-    pass
+
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        backend_type: Optional[str] = None,
+        operation: Optional[str] = None,
+    ) -> None:
+        self.backend_type = backend_type
+        self.operation = operation
+        if message is None:
+            context: list[str] = []
+            if backend_type:
+                context.append(f"backend={backend_type}")
+            if operation:
+                context.append(f"operation={operation}")
+            detail = f" ({', '.join(context)})" if context else ""
+            message = f"Storage operation failed{detail}".strip()
+        super().__init__(message)
 
 
 class StorageBackendError(Exception):
     """Exception raised when storage backend operations fail."""
-    pass
+
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        backend_type: Optional[str] = None,
+    ) -> None:
+        self.backend_type = backend_type
+        if message is None:
+            detail = f" for backend {backend_type}" if backend_type else ""
+            message = f"Storage backend error{detail}".strip()
+        super().__init__(message)
 
 
 class StorageInitializationError(Exception):
     """Exception raised when storage initialization fails."""
-    pass
+
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        backend_type: Optional[str] = None,
+    ) -> None:
+        self.backend_type = backend_type
+        if message is None:
+            detail = f" for backend {backend_type}" if backend_type else ""
+            message = f"Failed to initialize storage backend{detail}".strip()
+        super().__init__(message)
 
 
 class ItemNotFoundError(Exception):
@@ -108,4 +149,15 @@ class MemoryManagerOperationError(Exception):
 
 class TierInitializationError(Exception):
     """Exception raised when tier initialization fails."""
-    pass
+
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        tier_name: Optional[str] = None,
+    ) -> None:
+        self.tier_name = tier_name
+        if message is None:
+            detail = f" for tier {tier_name}" if tier_name else ""
+            message = f"Failed to initialize memory tier{detail}".strip()
+        super().__init__(message)
