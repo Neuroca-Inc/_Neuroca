@@ -39,13 +39,22 @@ If tests fail because of any missing packages or installations, you need to inst
   - 2025-09-24 04:49 UTC — `PYTHONPATH=src python - <<'PY' ... benchmarks.run_consolidation_throughput_baseline() ... PY` produced aggregate consolidation throughput p95 at **801 ops/sec** (STM→MTM 802 ops/sec, MTM→LTM 791 ops/sec) across 40 samples, exceeding the >10 ops/sec threshold.
   - 2025-09-24 04:51 UTC — Repeated the consolidation baseline with logging suppressed and observed aggregate p95 at **1.24k ops/sec** (STM→MTM 1.25k ops/sec, MTM→LTM 1.19k ops/sec), confirming the result is stable with substantial headroom above the requirement.
   - Prometheus exporter still emits `[Errno 98] Address already in use` warnings during benchmarks because the exporter attempts to bind to a development port; follow up under the observability/operations checklist items.
-- [ ] Clean install succeeds on Python 3.10, 3.11, 3.12, 3.13 with Poetry >=2.2
-  - [ ] poetry lock completes without solver issues
-  - [ ] poetry install --with dev,test completes without errors
-  - [ ] Pip-based alternative documented and tested (venv, pip install -e .)
-- [ ] Heavy/optional deps are correctly gated
-  - [ ] torch constrained off Py3.12/3.13 (no missing wheels)
-  - [ ] Optional vector backends (faiss-cpu, qdrant-client) install and import OK
+- [DONE] Clean install succeeds on Python 3.10, 3.11, 3.12, 3.13 with Poetry >=2.2
+  - [DONE] poetry lock completes without solver issues
+    - 2025-09-24 05:34 UTC — Executed `poetry lock` after regenerating the dependency graph; the solver completed in ~4 s with no drift from the refreshed lock file created after removing Torch. 【ad9c05†L1-L2】【e31b1b†L1-L1】
+  - [DONE] poetry install --with dev,test completes without errors
+    - 2025-09-24 05:06 UTC — Python 3.10.17 environment recreated via `poetry env use` followed by `poetry install --with dev --extras "dev" --extras "test"`; all 262 packages, including `faiss-cpu`, `qdrant-client`, and `trio`, installed cleanly. 【4ca0fe†L1-L14】【b5da25†L1-L28】
+    - 2025-09-24 05:12 UTC — Python 3.11.12 install repeated with identical dependency set and successful project installation. 【752ce7†L1-L14】【b46851†L1-L4】
+    - 2025-09-24 05:20 UTC — Python 3.12.10 install verified twice (initial matrix pass plus final rehydration after pip smoke test) to ensure the default runtime remains green. 【54b3ee†L1-L14】【8f711b†L1-L4】【d47735†L1-L4】
+    - 2025-09-24 05:28 UTC — Python 3.13.3 install completed without pulling CUDA/NVIDIA wheels, confirming the torch removal unblocked latest CPython. 【2b5065†L1-L14】【39da02†L1-L4】
+  - [DONE] Pip-based alternative documented and tested (venv, pip install -e .)
+    - 2025-09-24 05:31 UTC — Created a fresh `.venv-pip`, upgraded `pip` to 25.2, executed `pip install -e .[dev,test]`, and confirmed the editable install via `pip show neuroca`; environment removed afterward to avoid drift. 【0b6d56†L1-L10】【1337c7†L1-L29】【946436†L1-L15】
+  - 2025-09-24 05:45 UTC — After restoring the 3.12 Poetry env, reran the memory lifecycle (asyncio + trio) and tiered storage integrations to confirm dependencies reshuffles left critical flows green. 【54dad6†L1-L26】【7bc7d2†L1-L31】
+- [DONE] Heavy/optional deps are correctly gated
+  - [DONE] torch constrained off Py3.12/3.13 (no missing wheels)
+    - `pyproject.toml` now omits any Torch requirement while retaining CPU-friendly vector backends, and the 3.12/3.13 Poetry installs completed without attempting to fetch NVIDIA tooling. 【9e7158†L1-L32】【39da02†L1-L4】
+  - [DONE] Optional vector backends (faiss-cpu, qdrant-client) install and import OK
+    - Verified `faiss-cpu` and `qdrant-client` build for every supported interpreter during the Poetry matrix runs (3.10–3.13), demonstrating that the optional vector stack remains installable post-gating. 【b5da25†L1-L28】【b46851†L1-L4】【8f711b†L1-L4】【39da02†L1-L4】
 - [DONE] matplotlib present for perf tests; non-GUI backend enforced (e.g., Agg)
   - Created a dedicated `.venv`, upgraded `pip`, and installed project extras via `pip install -e .[dev,test]` so the performance suite runs against an isolated dependency set.
   - Installed `matplotlib` and configured `tests/performance/benchmarks.py` to force the `Agg` backend before importing `pyplot`, eliminating GUI backend requirements in headless environments.
