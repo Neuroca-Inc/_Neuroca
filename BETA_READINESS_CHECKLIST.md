@@ -33,7 +33,12 @@ If tests fail because of any missing packages or installations, you need to inst
     (1 passed, 0 failed, 10 warnings).
   - Captured the persistent warnings (deprecated Pydantic validators/config/dict usage and `datetime.utcnow()` calls) for
     follow-up under the quality checklist items targeting validator/API migrations.
-- [ ] Confirm benchmarks: retrieval latency <100ms p95 (benchmarks.py lines 255-334), consolidation throughput >10 ops/sec (lines 364-491)
+- [DONE] Confirm benchmarks: retrieval latency <100ms p95 (benchmarks.py lines 255-334), consolidation throughput >10 ops/sec (lines 364-491)
+  - 2025-09-24 04:49 UTC — [STARTED] Kicked off baseline collection runs. Initial invocation without configuring `PYTHONPATH=src` raised `ModuleNotFoundError: No module named 'neuroca'`; re-ran the commands inside the project environment to proceed.
+  - 2025-09-24 04:49 UTC — `PYTHONPATH=src python - <<'PY' ... benchmarks.run_retrieval_latency_baseline() ... PY` reported aggregate retrieval latency p95 at **0.53 ms** (STM 0.59 ms, MTM 0.52 ms, LTM 0.54 ms) across 1,080 samples, comfortably under the <100 ms requirement.
+  - 2025-09-24 04:49 UTC — `PYTHONPATH=src python - <<'PY' ... benchmarks.run_consolidation_throughput_baseline() ... PY` produced aggregate consolidation throughput p95 at **801 ops/sec** (STM→MTM 802 ops/sec, MTM→LTM 791 ops/sec) across 40 samples, exceeding the >10 ops/sec threshold.
+  - 2025-09-24 04:51 UTC — Repeated the consolidation baseline with logging suppressed and observed aggregate p95 at **1.24k ops/sec** (STM→MTM 1.25k ops/sec, MTM→LTM 1.19k ops/sec), confirming the result is stable with substantial headroom above the requirement.
+  - Prometheus exporter still emits `[Errno 98] Address already in use` warnings during benchmarks because the exporter attempts to bind to a development port; follow up under the observability/operations checklist items.
 - [ ] Clean install succeeds on Python 3.10, 3.11, 3.12, 3.13 with Poetry >=2.2
   - [ ] poetry lock completes without solver issues
   - [ ] poetry install --with dev,test completes without errors
