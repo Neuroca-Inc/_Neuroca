@@ -41,7 +41,10 @@ If tests fail because of any missing packages or installations, you need to inst
 - [ ] Heavy/optional deps are correctly gated
   - [ ] torch constrained off Py3.12/3.13 (no missing wheels)
   - [ ] Optional vector backends (faiss-cpu, qdrant-client) install and import OK
-- [ ] matplotlib present for perf tests; non-GUI backend enforced (e.g., Agg)
+- [DONE] matplotlib present for perf tests; non-GUI backend enforced (e.g., Agg)
+  - Created a dedicated `.venv`, upgraded `pip`, and installed project extras via `pip install -e .[dev,test]` so the performance suite runs against an isolated dependency set.
+  - Installed `matplotlib` and configured `tests/performance/benchmarks.py` to force the `Agg` backend before importing `pyplot`, eliminating GUI backend requirements in headless environments.
+  - Validated the setup with `PYTHONPATH=src pytest -v` (596 passed, 4 skipped, 18k warnings) and confirmed `codacy-cli analyze --tool trivy` still fails because the CLI is not present in this container.
 
 ## Testing Coverage (Current: 53%, Target: 95%)
 
