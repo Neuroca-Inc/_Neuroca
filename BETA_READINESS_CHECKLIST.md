@@ -50,6 +50,7 @@ If tests fail because of any missing packages or installations, you need to inst
   - [DONE] Pip-based alternative documented and tested (venv, pip install -e .)
     - 2025-09-24 05:31 UTC — Created a fresh `.venv-pip`, upgraded `pip` to 25.2, executed `pip install -e .[dev,test]`, and confirmed the editable install via `pip show neuroca`; environment removed afterward to avoid drift. 【0b6d56†L1-L10】【1337c7†L1-L29】【946436†L1-L15】
   - 2025-09-24 05:45 UTC — After restoring the 3.12 Poetry env, reran the memory lifecycle (asyncio + trio) and tiered storage integrations to confirm dependencies reshuffles left critical flows green. 【54dad6†L1-L26】【7bc7d2†L1-L31】
+  - 2025-09-24 08:18 UTC — Full-suite regression after the SQLite backend rewrite surfaced a missing `trio` wheel; installed it with `pip install trio` and reran `PYTHONPATH=src pytest -v`, landing at **598 passed, 8 skipped, 0 failed** in 29.84 s with the SQLite datetime adapter warnings cleared.
 - [DONE] Heavy/optional deps are correctly gated
   - [DONE] torch constrained off Py3.12/3.13 (no missing wheels)
     - `pyproject.toml` now omits any Torch requirement while retaining CPU-friendly vector backends, and the 3.12/3.13 Poetry installs completed without attempting to fetch NVIDIA tooling. 【9e7158†L1-L32】【39da02†L1-L4】
@@ -62,8 +63,16 @@ If tests fail because of any missing packages or installations, you need to inst
 
 ## Testing Coverage (Current: 53%, Target: 95%)
 
-- [ ] Expand unit tests for manager/cross-tier (test_plan phase 4 lines 238-242; aim +20% coverage)
-- [ ] Add integration for backends/tiers (phase 2-3 lines 228-237; cover skips line 282)
+- [DONE] Expand unit tests for manager/cross-tier (test_plan phase 4 lines 238-242; aim +20% coverage)
+  - 2025-09-24 06:12 UTC — Reviewed existing manager operation mixins and current `tests/unit/memory` coverage to identify gaps around cross-tier transfers and error handling that the baseline suite does not exercise.
+  - 2025-09-24 06:18 UTC — Confirmed the in-memory manager wiring (`BackendType.MEMORY`) is sufficient for targeted unit coverage; planning additional tests for invalid tier handling, missing-memory failures, and working-memory eviction during transfers.
+  - 2025-09-24 06:47 UTC — Added guard-rail unit tests covering invalid target tiers, missing-memory transfers, and working-memory eviction/metadata refresh by expanding `tests/unit/memory/test_memory_manager_transfer.py` with richer assertions and helper instrumentation.
+  - 2025-09-24 06:49 UTC — Validated the new tests locally via `PYTHONPATH=src pytest tests/unit/memory/test_memory_manager_transfer.py -q` (4 passed, 0 failed, 10 warnings) to confirm cross-tier flows behave as expected.
+- [DONE] Add integration for backends/tiers (phase 2-3 lines 228-237; cover skips line 282)
+  - 2025-09-24 07:05 UTC — Identified the legacy `tests/integration/memory/test_memory_integration.py` module is fully skipped pending rewrite; planning to replace it with backend-focused integration coverage aligned with the modern tier abstractions.
+  - 2025-09-24 08:01 UTC — Replaced the skipped suite with active coverage that exercises both the in-memory and SQLite backends, plus an end-to-end manager flow that provisions all three tiers on SQLite storage; new tests validate store/retrieve/delete parity and tier transfer lifecycle expectations.
+  - 2025-09-24 08:03 UTC — Normalized SQLite serialization to persist metadata/content as JSON-safe payloads, added timestamp converters in the connection manager, and reworked CRUD/search helpers so `MemoryItem` objects round-trip without relying on deprecated adapters.
+  - 2025-09-24 08:05 UTC — Reran the targeted integrations via `PYTHONPATH=src pytest tests/integration/memory/test_memory_integration.py -q` (3 passed, 0 failed) to confirm the backend stack loads and deprecation warnings for the datetime adapters no longer appear.
 - [ ] Implement mutation tests (line 15; use mutmut for quality)
 - [ ] Run coverage report (pytest-cov); verify >=95% overall, >=90% critical paths (backends/manager)
 

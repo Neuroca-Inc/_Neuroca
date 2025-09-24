@@ -53,12 +53,14 @@ class SQLiteBackend(BaseStorageBackend):
         # Already implemented in shutdown()
         pass
 
-    async def _create_item(self, item_data: dict) -> str:
+    async def _create_item(self, item_id: str, item_data: dict) -> bool:
         """Create a new item in storage."""
         try:
-            # Convert dict to MemoryItem
-            memory_item = MemoryItem.model_validate(item_data)
-            return await self.store(memory_item)
+            payload = dict(item_data)
+            payload.setdefault("id", item_id)
+            memory_item = MemoryItem.model_validate(payload)
+            await self.store(memory_item)
+            return True
         except Exception as e:
             raise StorageOperationError(f"Failed to create item: {str(e)}") from e
 
@@ -76,9 +78,10 @@ class SQLiteBackend(BaseStorageBackend):
     async def _update_item(self, item_id: str, item_data: dict) -> bool:
         """Update an existing item in storage."""
         try:
-            # Convert dict to MemoryItem
-            memory_item = MemoryItem.model_validate(item_data)
-            return await self.update(memory_item)
+            payload = dict(item_data)
+            payload.setdefault("id", item_id)
+            memory_item = MemoryItem.model_validate(payload)
+            return await self._update_memory(memory_item)
         except Exception as e:
             raise StorageOperationError(f"Failed to update item {item_id}: {str(e)}") from e
 
@@ -107,11 +110,12 @@ class SQLiteBackend(BaseStorageBackend):
             search_limit = limit if limit is not None else 1000
             search_offset = offset or 0
 
-            results = await self.search(
+            results = await self.connection.execute_async(
+                self.search.search,
                 "",
                 search_filter,
-                limit=search_limit,
-                offset=search_offset,
+                search_limit,
+                search_offset,
             )
 
             items = [
@@ -139,7 +143,10 @@ class SQLiteBackend(BaseStorageBackend):
             search_filter = None
             if filter_criteria:
                 search_filter = SearchFilter.model_validate(filter_criteria)
-            return await self.count(search_filter)
+            return await self.connection.execute_async(
+                self.search.count,
+                search_filter,
+            )
         except Exception as e:
             raise StorageOperationError(f"Failed to count items: {str(e)}") from e
 
@@ -424,7 +431,7 @@ class SQLiteBackend(BaseStorageBackend):
             logger.error(error_msg, exc_info=True)
             raise StorageOperationError(error_msg) from e
     
-    async def update(self, memory_item: MemoryItem) -> bool:
+    async def _update_memory(self, memory_item: MemoryItem) -> bool:
         """
         Update an existing memory item in the SQLite database.
         
