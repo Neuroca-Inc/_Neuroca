@@ -1,13 +1,14 @@
 ### Overview
 
-This is a generic full-stack app template focusing on architectural strategies:
-modular monolith with microservices decoupling
-layered clean architecture (presentation, application, domain, infrastructure).
-Bottom-up: Build from primitives (data structures, algorithms).
-Top-down: Define high-level abstractions (interfaces, contracts, user stories, "what are we building" and how will it work?) first.
-Ensure scalability, maintainability via loose coupling, high cohesion.
+This document defines a generic full-stack app template focusing on architectural strategies:
+- modular monolith with microservices decoupling layered clean architecture (presentation, application, domain, infrastructure).
+- Every project must be designed first conceptually from the Top-down. Then ask:
+      - "Given this end goal concept, what axiomatic primitives, data structures, algorithms, and pipelines will be required necessary and optimal to build this project as conceptually defined?"
+- Top-down: Define high-level abstractions (interfaces, contracts, user stories, Questions: "what are we building?", "how will it work?", "why are we building this?", "who cares?") first.
+- Bottom-up: Build from primitives (data structures, algorithms).
+- Ensure extended future scalability, stability + flexibility, maintainability via loose coupling, high cohesion.
 
-### EXAMPLE ONLY Project Map
+### EXAMPLE ONLY Project Map of an agentic AI project following the Hybrid Clean Architecture in Python
 
 ```go
 agentic-tools/
@@ -87,7 +88,8 @@ agentic-tools/
 
 ### Hybrid-Clean Architecture Implementation
 
-This section documents the Hybrid-Clean Architecture approach, combining modular monolith design with Clean Architecture principles. This serves as a generic template for implementing scalable, maintainable applications across projects.
+This section documents the Hybrid-Clean Architecture approach, combining modular monolith design with Clean Architecture principles. 
+This serves as a generic template for implementing scalable, maintainable applications across projects.
 
 #### Core Principles
 
@@ -95,6 +97,15 @@ This section documents the Hybrid-Clean Architecture approach, combining modular
 - **Clean Architecture Layers**: Strict layering with dependency inversion to ensure testability, maintainability, and framework independence.
 - **Dependency Rule**: Dependencies flow inward only; outer layers depend on inner layers via abstractions (interfaces).
 - **File Size Limit**: No source code file shall exceed 500 lines of code (LOC) to maintain readability and facilitate refactoring.
+- **Directory Structure**: Subfolders should be used liberally to avoid keeping dissimilar files in the same directory, maintaining <= 10 code files per directory, and staying organized by reducing clutter.
+- **Classes**: There should be no more than 1 class per file, and a class should share the name of the file it's in whenever possible. As a rule of thumb, abide by PEP 8.
+  Examples:
+  - base_controller.py -> BaseController
+  - base/controller.py -> BaseController
+  - abstract_llm.py -> AbstractLLM
+  - abstractions/llm.py -> AbstractLLM
+  - repositories/user.py -> UserRepository
+  - user_repository.py -> UserRepository
 
 #### Layer Structure
 
@@ -142,6 +153,82 @@ This section documents the Hybrid-Clean Architecture approach, combining modular
    - **Rules**:
      - Define contracts for cross-cutting concerns
      - Abstractions enable pluggable implementations
+
+6. **Configurations and Parameters**
+   - **Config**: All configurations must be in a centralized config/ folder at the root of the project.
+     In the case of repositories with multiple projects, there would be a central config for each individual project within their root directories.
+   - **Parameters**: Any and all static or default parameters must be kept alongside the central configurations within the config/ directory.
+     This can be an individual yaml, json, or other type of file that contains all otherwise hard-coded parameter defaults or constants.
+     If it is more suitable for the parameter to be an environment variable, then store it in an .env and make sure that file is in the .gitignore listing.
+     
+7. **Documentation and Assets**
+   - **Code Documentation**: Code documentation is of first class order in this architecture.
+     Every method, function, class, and file must have professional, easy to understand, readable documentation.
+     Comments are helpful to explain gaps that aren't necessarily suitable for docstrings or headers.
+     - **Project Documentation**: The central location for the code docs, notebooks, in depth guides, and tutorials belong within the docs/ folder at the project root.
+       (some exceptions may apply, see Layer Structure / item #6 / Config / for more details on this).
+       
+#### Interfaces, Contracts, and API Requirements
+
+- Contract location and purity
+  - All cross-layer communication MUST occur via interfaces (ports) and DTOs defined in a dedicated contracts area that depends only on shared primitives and (optionally) domain types.
+  - Contracts MUST NOT depend on frameworks, transport libraries, or infrastructure details.
+
+- Dependency direction (enforced)
+  - Presentation → Application (interfaces/DTOs) only; Presentation MUST NOT reference Domain or Infrastructure directly.
+  - Application → Domain and Contracts; Application MUST NOT reference Infrastructure.
+  - Infrastructure → Domain and Contracts; Infrastructure implements ports and MUST NOT be referenced by inner layers.
+
+- Port taxonomy (minimum set)
+  - Data access: Repository ports and a Unit of Work port.
+  - Integration: Message Bus, Cache, HTTP Client, Secret Store, Telemetry.
+  - AI/LLM: Model runtime, Tool execution, Embedding/Vector index, Memory store.
+  - System: Clock, UUID/ID generator, Filesystem/Blob store.
+  - Each port MUST have a single responsibility and clear error semantics.
+
+- API surface (presentation/server)
+  - The server-side API MUST expose a versioned public contract (REST/gRPC/GraphQL acceptable) with:
+    - Versioning policy (e.g., URL or header) and deprecation window.
+    - Standard error envelope with stable error codes and trace/correlation id.
+    - Idempotency for unsafe methods where applicable (keys and replay handling).
+    - Pagination, filtering, sorting conventions; consistent status codes.
+    - Security: Authn/Authz requirements, rate limits, and input validation guarantees.
+  - API contracts SHOULD be machine-readable (e.g., OpenAPI/Protobuf) and MUST be the single source of truth for generated clients and DTOs.
+
+- DTO and mapping rules
+  - Presentation MUST exchange DTOs, never domain entities.
+  - Mapping between Domain and DTOs MUST be centralized in Application (use case layer), not scattered across Presentation/Infrastructure.
+  - DTOs MUST be stable, versioned, and backward compatible within a major version.
+
+- Error contracts and retries
+  - Ports MUST define expected error types, retry semantics, and idempotency expectations.
+  - Infrastructure adapters MUST translate provider-specific errors to the standardized port errors.
+
+- Testability and compliance
+  - Each port MUST ship with contract tests that any adapter MUST pass (adapter test kit).
+  - Consumer-driven contracts SHOULD be used for external API integrations.
+  - Mocks/fakes for ports MUST be provided to enable fast unit tests in Application.
+
+- DI and composition root
+  - Implementations are wired at the edge (composition root) only; inner layers are unaware of concrete types.
+  - A default wiring profile MUST exist for local/dev; alternative profiles MAY exist for prod/staging.
+
+- Stability and evolution
+  - Contracts are treated as stable artifacts; changes follow semantic versioning.
+  - Breaking contract changes MUST trigger a new major version and an explicit migration path.
+
+- Naming and granularity
+  - Interface names MUST describe capability (e.g., Repository, Service, Bus) rather than technology (e.g., Sql, Kafka) to avoid coupling.
+  - Keep ports minimal; split interfaces if a capability set grows beyond a single responsibility.
+
+- Documentation
+  - Every interface and API endpoint MUST include purpose, inputs/outputs, error cases, and examples.
+  - Each feature must have it's own documentation file with clear working links to related features.
+  - The public API reference MUST be generated from the source of truth and included in project documentation.
+
+- Enforcement notes
+  - Static checks (imports/architecture rules) SHOULD block outer→inner violations and domain leaks to Presentation.
+  - Contract test suites MUST run in CI; adapters cannot be merged unless they pass the port compliance tests.       
 
 #### Dependency Flow
 
