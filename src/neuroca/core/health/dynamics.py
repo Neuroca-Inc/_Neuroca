@@ -356,19 +356,32 @@ class ComponentHealth:
 
             elif param.type == HealthParameterType.COGNITIVE_LOAD:
                 # Cognitive load should trend toward the optimal range rather than
-                # collapsing to zero when the update interval is long. When load is
-                # elevated we relieve it gradually but keep it above the optimal
-                # threshold; when it is low we allow it to recover toward the target.
+                # collapsing when long gaps occur between updates. We therefore
+                # limit each adjustment to at most half the current deviation so
+                # we maintain headroom above the optimal target after heavy usage
+                # while still recovering toward it when load is low.
                 if param.value > param.optimal_value:
+                    deviation = param.value - param.optimal_value
+                    adjustment = min(
+                        0.5,
+                        max(0.0, current_decay_rate * elapsed_seconds),
+                    )
                     new_value = max(
                         param.optimal_value,
-                        param.value - current_decay_rate * elapsed_seconds,
+                        param.value - deviation * adjustment,
                     )
-                else:
+                elif param.value < param.optimal_value:
+                    deviation = param.optimal_value - param.value
+                    adjustment = min(
+                        0.5,
+                        max(0.0, current_recovery_rate * elapsed_seconds),
+                    )
                     new_value = min(
                         param.optimal_value,
-                        param.value + current_recovery_rate * elapsed_seconds,
+                        param.value + deviation * adjustment,
                     )
+                else:
+                    new_value = param.value
 
             elif param.type == HealthParameterType.FATIGUE:
                 # Fatigue increases via decay, reduces via recovery (especially during rest)
