@@ -9,6 +9,7 @@ Ensure scalability, maintainability via loose coupling, high cohesion.
 
 ### EXAMPLE ONLY Project Map
 
+```go
 agentic-tools/
 ├─ pyproject.toml
 ├─ README.md
@@ -82,6 +83,7 @@ agentic-tools/
 │     └─ e2e/
 └─ docs/
    └─ ADRs/
+```
 
 ### Hybrid-Clean Architecture Implementation
 
