@@ -119,7 +119,6 @@ class AnnealingOptimizer:
         if not memories:
             raise ValidationError("No memories provided for optimization")
             
-        start_time = time.time()
         logger.info(f"Starting memory optimization with {len(memories)} memory fragments")
         
         # Track if we're working with a MemoryStore or list

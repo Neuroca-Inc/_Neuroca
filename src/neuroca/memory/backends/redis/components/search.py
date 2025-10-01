@@ -5,12 +5,12 @@ This module provides the RedisSearch class for searching memory items in Redis.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from neuroca.memory.backends.redis.components.connection import RedisConnection
 from neuroca.memory.backends.redis.components.utils import RedisUtils
 from neuroca.memory.exceptions import StorageOperationError
-from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResult, MemorySearchResults
+from neuroca.memory.models.search import MemorySearchOptions
 
 logger = logging.getLogger(__name__)
 

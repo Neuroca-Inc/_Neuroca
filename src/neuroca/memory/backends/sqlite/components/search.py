@@ -8,7 +8,8 @@ in the SQLite database, including filtering, sorting, and pagination.
 import json
 import logging
 import sqlite3
-from typing import List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Any, List, Optional, Tuple
 
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.models.search import MemorySearchOptions as SearchFilter, MemorySearchResult as SearchResult, MemorySearchResults as SearchResults
@@ -252,19 +253,19 @@ class SQLiteSearch:
         
         if filter.created_after:
             where_clauses.append("m.created_at >= ?")
-            params.append(filter.created_after)
-        
+            params.append(self._normalise_timestamp(filter.created_after))
+
         if filter.created_before:
             where_clauses.append("m.created_at <= ?")
-            params.append(filter.created_before)
-        
+            params.append(self._normalise_timestamp(filter.created_before))
+
         if filter.accessed_after:
             where_clauses.append("m.last_accessed >= ?")
-            params.append(filter.accessed_after)
-        
+            params.append(self._normalise_timestamp(filter.accessed_after))
+
         if filter.accessed_before:
             where_clauses.append("m.last_accessed <= ?")
-            params.append(filter.accessed_before)
+            params.append(self._normalise_timestamp(filter.accessed_before))
     
     def _convert_rows_to_results(self, rows: List[sqlite3.Row]) -> List[SearchResult]:
         """
@@ -282,10 +283,19 @@ class SQLiteSearch:
             metadata = {}
             if row[6]:  # metadata_json
                 metadata = json.loads(row[6])
-            
+                tags_field = metadata.get("tags")
+                if isinstance(tags_field, list):
+                    metadata["tags"] = {str(tag): True for tag in tags_field}
+
+            content_value = row[1]
+            if isinstance(content_value, str):
+                content_payload: dict[str, Any] = {"text": content_value}
+            else:
+                content_payload = content_value
+
             memory_item = MemoryItem(
                 id=row[0],
-                content=row[1],
+                content=content_payload,
                 summary=row[2],
                 metadata=metadata
             )
@@ -295,8 +305,18 @@ class SQLiteSearch:
             score = 1.0
             
             results.append(SearchResult(memory=memory_item, score=score))
-        
+
         return results
+
+    @staticmethod
+    def _normalise_timestamp(value: Any) -> Any:
+        """Convert datetime filters to timezone-aware ISO strings."""
+
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc).isoformat()
+        return value
         
     def filter_items(
         self,

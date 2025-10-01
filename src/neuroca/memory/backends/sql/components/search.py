@@ -1,12 +1,7 @@
-"""
-SQL Search Component
+"""SQL search component for retrieving and filtering memories via SQL backend."""
 
-This module provides the SQLSearch class for searching memory items in SQL database.
-"""
-
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple
 
 from neuroca.memory.backends.sql.components.connection import SQLConnection
 from neuroca.memory.backends.sql.components.crud import SQLCRUD
@@ -74,10 +69,6 @@ class SQLSearch:
                 limit=limit,
                 offset=offset
             )
-            
-            # Calculate pagination info
-            page = offset // limit + 1 if limit > 0 else 1
-            total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
             
             # Create search results
             # Pass the original filter options back in the results object

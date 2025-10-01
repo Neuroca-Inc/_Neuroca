@@ -7,12 +7,11 @@ functionality over vector embeddings, including filtering and similarity-based r
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional
 
 from neuroca.memory.backends.vector.components.crud import VectorCRUD
 from neuroca.memory.backends.vector.components.index import VectorIndex
 from neuroca.memory.exceptions import StorageOperationError
-from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResults
 
 logger = logging.getLogger(__name__)
@@ -85,7 +84,7 @@ class VectorSearch:
             # No results case
             if not search_results:
                 # Use MemorySearchResults and pass options
-                search_options = filter if filter else MemorySearchOptions(query=query, limit=limit, offset=offset)
+                _search_options = filter if filter else MemorySearchOptions(query=query, limit=limit, offset=offset)
                 return MemorySearchResults(
                     query=query,
                     results=[],
@@ -119,7 +118,7 @@ class VectorSearch:
             
             # Create search results
             # Use MemorySearchResults and pass options
-            search_options = filter if filter else MemorySearchOptions(query=query, limit=limit, offset=offset)
+            _search_options = filter if filter else MemorySearchOptions(query=query, limit=limit, offset=offset)
             results = MemorySearchResults(
                 query=query,
                 results=memory_items,

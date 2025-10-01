@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from neuroca.memory.manager.events import MaintenanceEventPublisher
 from neuroca.memory.manager.metrics import MemoryMetricsPublisher

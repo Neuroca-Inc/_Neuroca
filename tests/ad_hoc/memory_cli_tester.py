@@ -10,14 +10,12 @@ Usage:
 """
 
 import asyncio
-import json
 import sys
 from datetime import datetime
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Optional
 
 # Add src to path for imports
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 # Import the NCA memory system
@@ -228,7 +226,7 @@ exit/quit            - Exit the CLI
                 response += f"I understand you're asking about '{message}'. "
                 response += "Let me provide a contextual response based on our history."
             else:
-                response = f"This seems to be a new topic for us. I'll remember this conversation. "
+                response = "This seems to be a new topic for us. I'll remember this conversation. "
                 response += f"Regarding '{message}', let me help you with that."
             
             print(f"🤖 NCA: {response}")

@@ -6,9 +6,7 @@ This module provides the SQLConnection class for managing PostgreSQL database co
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
-
-from neuroca.config.settings import get_settings
+from typing import Any, Dict, List, Optional
 from neuroca.db.connections.postgres import (
     AsyncPostgresConnection,
     PostgresConfig,

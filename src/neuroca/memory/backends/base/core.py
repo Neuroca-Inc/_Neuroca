@@ -427,7 +427,7 @@ class BaseStorageBackend(StorageBackendInterface, CoreOperations, BatchOperation
             
             return stats
         except Exception as e:
-            logger.exception(f"Failed to get stats")
+            logger.exception("Failed to get stats")
             raise StorageOperationError(
                 operation="get_stats",
                 backend_type=self.__class__.__name__,

@@ -6,7 +6,7 @@ component modules to implement the BaseStorageBackend interface for the memory s
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.redis.components.batch import RedisBatch
@@ -309,7 +309,7 @@ class RedisBackend(BaseStorageBackend):
                     memory_items.append(memory_item)
             
             # Create SearchResults
-            results = SearchResults(
+            results = MemorySearchResults(
                 query=query,
                 items=memory_items,
                 total_results=total_count,

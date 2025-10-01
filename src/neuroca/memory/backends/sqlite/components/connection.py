@@ -9,11 +9,38 @@ import logging
 import os
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+
+
+def _adapt_datetime(value: datetime) -> str:
+    """Convert ``datetime`` instances to timezone-aware ISO strings."""
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _parse_timestamp(value: bytes) -> datetime:
+    """Parse persisted ISO timestamps into aware ``datetime`` objects."""
+
+    text = value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else str(value)
+    if "T" not in text and " " in text:
+        text = text.replace(" ", "T", 1)
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+sqlite3.register_adapter(datetime, _adapt_datetime)
+sqlite3.register_converter("timestamp", _parse_timestamp)
+sqlite3.register_converter("timestamptz", _parse_timestamp)
+sqlite3.register_converter("datetime", _parse_timestamp)
 
 
 class SQLiteConnection:

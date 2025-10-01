@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """
 Advanced NeuroCognitive Architecture (NCA) LLM Client
 =====================================================
@@ -21,7 +22,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 import json
 import sys
 from pathlib import Path
@@ -37,7 +38,6 @@ if str(SRC_DIR) not in sys.path:
 # Core NCA Imports
 from neuroca.memory.manager import MemoryManager
 from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
-from neuroca.config.settings import Settings
 
 # Cognitive Control Imports
 try:
@@ -232,7 +232,7 @@ class AdvancedNCAClient:
         try:
             # Phase 1: Attention and Focus
             print("  🎯 Phase 1: Attention Management")
-            attention_result = await self.attention_manager.focus_on(
+            await self.attention_manager.focus_on(
                 stimulus=user_input,
                 context=context
             )
@@ -549,7 +549,7 @@ class AdvancedNCAClient:
     async def _demo_cognitive_control(self):
         """Demonstrate cognitive control components."""
         print("  🎯 Testing attention management...")
-        focus_result = await self.attention_manager.focus_on("NCA demonstration")
+        await self.attention_manager.focus_on("NCA demonstration")
         current_focus = await self.attention_manager.get_current_focus()
         print(f"    → Current focus: {current_focus}")
         
@@ -659,7 +659,7 @@ class AdvancedNCAClient:
         print(f"  💬 Conversation History: {len(self.conversation_history)} turns")
         
         if self.cognitive_state.get('performance_metrics'):
-            print(f"  📊 Performance Metrics:")
+            print("  📊 Performance Metrics:")
             for metric, value in self.cognitive_state['performance_metrics'].items():
                 print(f"    • {metric}: {value}")
     

@@ -232,7 +232,12 @@ class ResourceLimitWatchdog:
                 )
                 removed = 0
             except Exception as exc:  # noqa: BLE001
-                self._log.exception("Cleanup attempt %s for tier %s failed", attempt, tier_name)
+                self._log.exception(
+                    "Cleanup attempt %s for tier %s failed due to %s",
+                    attempt,
+                    tier_name,
+                    exc,
+                )
                 removed = 0
 
             removed_int = _coerce_positive_int(removed) or 0

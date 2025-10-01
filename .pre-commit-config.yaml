@@ -24,7 +24,7 @@ repos:
         description: Ensures files end with a newline
       - id: check-yaml
         description: Validates YAML syntax
-        args: ['--allow-multiple-documents']
+        args: ['--allow-multiple-documents', '--unsafe']
       - id: check-json
         description: Validates JSON syntax
       - id: check-toml

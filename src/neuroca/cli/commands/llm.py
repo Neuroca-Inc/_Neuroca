@@ -696,9 +696,10 @@ def bench_llm(
                 sys.path.insert(0, str(repo_root))
             import benchmarks.llm_bench.latency as bench_latency  # type: ignore
             import benchmarks.llm_bench.util as bench_util  # type: ignore
-        except Exception as e:
+        except Exception as exc:
             console.print("[red]Benchmarks package not available.[/red]")
             console.print("Expected package: benchmarks/llm_bench with latency.py and util.py")
+            console.print(f"[red]Error: {exc}[/red]")
             raise typer.Exit(code=1)
 
     suites = [s.strip().lower() for s in suite.split(",") if s.strip()]

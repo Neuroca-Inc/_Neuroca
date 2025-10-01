@@ -77,16 +77,19 @@ def test_register_memory_system():
     """Test registering a memory system for health monitoring."""
     # Create memory systems
     working = WorkingMemory()
-    
+
     # Register for health monitoring
+    monitor = get_health_monitor()
+    monitor._checks.pop("test_register.health", None)
+    monitor._results.pop("test_register.health", None)
+
     health = register_memory_system(working, MemoryTier.WORKING, "test_register")
     
     # Verify registration
     assert health.component_id == "test_register"
     
     # Check that a health check was registered
-    health_monitor = get_health_monitor()
-    health_check = health_monitor.get_result("test_register.health")
+    health_check = monitor.get_result("test_register.health")
     
     # Should not have results until checks are run
     assert health_check is None
@@ -232,6 +235,9 @@ def test_health_dynamics_integration(monitored_memory_systems):
     assert "attention" in working_health.parameters
     
     # Record baseline cognitive load before operations
+    working_health.parameters["cognitive_load"].value = (
+        working_health.parameters["cognitive_load"].optimal_value
+    )
     baseline_load = working_health.parameters["cognitive_load"].value
 
     # Record operations

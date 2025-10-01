@@ -6,8 +6,7 @@ memory management for the Medium-Term Memory (MTM) tier.
 """
 
 import logging
-import time
-from typing import Any, Dict, Optional, List, Set
+from typing import Any, Dict, List
 
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.exceptions import TierOperationError

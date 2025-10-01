@@ -7,7 +7,6 @@ the in-memory storage backend.
 
 import sys
 from datetime import datetime
-from typing import Any, Dict, Union
 
 from neuroca.memory.backends.in_memory.components.storage import InMemoryStorage
 from neuroca.memory.interfaces import StorageStats

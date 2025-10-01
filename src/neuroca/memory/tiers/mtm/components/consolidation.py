@@ -6,7 +6,7 @@ consolidation for the Medium-Term Memory (MTM) tier.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict
 
 from neuroca.memory.backends import BaseStorageBackend
 

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import asyncio
 import inspect
 import json

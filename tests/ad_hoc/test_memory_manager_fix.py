@@ -3,6 +3,7 @@
 Test script to reproduce and verify MemoryManager constructor issues
 """
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -29,19 +30,24 @@ def test_memory_manager_basic():
         config = {"ttl_seconds": 3600}
         manager2 = MemoryManager(config=config, backend_type=BackendType.MEMORY)
         print("✅ MemoryManager instantiated with config")
-        
+
         # Test 3: Initialize the manager
         print("\nTest 3: Initialize manager")
         import asyncio
-        
+
         async def test_init():
             await manager1.initialize()
             print("✅ MemoryManager initialized successfully")
             await manager1.shutdown()
             print("✅ MemoryManager shutdown successfully")
-        
+
+            await manager2.initialize()
+            print("✅ Secondary MemoryManager initialized successfully")
+            await manager2.shutdown()
+            print("✅ Secondary MemoryManager shutdown successfully")
+
         asyncio.run(test_init())
-        
+
         return True
         
     except Exception as e:
@@ -58,23 +64,29 @@ def test_missing_imports():
     
     # Test core imports
     try:
-        from neuroca.memory.backends.factory import BackendType, StorageBackendFactory
+        factory_module = importlib.import_module("neuroca.memory.backends.factory")
+        getattr(factory_module, "BackendType")
+        getattr(factory_module, "StorageBackendFactory")
         print("✅ Backend factory imports OK")
-    except ImportError as e:
+    except (ImportError, AttributeError) as e:
         missing_imports.append(f"Backend factory: {e}")
-    
+
     try:
-        from neuroca.memory.models.memory_item import MemoryItem
+        models_module = importlib.import_module("neuroca.memory.models.memory_item")
+        getattr(models_module, "MemoryItem")
         print("✅ Memory models imports OK")
-    except ImportError as e:
+    except (ImportError, AttributeError) as e:
         missing_imports.append(f"Memory models: {e}")
-    
+
     try:
-        from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
-        from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
-        from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
+        stm_module = importlib.import_module("neuroca.memory.tiers.stm.core")
+        mtm_module = importlib.import_module("neuroca.memory.tiers.mtm.core")
+        ltm_module = importlib.import_module("neuroca.memory.tiers.ltm.core")
+        getattr(stm_module, "ShortTermMemoryTier")
+        getattr(mtm_module, "MediumTermMemoryTier")
+        getattr(ltm_module, "LongTermMemoryTier")
         print("✅ Memory tiers imports OK")
-    except ImportError as e:
+    except (ImportError, AttributeError) as e:
         missing_imports.append(f"Memory tiers: {e}")
     
     if missing_imports:

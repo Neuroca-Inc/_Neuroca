@@ -115,11 +115,16 @@ except ImportError as e:
     if 'MemoryRetrievalResult' not in locals():
         MemoryRetrievalResult = type('MemoryRetrievalResult', (object,), {'__init__': lambda self, *args, **kwargs: None})
     # Add placeholders for exceptions if needed
-    if 'MemoryCapacityError' not in locals(): MemoryCapacityError = type('MemoryCapacityError', (Exception,), {})
-    if 'MemoryRetrievalError' not in locals(): MemoryRetrievalError = type('MemoryRetrievalError', (Exception,), {})
-    if 'MemoryStorageError' not in locals(): MemoryStorageError = type('MemoryStorageError', (Exception,), {})
-    if 'MemoryConsolidationError' not in locals(): MemoryConsolidationError = type('MemoryConsolidationError', (Exception,), {})
-    if 'MemoryDecayError' not in locals(): MemoryDecayError = type('MemoryDecayError', (Exception,), {})
+    if 'MemoryCapacityError' not in locals():
+        MemoryCapacityError = type('MemoryCapacityError', (Exception,), {})
+    if 'MemoryRetrievalError' not in locals():
+        MemoryRetrievalError = type('MemoryRetrievalError', (Exception,), {})
+    if 'MemoryStorageError' not in locals():
+        MemoryStorageError = type('MemoryStorageError', (Exception,), {})
+    if 'MemoryConsolidationError' not in locals():
+        MemoryConsolidationError = type('MemoryConsolidationError', (Exception,), {})
+    if 'MemoryDecayError' not in locals():
+        MemoryDecayError = type('MemoryDecayError', (Exception,), {})
 
 
 class MemorySystem:

@@ -72,6 +72,21 @@ class SQLiteStats:
             self._stats["items_count"] += 1
         elif stat_name == "delete_count":
             self._stats["items_count"] = max(0, self._stats["items_count"] - 1)
+
+    def increment_items_count(self, count: int = 1) -> None:
+        """Increment the cached item count."""
+
+        self._stats["items_count"] += max(0, count)
+
+    def decrement_items_count(self, count: int = 1) -> None:
+        """Decrement the cached item count without going negative."""
+
+        self._stats["items_count"] = max(0, self._stats["items_count"] - max(0, count))
+
+    def set_items_count(self, count: int) -> None:
+        """Explicitly set the cached item count."""
+
+        self._stats["items_count"] = max(0, count)
     
     def get_stats(self) -> StorageStats:
         """
