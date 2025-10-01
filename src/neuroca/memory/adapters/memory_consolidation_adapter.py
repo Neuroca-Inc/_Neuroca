@@ -9,15 +9,13 @@ This adapter is provided for backward compatibility during migration
 and will be removed in a future version.
 """
 
-import asyncio
 import logging
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 from neuroca.memory.manager.memory_manager import MemoryManager
 from neuroca.memory.exceptions import (
     MemoryNotFoundError,
-    TierOperationError,
     InvalidTierError,
 )
 

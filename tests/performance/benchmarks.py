@@ -40,6 +40,9 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
+import matplotlib
+
+matplotlib.use('Agg', force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

@@ -73,7 +73,6 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
         """
         Initialize the Ollama adapter. Supports either a raw dict config or AdapterConfig.
         """
-        self._name = "ollama"
         self._session = None
         self._available_models = set()
 
@@ -130,11 +129,6 @@ class OllamaAdapter(BaseAdapter): # Corrected inheritance
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self._request_timeout)
         )
-    
-    @property
-    def name(self) -> str:
-        """Return the adapter name."""
-        return self._name
     
     @property
     def capabilities(self) -> set[str]: # Changed return type hint as ModelCapability is undefined

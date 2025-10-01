@@ -53,12 +53,14 @@ class SQLiteBackend(BaseStorageBackend):
         # Already implemented in shutdown()
         pass
 
-    async def _create_item(self, item_data: dict) -> str:
+    async def _create_item(self, item_id: str, item_data: dict) -> bool:
         """Create a new item in storage."""
         try:
-            # Convert dict to MemoryItem
-            memory_item = MemoryItem.model_validate(item_data)
-            return await self.store(memory_item)
+            payload = dict(item_data)
+            payload.setdefault("id", item_id)
+            memory_item = MemoryItem.model_validate(payload)
+            await self.store(memory_item)
+            return True
         except Exception as e:
             raise StorageOperationError(f"Failed to create item: {str(e)}") from e
 
@@ -76,9 +78,10 @@ class SQLiteBackend(BaseStorageBackend):
     async def _update_item(self, item_id: str, item_data: dict) -> bool:
         """Update an existing item in storage."""
         try:
-            # Convert dict to MemoryItem
-            memory_item = MemoryItem.model_validate(item_data)
-            return await self.update(memory_item)
+            payload = dict(item_data)
+            payload.setdefault("id", item_id)
+            memory_item = MemoryItem.model_validate(payload)
+            return await self._update_memory(memory_item)
         except Exception as e:
             raise StorageOperationError(f"Failed to update item {item_id}: {str(e)}") from e
 
@@ -89,14 +92,47 @@ class SQLiteBackend(BaseStorageBackend):
         except Exception as e:
             raise StorageOperationError(f"Failed to delete item {item_id}: {str(e)}") from e
 
-    async def _query_items(self, filter_criteria: dict) -> List[dict]:
+    async def _query_items(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        sort_by: Optional[str] = None,
+        ascending: bool = True,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[dict]:
         """Query items based on filter criteria."""
+
         try:
-            # Convert to proper search filter
-            search_filter = SearchFilter.model_validate(filter_criteria)
-            results = await self.search("", search_filter)
-            # Ensure results.results is accessed correctly
-            return [item.memory.model_dump() for item in getattr(results, 'results', [])]
+            search_filter = None
+            if filters:
+                search_filter = SearchFilter.model_validate(filters)
+
+            search_limit = limit if limit is not None else 1000
+            search_offset = offset or 0
+
+            results = await self.connection.execute_async(
+                self.search.search,
+                "",
+                search_filter,
+                search_limit,
+                search_offset,
+            )
+
+            items = [
+                item.memory.model_dump()
+                for item in getattr(results, "results", [])
+            ]
+
+            if sort_by:
+                items.sort(
+                    key=lambda entry: entry.get(sort_by),
+                    reverse=not ascending,
+                )
+
+            if limit is not None and limit >= 0:
+                items = items[:limit]
+
+            return items
         except Exception as e:
             raise StorageOperationError(f"Failed to query items: {str(e)}") from e
 
@@ -107,7 +143,10 @@ class SQLiteBackend(BaseStorageBackend):
             search_filter = None
             if filter_criteria:
                 search_filter = SearchFilter.model_validate(filter_criteria)
-            return await self.count(search_filter)
+            return await self.connection.execute_async(
+                self.search.count,
+                search_filter,
+            )
         except Exception as e:
             raise StorageOperationError(f"Failed to count items: {str(e)}") from e
 
@@ -117,7 +156,7 @@ class SQLiteBackend(BaseStorageBackend):
             # Use connection to execute a delete all query
             def _clear_all():
                 cursor = self.connection.get_connection().cursor()
-                cursor.execute("DELETE FROM memories")
+                cursor.execute("DELETE FROM memory_items")
                 return cursor.rowcount
             
             return await self.connection.execute_async(_clear_all)
@@ -138,7 +177,10 @@ class SQLiteBackend(BaseStorageBackend):
             # Use connection to check if item exists
             def _exists():
                 cursor = self.connection.get_connection().cursor()
-                cursor.execute("SELECT 1 FROM memories WHERE id = ?", (memory_id,))
+                cursor.execute(
+                    "SELECT 1 FROM memory_items WHERE id = ?",
+                    (memory_id,),
+                )
                 return cursor.fetchone() is not None
             
             return await self.connection.execute_async(_exists)
@@ -294,26 +336,27 @@ class SQLiteBackend(BaseStorageBackend):
     async def initialize(self) -> None:
         """
         Initialize the SQLite backend, creating necessary tables if they don't exist.
-        
+
         Raises:
             StorageInitializationError: If initialization fails
         """
         try:
             # Initialize the connection
             self.connection.get_connection()
-            
+
             # Create components with the connection manager rather than a direct connection
             self.schema = SQLiteSchema(self.connection)
             await self.connection.execute_async(self.schema.initialize_schema)
-            
+
             # Create other components using the connection manager
             self.crud = SQLiteCRUD(self.connection)
             self.search = SQLiteSearch(self.connection)
             self.stats = SQLiteStats(self.connection, self.db_path)
-            
+
             # Create batch component last as it depends on crud
             self.batch = SQLiteBatch(self.connection, self.crud)
-            
+
+            self.initialized = True
             logger.info(f"Initialized SQLite backend at {self.db_path}")
         except Exception as e:
             error_msg = f"Failed to initialize SQLite backend: {str(e)}"
@@ -329,6 +372,7 @@ class SQLiteBackend(BaseStorageBackend):
         """
         try:
             await self.connection.close()
+            self.initialized = False
             logger.info("SQLite backend shutdown successfully")
         except Exception as e:
             error_msg = f"Failed to shutdown SQLite backend: {str(e)}"
@@ -387,7 +431,7 @@ class SQLiteBackend(BaseStorageBackend):
             logger.error(error_msg, exc_info=True)
             raise StorageOperationError(error_msg) from e
     
-    async def update(self, memory_item: MemoryItem) -> bool:
+    async def _update_memory(self, memory_item: MemoryItem) -> bool:
         """
         Update an existing memory item in the SQLite database.
         

@@ -41,7 +41,7 @@ from typing import Any, Optional, Union
 import dotenv
 import yaml
 # Handle Pydantic v1/v2 compatibility
-from pydantic import AnyHttpUrl, ConfigDict, Field, PostgresDsn, SecretStr, field_validator
+from pydantic import AnyHttpUrl, ConfigDict, Field, SecretStr, field_validator
 try:
     # Try Pydantic v2 imports
     from pydantic_settings import BaseSettings

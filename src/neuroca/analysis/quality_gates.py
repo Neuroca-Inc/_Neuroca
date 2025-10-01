@@ -6,16 +6,12 @@ to ensure the integrity and accuracy of the summarization pipeline.
 """
 
 import json
-import hashlib
 import logging
 import re
 import ast
-import tokenize
-import io
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-from collections import defaultdict
 
 from ..utils.logging import get_logger
 
@@ -240,7 +236,7 @@ class QualityGateEngine:
             current_dir = Path(current_file).parent
             resolved = (current_dir / relative_ref).resolve()
             return str(resolved.relative_to(self.workspace_path.resolve()))
-        except:
+        except (OSError, ValueError):
             return None
     
     async def check_unresolved_imports(self) -> List[str]:
@@ -636,7 +632,7 @@ class QualityGateEngine:
                 # Try latin-1 as fallback
                 with open(file_path, 'r', encoding='latin-1') as f:
                     return f.read()
-            except:
+            except (OSError, UnicodeDecodeError):
                 # Binary file or unreadable
                 return None
         except Exception:

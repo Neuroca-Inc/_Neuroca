@@ -43,10 +43,8 @@ def register_routes(app: FastAPI) -> None:
     try:
         from neuroca.config import settings  # type: ignore
         api_prefix = getattr(settings, "API_PREFIX", "/api")
-        auth_enabled = bool(getattr(settings, "AUTH_ENABLED", False))
     except Exception:
         api_prefix = "/api"
-        auth_enabled = False
 
     def _include(name: str, mod: str, router_name: str = "router") -> None:
         try:

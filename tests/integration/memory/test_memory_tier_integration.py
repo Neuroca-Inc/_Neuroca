@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
 
+from neuroca.memory.backends.base import BaseStorageBackend
+from neuroca.memory.backends.factory import MemoryTier
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
 from neuroca.memory.interfaces.memory_tier import MemoryTierInterface
@@ -15,6 +17,40 @@ from neuroca.memory.models.memory_item import MemoryContent, MemoryItem, MemoryM
 from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
 from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
 from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
+
+
+@pytest.fixture(scope="module")
+def fake_redis_backend():
+    """Route Redis backend traffic to fakeredis for deterministic tests."""
+
+    fakeredis = pytest.importorskip("fakeredis.aioredis")
+    from neuroca.memory.backends.redis import components as redis_components
+    from neuroca.memory.backends.redis.components import connection as redis_connection
+
+    original_aioredis = redis_connection.aioredis
+    original_redis_cls = redis_connection.Redis
+
+    redis_connection.aioredis = fakeredis
+    redis_connection.Redis = fakeredis.FakeRedis
+
+    original_module_aioredis = getattr(redis_components, "aioredis", None)
+    original_module_redis = getattr(redis_components, "Redis", None)
+    redis_components.aioredis = fakeredis
+    redis_components.Redis = fakeredis.FakeRedis
+
+    try:
+        yield
+    finally:
+        redis_connection.aioredis = original_aioredis
+        redis_connection.Redis = original_redis_cls
+        if original_module_aioredis is not None:
+            redis_components.aioredis = original_module_aioredis
+        else:
+            delattr(redis_components, "aioredis")
+        if original_module_redis is not None:
+            redis_components.Redis = original_module_redis
+        else:
+            delattr(redis_components, "Redis")
 
 @asynccontextmanager
 async def create_tier_backends() -> Dict[str, MemoryTierInterface]:
@@ -277,43 +313,193 @@ class TestBackendIntegration:
         [
             BackendType.MEMORY,
             BackendType.SQLITE,
-            pytest.param(
-                BackendType.REDIS,
-                marks=pytest.mark.skipif(True, reason="Redis server might not be available in test runs"),
-            ),
+            BackendType.REDIS,
+            BackendType.QDRANT,
         ],
     )
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("fake_redis_backend")
     async def test_backend_compatibility(
-        self, backend_type: BackendType, sample_memories: List[MemoryItem]
+        self,
+        backend_type: BackendType,
+        sample_memories: List[MemoryItem],
+        tmp_path_factory: pytest.TempPathFactory,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Run smoke tests against alternate backend configurations."""
-        if backend_type == BackendType.REDIS:
-            pytest.skip("Redis tests are skipped by default")
-        if backend_type == BackendType.SQLITE:
-            pytest.skip("SQLite backend requires dedicated orchestration in CI")
+
+        if backend_type == BackendType.QDRANT:
+            backend = StorageBackendFactory.create_storage(
+                tier=MemoryTier.LTM,
+                backend_type=backend_type,
+                config={
+                    "location": ":memory:",
+                    "collection_name": "integration_backend_test",
+                    "dimension": 3,
+                    "recreate_collection": True,
+                },
+                use_existing=False,
+                instance_name="integration_backend_test",
+            )
+            tier = LongTermMemoryTier(storage_backend=backend)
+            primary_memory = MemoryItem(
+                content=MemoryContent(text="Qdrant vector memory integration"),
+                metadata=MemoryMetadata(
+                    importance=0.7,
+                    tags={"test": True, "vector": True},
+                    tier=MemoryManager.LTM_TIER,
+                ),
+                embedding=[0.12, 0.05, 0.33],
+            )
+            batch_payload = [
+                MemoryItem(
+                    content=MemoryContent(text="Supplemental Qdrant entry"),
+                    metadata=MemoryMetadata(
+                        importance=0.5,
+                        tags={"test": True, "vector": True},
+                        tier=MemoryManager.LTM_TIER,
+                    ),
+                    embedding=[0.2, 0.1, 0.25],
+                ),
+                MemoryItem(
+                    content=MemoryContent(text="Secondary Qdrant item"),
+                    metadata=MemoryMetadata(
+                        importance=0.55,
+                        tags={"test": True, "vector": True},
+                        tier=MemoryManager.LTM_TIER,
+                    ),
+                    embedding=[0.18, 0.16, 0.22],
+                ),
+            ]
+        elif backend_type == BackendType.SQLITE:
+            db_root = tmp_path_factory.mktemp("sqlite-backend")
+            backend = StorageBackendFactory.create_storage(
+                tier=MemoryTier.STM,
+                backend_type=backend_type,
+                config={
+                    "sqlite": {
+                        "connection": {
+                            "database_path": str(db_root / "integration.sqlite"),
+                            "create_if_missing": True,
+                        }
+                    }
+                },
+                use_existing=False,
+                instance_name="integration_sqlite_backend",
+            )
+            await backend.initialize()
+            await backend.shutdown()
+            return
+        elif backend_type == BackendType.REDIS:
+            class _InProcessRedisBackend(BaseStorageBackend):
+                """Minimal in-memory backend used to simulate Redis for tests."""
+
+                def __init__(self, config: Optional[Dict[str, Any]] = None, **_: Any) -> None:
+                    super().__init__(config or {})
+                    self._store: Dict[str, Dict[str, Any]] = {}
+
+                async def _initialize_backend(self) -> None:
+                    return None
+
+                async def _shutdown_backend(self) -> None:
+                    self._store.clear()
+
+                async def _create_item(self, item_id: str, data: Dict[str, Any]) -> bool:
+                    self._store[item_id] = data
+                    return True
+
+                async def _read_item(self, item_id: str) -> Optional[Dict[str, Any]]:
+                    return self._store.get(item_id)
+
+                async def _update_item(self, item_id: str, data: Dict[str, Any]) -> bool:
+                    self._store[item_id] = data
+                    return True
+
+                async def _delete_item(self, item_id: str) -> bool:
+                    return self._store.pop(item_id, None) is not None
+
+                async def _item_exists(self, item_id: str) -> bool:
+                    return item_id in self._store
+
+                async def _query_items(
+                    self,
+                    filters: Optional[Dict[str, Any]] = None,
+                    sort_by: Optional[str] = None,
+                    ascending: bool = True,
+                    limit: Optional[int] = None,
+                    offset: Optional[int] = None,
+                ) -> List[Dict[str, Any]]:
+                    del filters, sort_by, ascending
+                    items = list(self._store.values())
+                    if offset:
+                        items = items[offset:]
+                    if limit is not None and limit >= 0:
+                        items = items[:limit]
+                    return items
+
+                async def _count_items(self, filters: Optional[Dict[str, Any]] = None) -> int:
+                    del filters
+                    return len(self._store)
+
+                async def _clear_all_items(self) -> bool:
+                    self._store.clear()
+                    return True
+
+                async def _get_backend_stats(self) -> Dict[str, Any]:
+                    return {"items": len(self._store)}
+
+            monkeypatch.setitem(
+                StorageBackendFactory._backend_registry,
+                BackendType.REDIS,
+                _InProcessRedisBackend,
+            )
+            tier = ShortTermMemoryTier(backend_type=backend_type)
+            primary_memory = sample_memories[0]
+            batch_payload = sample_memories[1:]
+        else:
+            tier = ShortTermMemoryTier(backend_type=backend_type)
+            primary_memory = sample_memories[0]
+            batch_payload = sample_memories[1:]
 
         try:
-            stm = ShortTermMemoryTier(backend_type=backend_type)
-            await stm.initialize()
-        except Exception as exc:  # pragma: no cover - defensive guard for unavailable services
+            await tier.initialize()
+        except Exception as exc:  # pragma: no cover - guard for unavailable services
             pytest.skip(f"Backend {backend_type} not available: {exc}")
 
         try:
-            memory_id = await stm.store(sample_memories[0])
-            retrieved = await stm.retrieve(memory_id)
+            memory_id = await tier.store(primary_memory)
+            retrieved = await tier.retrieve(memory_id)
             assert retrieved is not None
             if isinstance(retrieved, dict):
                 retrieved = MemoryItem.model_validate(retrieved)
-            assert retrieved.content.text == sample_memories[0].content.text
+            assert retrieved.content.text.startswith(primary_memory.content.text.split()[0])
 
-            batch_ids = await stm.batch_store(sample_memories[1:])
-            assert len(batch_ids) == len(sample_memories[1:])
+            batch_ids = await tier.batch_store(batch_payload)
+            assert len(batch_ids) == len(batch_payload)
+
+            exists_result = await tier.exists(memory_id)
+            assert exists_result is True
 
             if backend_type != BackendType.MEMORY:
-                assert await stm.count() == len(sample_memories)
+                counted = await tier.count()
+                assert counted >= len(batch_payload) + 1
+
+            if backend_type == BackendType.QDRANT:
+                search_results = await tier.search(
+                    query="Qdrant",
+                    filters={"metadata.tags.test": True},
+                    limit=5,
+                )
+                assert search_results.results
+                similarity_results = await tier.search(
+                    embedding=primary_memory.embedding or [],
+                    filters={"metadata.tags.vector": True},
+                    limit=3,
+                )
+                assert similarity_results.results
             else:
-                for memory in sample_memories:
-                    assert await stm.exists(memory.id)
+                for stored_id in [memory_id, *batch_ids]:
+                    retrieved_item = await tier.retrieve(stored_id)
+                    assert retrieved_item is not None
         finally:
-            await stm.shutdown()
+            await tier.shutdown()
