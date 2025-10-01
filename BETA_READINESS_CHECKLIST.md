@@ -110,8 +110,14 @@ If tests fail because of any missing packages or installations, you need to inst
 - [DONE] Fix linting: ruff check --fix (409 violations; checklist lines 182-192)
   - 2025-09-30 03:20 UTC — Cleared the outstanding lint backlog by pruning unused imports across the CLI/sandbox scripts, adding explicit E402 suppressions where path bootstrapping is required, and de-duplicating MkDocs diagram definitions so the component map no longer repeats keys.
   - 2025-09-30 03:24 UTC — Confirmed a clean pass via `ruff check`, documenting the result here for the beta gate.
-- [ ] Format code: black --check (472 files; apply to suppress)
-- [ ] Migrate Pydantic V1 validators to V2 (thread_safety line 52; search codebase for @validator)
+- [STARTED] Format code: black --check (472 files; apply to suppress)
+  - 2025-10-14 00:00 UTC — Executed `poetry run black --check .` inside the freshly provisioned Poetry environment; the run
+    reported pending formatting updates across benchmarks, scripts, and API modules, confirming repository-wide formatting work
+    remains outstanding before this gate can be closed. 【e9b0df†L1-L1】【838012†L1-L18】【3ad25f†L1-L15】【610996†L1-L20】
+- [DONE] Migrate Pydantic V1 validators to V2 (thread_safety line 52; search codebase for @validator)
+  - 2025-10-14 00:20 UTC — Replaced legacy `@validator`/`@root_validator` usage with Pydantic V2 `field_validator` and
+    `model_validator` implementations across API schemas, memory event metadata, and metrics request models to clear
+    deprecation warnings flagged during the thread-safety review. 【F:src/neuroca/api/schemas/memory.py†L19-L29】【F:src/neuroca/api/schemas/common.py†L14-L26】【F:src/neuroca/core/events/memory.py†L24-L37】【F:src/neuroca/api/routes/metrics.py†L20-L27】
 - [ ] Update SQLAlchemy: replace declarative_base() (MovedIn20Warning; thread_safety line 52)
 - [ ] Run mypy --strict; suppress/fix remaining warnings (hide-error-context for beta)
 - [ ] Pre-commit: run --all-files; fix whitespace/endings (checklist lines 195-201)

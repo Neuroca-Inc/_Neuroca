@@ -22,11 +22,12 @@ from typing import Any, Generic, Optional, TypeVar
 from pydantic import (
     BaseModel,
     Field,
+    FieldValidationInfo,
     confloat,
     conint,
     constr,
-    root_validator,
-    validator,
+    field_validator,
+    model_validator,
 )
 
 # Configure module logger
@@ -91,14 +92,22 @@ class TimeRange(BaseModel):
         example="2023-12-31T23:59:59Z"
     )
 
-    @validator('end_time')
-    def end_time_after_start_time(cls, v, values):
+    @field_validator('end_time')
+    def end_time_after_start_time(
+        cls,
+        value: Optional[datetime.datetime],
+        info: FieldValidationInfo,
+    ) -> Optional[datetime.datetime]:
         """Validate that end_time is after start_time if both are provided."""
-        if v and 'start_time' in values and values['start_time'] and v < values['start_time']:
+        start_time = None
+        if info.data is not None:
+            start_time = info.data.get('start_time')
+
+        if value and start_time and value < start_time:
             error_msg = "End time must be after start time"
             logger.error(f"Validation error: {error_msg}")
             raise ValueError(error_msg)
-        return v
+        return value
 
     class Config:
         schema_extra = {
@@ -221,22 +230,19 @@ class PaginatedResponse(BaseResponse, Generic[T]):
         description="Whether there is a previous page"
     )
 
-    @root_validator
-    def calculate_pagination_fields(cls, values):
+    @model_validator(mode='after')
+    def calculate_pagination_fields(self) -> 'PaginatedResponse[T]':
         """Calculate derived pagination fields."""
-        total = values.get('total', 0)
-        page_size = values.get('page_size', 1)
-        page = values.get('page', 1)
-        
-        # Calculate total pages
-        total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-        values['total_pages'] = total_pages
-        
-        # Determine if there are next/previous pages
-        values['has_next'] = page < total_pages
-        values['has_prev'] = page > 1
-        
-        return values
+        total_pages = (
+            (self.total + self.page_size - 1) // self.page_size
+            if self.page_size > 0
+            else 0
+        )
+        self.total_pages = total_pages
+        self.has_next = self.page < total_pages
+        self.has_prev = self.page > 1
+
+        return self
 
     class Config:
         schema_extra = {
@@ -432,12 +438,19 @@ class TimestampMixin(BaseModel):
         description="Time when the resource was last updated"
     )
 
-    @validator('updated_at')
-    def updated_after_created(cls, v, values):
+    @field_validator('updated_at')
+    def updated_after_created(
+        cls,
+        value: Optional[datetime.datetime],
+        info: FieldValidationInfo,
+    ) -> Optional[datetime.datetime]:
         """Validate that updated_at is after created_at if both are provided."""
-        if v and 'created_at' in values and values['created_at'] and v < values['created_at']:
+        created_at = None
+        if info.data is not None:
+            created_at = info.data.get('created_at')
+        if value and created_at and value < created_at:
             raise ValueError("Updated time cannot be before creation time")
-        return v
+        return value
 
 
 class AuditMixin(TimestampMixin):
