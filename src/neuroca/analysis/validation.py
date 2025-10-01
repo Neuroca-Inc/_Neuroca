@@ -5,12 +5,8 @@ This module implements comprehensive validation mechanisms to ensure successful
 transfer and integration of codebase summaries with target LLM systems.
 """
 
-import asyncio
 import json
-import logging
-import hashlib
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict

@@ -54,7 +54,7 @@ def fix_grafana_dashboard_ids(yaml_content_string):
     next_panel_id_counter = 100 # Start high to avoid clashes
 
     if not isinstance(panels, list):
-        return None, f"'panels' field is not a list in 'neuroca-overview.json'."
+        return None, "'panels' field is not a list in 'neuroca-overview.json'."
 
     for panel in panels:
         if not isinstance(panel, dict):

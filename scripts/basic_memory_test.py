@@ -5,6 +5,8 @@ Basic test script for the Neuroca memory system.
 This script demonstrates the minimum viable use of the memory system.
 """
 
+# ruff: noqa: E402
+
 import asyncio
 import os
 import logging

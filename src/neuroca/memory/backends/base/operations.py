@@ -7,8 +7,7 @@ CRUD operations that all storage backends must support.
 
 import abc
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.exceptions import (
     StorageOperationError,
@@ -202,7 +201,7 @@ class CoreOperations(abc.ABC):
         try:
             return await self._query_items(filters, sort_by, ascending, limit, offset)
         except Exception as e:
-            logger.exception(f"Failed to query items")
+            logger.exception("Failed to query items")
             raise StorageOperationError(
                 operation="query",
                 backend_type=self.__class__.__name__,
@@ -227,7 +226,7 @@ class CoreOperations(abc.ABC):
         try:
             return await self._count_items(filters)
         except Exception as e:
-            logger.exception(f"Failed to count items")
+            logger.exception("Failed to count items")
             raise StorageOperationError(
                 operation="count",
                 backend_type=self.__class__.__name__,
@@ -249,7 +248,7 @@ class CoreOperations(abc.ABC):
         try:
             return await self._clear_all_items()
         except Exception as e:
-            logger.exception(f"Failed to clear all items")
+            logger.exception("Failed to clear all items")
             raise StorageOperationError(
                 operation="clear",
                 backend_type=self.__class__.__name__,

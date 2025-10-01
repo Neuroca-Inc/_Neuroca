@@ -6,8 +6,7 @@ memories from MTM to LTM tier based on various criteria.
 """
 
 import logging
-import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List
 
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.backends import BaseStorageBackend

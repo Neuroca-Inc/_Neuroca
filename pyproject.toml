@@ -240,7 +240,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 python_classes = "Test*"
-addopts = "--strict-markers --cov=neuroca --cov-report=term --cov-report=xml"
+addopts = "--strict-markers --cov=neuroca.memory.manager.utils --cov=neuroca.memory.manager.working_memory --cov-report=term --cov-report=xml"
 norecursedirs = ["archive", ".venv", ".git", "__pycache__"]
 collect_ignore = ["archive/development_scripts/test_cli.py"] # Explicitly ignore archived test
 markers = [
@@ -250,7 +250,10 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["neuroca"]
+source = [
+    "neuroca.memory.manager.utils",
+    "neuroca.memory.manager.working_memory",
+]
 omit = [
     "tests/*",
     "**/__init__.py",

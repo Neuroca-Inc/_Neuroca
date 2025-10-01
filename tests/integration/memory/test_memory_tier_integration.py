@@ -7,6 +7,18 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
+from neuroca.memory.backends.base import BaseStorageBackend
+from neuroca.memory.backends.factory import MemoryTier
+from neuroca.memory.backends.factory.backend_type import BackendType
+from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
+from neuroca.memory.interfaces.memory_tier import MemoryTierInterface
+from neuroca.memory.manager import MemoryManager
+from neuroca.memory.models.memory_item import MemoryContent, MemoryItem, MemoryMetadata
+from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
+from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
+from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
+
+
 @pytest.fixture(scope="module")
 def fake_redis_backend():
     """Route Redis backend traffic to fakeredis for deterministic tests."""
@@ -39,17 +51,6 @@ def fake_redis_backend():
             redis_components.Redis = original_module_redis
         else:
             delattr(redis_components, "Redis")
-
-from neuroca.memory.backends.base import BaseStorageBackend
-from neuroca.memory.backends.factory import MemoryTier
-from neuroca.memory.backends.factory.backend_type import BackendType
-from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
-from neuroca.memory.interfaces.memory_tier import MemoryTierInterface
-from neuroca.memory.manager import MemoryManager
-from neuroca.memory.models.memory_item import MemoryContent, MemoryItem, MemoryMetadata
-from neuroca.memory.tiers.ltm.core import LongTermMemoryTier
-from neuroca.memory.tiers.mtm.core import MediumTermMemoryTier
-from neuroca.memory.tiers.stm.core import ShortTermMemoryTier
 
 @asynccontextmanager
 async def create_tier_backends() -> Dict[str, MemoryTierInterface]:

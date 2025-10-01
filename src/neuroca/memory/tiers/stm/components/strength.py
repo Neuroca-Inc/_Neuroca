@@ -7,7 +7,7 @@ calculating and updating memory strength (freshness) for the STM tier.
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from neuroca.memory.models.memory_item import MemoryItem, MemoryStatus
 

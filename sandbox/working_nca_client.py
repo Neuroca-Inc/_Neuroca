@@ -16,13 +16,14 @@ Usage:
     python sandbox/working_nca_client.py
 """
 
+# ruff: noqa: E402
+
 import asyncio
+import json
 import logging
 import time
-import json
-import os
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 import sys
 from pathlib import Path
 
@@ -36,7 +37,6 @@ if str(SRC_DIR) not in sys.path:
 
 # Core NCA Imports - only what's available
 from neuroca.memory.manager import MemoryManager
-from neuroca.memory.models.memory_item import MemoryItem, MemoryContent, MemoryMetadata
 from neuroca.memory.backends import BackendType
 
 # Configure logging

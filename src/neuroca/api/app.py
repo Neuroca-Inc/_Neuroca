@@ -26,7 +26,6 @@ Dependencies:
     - Redis for caching and rate limiting
 """
 
-import logging
 import os
 import time
 from typing import Callable

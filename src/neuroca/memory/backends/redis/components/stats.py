@@ -5,7 +5,6 @@ This module provides the RedisStats class for collecting statistics about Redis 
 """
 
 import logging
-from typing import Dict, Any
 
 from neuroca.memory.backends.redis.components.connection import RedisConnection
 from neuroca.memory.backends.redis.components.utils import RedisUtils
@@ -71,7 +70,9 @@ class RedisStats:
             additional_info = {
                 "redis_used_memory": used_memory,
                 "redis_url": self.connection.redis_url,
-                "redis_db": self.connection.db
+                "redis_db": self.connection.db,
+                "active_memories": active_memories,
+                "archived_memories": archived_memories
             }
             
             # Create StorageStats object

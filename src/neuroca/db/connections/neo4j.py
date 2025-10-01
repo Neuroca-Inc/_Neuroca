@@ -31,12 +31,12 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from queue import Empty, Queue
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
 # Neo4j driver imports
 try:
-    from neo4j import Driver, GraphDatabase, Result, Session, Transaction
+    from neo4j import GraphDatabase
     from neo4j.exceptions import (
         AuthError,
         ClientError,
@@ -53,6 +53,9 @@ except ImportError:
     raise ImportError(
         "Neo4j driver not installed. Please install it with: pip install neo4j"
     )
+
+if TYPE_CHECKING:
+    from neo4j import Driver, Transaction
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -138,7 +141,7 @@ class Neo4jConnection:
             raise Neo4jConnectionError(f"Invalid Neo4j URI format: {str(e)}")
         
         # Initialize driver to None
-        self.driver = None
+        self.driver: Driver | None = None
         
         # Connection configuration
         self.config = {
@@ -679,7 +682,7 @@ class Neo4jConnectionPool:
                 logger.warning("Acquired invalid connection from pool, closing and retrying")
                 try:
                     connection.close()
-                except neo4j.exceptions.Neo4jError as e: # BLE001 Fix 1: Catch specific error
+                except Neo4jError as e:  # BLE001 Fix 1: Catch specific error
                     logger.error(f"Error closing invalid connection: {str(e)}")
                 # Loop continues to try again
 
@@ -716,7 +719,7 @@ class Neo4jConnectionPool:
                     logger.warning("Acquired invalid connection from pool after waiting, closing and retrying")
                     try:
                         connection.close()
-                    except neo4j.exceptions.Neo4jError as e: # BLE001 Fix 2: Catch specific error
+                    except Neo4jError as e:  # BLE001 Fix 2: Catch specific error
                         logger.error(f"Error closing invalid connection after waiting: {str(e)}")
                     # Loop continues to try again
 

@@ -5,29 +5,24 @@ This module implements the 11-step checklist for comprehensive codebase analysis
 summarization, and secure transfer to target LLM systems.
 """
 
-import asyncio
 import json
 import logging
 import hashlib
 import zipfile
 import os
 import subprocess
-import tempfile
 import fnmatch
 import re
 import ast
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
-import logging
-
-from ..config import config
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +326,7 @@ class CodebaseSummarizationEngine:
         try:
             with open(self.output_dir / "build_tools.json", 'w') as f:
                 json.dump(available_tools, f, indent=2)
-            logger.info(f"Build tools inventory saved")
+            logger.info("Build tools inventory saved")
         except Exception as e:
             logger.error(f"Failed to save build tools inventory: {e}")
 
@@ -449,17 +444,21 @@ class CodebaseSummarizationEngine:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
-                    loc = len([l for l in lines if l.strip() and not l.strip().startswith('#')])
+                    loc = len([
+                        line
+                        for line in lines
+                        if line.strip() and not line.strip().startswith('#')
+                    ])
             except UnicodeDecodeError:
                 try:
                     with open(file_path, 'r', encoding='latin-1') as f:
                         lines = f.readlines()
-                        loc = len([l for l in lines if l.strip()])
+                        loc = len([line for line in lines if line.strip()])
                         encoding = 'latin-1'
-                except:
+                except (OSError, UnicodeDecodeError):
                     loc = 0
                     encoding = 'binary'
-            except:
+            except OSError:
                 loc = 0
             
             # Get git info
@@ -545,7 +544,7 @@ class CodebaseSummarizationEngine:
             if authors and authors[0]:
                 # Return most recent author
                 return authors[0]
-        except:
+        except (OSError, subprocess.SubprocessError):
             pass
         return "unknown"
     
@@ -570,7 +569,7 @@ class CodebaseSummarizationEngine:
                 
             return min(complexity / max(1, content.count('\n')), 10.0)  # Normalize
             
-        except:
+        except (OSError, UnicodeDecodeError):
             return 0.0
 
     async def _extract_api_signatures(self):
@@ -679,9 +678,9 @@ class CodebaseSummarizationEngine:
         
         try:
             # Run pytest with coverage
-            result = subprocess.run([
-                "python", "-m", "pytest", 
-                "--cov=src", 
+            subprocess.run([
+                "python", "-m", "pytest",
+                "--cov=src",
                 "--cov-report=json",
                 "--cov-report=html",
                 "tests/"

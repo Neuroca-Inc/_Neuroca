@@ -12,7 +12,6 @@ Usage:
     (Run from anywhere, assuming this script is in Neuroca/scripts)
 """
 
-import os
 import shutil
 import sys
 from pathlib import Path

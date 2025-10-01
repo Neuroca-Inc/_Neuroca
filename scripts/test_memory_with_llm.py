@@ -6,15 +6,17 @@ This script demonstrates how to use the memory system to create a conversational
 that can remember previous interactions and use those memories in context.
 """
 
+# ruff: noqa: E402
+
 import asyncio
 import os
-import json
-import time
 import argparse
-from typing import Dict, List, Any, Optional
-import uuid
+import json
 import sys
+import time
+import uuid
 from pathlib import Path
+from typing import List
 
 # Ensure repository sources are importable when running directly from the repo root.
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -27,16 +29,19 @@ if str(SRC_DIR) not in sys.path:
 from neuroca.memory.backends import BackendType
 from neuroca.memory.manager import MemoryManager
 from neuroca.memory.models.memory_item import MemoryItem
-from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResult # Import MemorySearchResult
+from neuroca.memory.models.search import MemorySearchResult
 
 # Uncomment to use OpenAI API. Add your API key to .env first.
 try:
-    import openai
     from dotenv import load_dotenv
-    OPENAI_AVAILABLE = True
+    from openai import OpenAI
 except ImportError:
+    load_dotenv = None  # type: ignore[assignment]
+    OpenAI = None  # type: ignore[assignment]
     print("OpenAI package not available. Install with: pip install openai python-dotenv")
     OPENAI_AVAILABLE = False
+else:
+    OPENAI_AVAILABLE = True
 
 # Optional local LLM fallback (Ollama)
 try:
@@ -61,13 +66,15 @@ class ConversationalAgent:
         
         # OpenAI setup if available
         self._openai_client = None
-        if OPENAI_AVAILABLE:
+        if OPENAI_AVAILABLE and load_dotenv:
             load_dotenv()
             api_key = os.getenv("OPENAI_API_KEY")
-            try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=api_key) if api_key else None
-            except Exception:
+            if OpenAI and api_key:
+                try:
+                    self._openai_client = OpenAI(api_key=api_key)
+                except Exception:
+                    self._openai_client = None
+            else:
                 self._openai_client = None
             if not api_key:
                 print("Warning: OPENAI_API_KEY not found in .env file")

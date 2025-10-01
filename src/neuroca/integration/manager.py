@@ -29,7 +29,6 @@ from .adapters import AnthropicAdapter, OpenAIAdapter, VertexAIAdapter
 from .adapters import (  # Import necessary adapter classes
     BaseAdapter as LLMAdapter,  # Assuming BaseAdapter is the intended type for LLMAdapter
 )
-from .adapters.base import ConfigurationError  # Fix the import error
 from .context.manager import ContextManager
 from .exceptions import LLMIntegrationError, ProviderNotFoundError
 from .models import LLMRequest, LLMResponse

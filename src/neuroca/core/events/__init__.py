@@ -399,7 +399,7 @@ class EventBus:
             
             # Check for parent class matches
             for event_type, handlers in self._handlers.items():
-                if event_type != type(event) and isinstance(event, event_type):
+                if event_type is not type(event) and isinstance(event, event_type):
                     handlers_to_call.extend(handlers)
         
         # Sort by priority (highest first)
