@@ -1,0 +1,47 @@
+%% Pipeline Activity Diagram - Memory Consolidation
+%% Shows the consolidation pipeline from STM to MTM to LTM
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph TD
+    Start([Consolidation Triggered<br/>Every 60 seconds]) --> ScanSTM[Scan STM Tier<br/>Get all memories]
+    
+    ScanSTM --> FilterAge{Age ><br/>threshold?}
+    FilterAge -->|No| Skip1[Skip]
+    FilterAge -->|Yes| ScoreImportance[Calculate<br/>Importance Score]
+    
+    ScoreImportance --> CheckMTMThreshold{Score >=<br/>MTM threshold<br/>0.7?}
+    CheckMTMThreshold -->|No| KeepSTM[Keep in STM]
+    CheckMTMThreshold -->|Yes| MoveToMTM[Move to MTM]
+    
+    MoveToMTM --> GenerateEmbedding[Generate Vector<br/>Embedding]
+    GenerateEmbedding --> StoreMTM[(Store in MTM<br/>PostgreSQL +<br/>Milvus)]
+    StoreMTM --> DeleteSTM[Delete from STM]
+    
+    DeleteSTM --> PublishEvent1[Publish Event:<br/>memory.consolidated]
+    
+    %% MTM to LTM consolidation
+    ScanMTM[Scan MTM Tier<br/>Weekly] --> FilterFrequency{Access count ><br/>threshold?}
+    FilterFrequency -->|No| Skip2[Skip]
+    FilterFrequency -->|Yes| CheckLTMThreshold{Score >=<br/>LTM threshold<br/>0.9?}
+    
+    CheckLTMThreshold -->|No| KeepMTM[Keep in MTM]
+    CheckLTMThreshold -->|Yes| MoveToLTM[Move to LTM]
+    
+    MoveToLTM --> StoreLTM[(Store in LTM<br/>Consolidated)]
+    StoreLTM --> DeleteMTM[Delete from MTM]
+    DeleteMTM --> PublishEvent2[Publish Event:<br/>memory.archived]
+    
+    PublishEvent1 --> UpdateMetrics[Update<br/>Metrics]
+    PublishEvent2 --> UpdateMetrics
+    UpdateMetrics --> End([Complete])
+    
+    KeepSTM --> End
+    Skip1 --> End
+    KeepMTM --> End
+    Skip2 --> End
+    
+    style Start fill:#e1f5e1
+    style End fill:#fce4ec
+    style StoreMTM fill:#fff3e0
+    style StoreLTM fill:#fff3e0
