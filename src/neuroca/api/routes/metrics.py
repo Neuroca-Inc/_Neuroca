@@ -24,7 +24,7 @@ from typing import Any, Optional, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from neuroca.config.settings import get_settings
 from neuroca.core.auth import Permission, User, get_current_user, require_permissions
@@ -64,11 +64,11 @@ class MetricRequest(BaseModel):
     timestamp: Optional[datetime] = Field(None, description="Timestamp of the metric (defaults to now)")
     labels: dict[str, str] = Field(default_factory=dict, description="Additional labels/dimensions for the metric")
     
-    @validator('name')
-    def validate_name(cls, v):
-        if not v or len(v) < 2:
+    @field_validator('name')
+    def validate_name(cls, value: str) -> str:
+        if not value or len(value) < 2:
             raise ValueError("Metric name must be at least 2 characters")
-        return v
+        return value
 
 class MetricDefinitionRequest(BaseModel):
     """Model for registering a new metric definition."""
