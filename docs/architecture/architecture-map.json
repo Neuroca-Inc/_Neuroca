@@ -1,0 +1,525 @@
+{
+  "system": "Neuroca",
+  "commit": "563c5ce81e92499cf83c4f674f6dc1ebf86a4906",
+  "languages": [
+    "Python 3.9+"
+  ],
+  "containers": [
+    {
+      "name": "neuroca-api",
+      "tech": "FastAPI + Uvicorn",
+      "responsibilities": [
+        "HTTP API endpoints",
+        "WebSocket support",
+        "Request routing and validation",
+        "Authentication and authorization"
+      ],
+      "deps": [
+        "memory-manager",
+        "llm-integration",
+        "monitoring"
+      ]
+    },
+    {
+      "name": "memory-manager",
+      "tech": "Python (async)",
+      "responsibilities": [
+        "Memory tier orchestration",
+        "Consolidation pipeline",
+        "Decay processing",
+        "Search coordination"
+      ],
+      "deps": [
+        "stm-backend",
+        "mtm-backend",
+        "ltm-backend",
+        "redis",
+        "postgresql",
+        "milvus"
+      ]
+    },
+    {
+      "name": "stm-service",
+      "tech": "Python + Redis",
+      "responsibilities": [
+        "Short-term memory storage",
+        "High-speed operations",
+        "TTL-based expiry"
+      ],
+      "deps": [
+        "redis"
+      ]
+    },
+    {
+      "name": "mtm-service",
+      "tech": "Python + PostgreSQL + Milvus",
+      "responsibilities": [
+        "Medium-term memory storage",
+        "Capacity-limited buffer",
+        "Decay management"
+      ],
+      "deps": [
+        "postgresql",
+        "milvus"
+      ]
+    },
+    {
+      "name": "ltm-service",
+      "tech": "Python + PostgreSQL + Milvus",
+      "responsibilities": [
+        "Long-term memory persistence",
+        "Semantic search",
+        "Knowledge consolidation"
+      ],
+      "deps": [
+        "postgresql",
+        "milvus"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "container": "neuroca-api",
+      "name": "APIRouter",
+      "path": "src/neuroca/api/routes/",
+      "layer": "presentation",
+      "deps": [
+        "memory-manager",
+        "auth-middleware",
+        "validators"
+      ]
+    },
+    {
+      "container": "neuroca-api",
+      "name": "AuthMiddleware",
+      "path": "src/neuroca/api/middleware/auth.py",
+      "layer": "presentation",
+      "deps": [
+        "config"
+      ]
+    },
+    {
+      "container": "neuroca-api",
+      "name": "RequestValidators",
+      "path": "src/neuroca/api/schemas/",
+      "layer": "presentation",
+      "deps": [
+        "domain-models"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "MemoryOrchestrator",
+      "path": "src/neuroca/memory/manager/manager.py",
+      "layer": "application",
+      "deps": [
+        "tier-strategy",
+        "backend-factory",
+        "importance-scorer"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "ConsolidationEngine",
+      "path": "src/neuroca/memory/manager/consolidation.py",
+      "layer": "application",
+      "deps": [
+        "importance-scorer",
+        "tier-backends"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "DecayEngine",
+      "path": "src/neuroca/memory/manager/decay.py",
+      "layer": "application",
+      "deps": [
+        "decay-functions",
+        "tier-backends"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "SearchCoordinator",
+      "path": "src/neuroca/memory/manager/search.py",
+      "layer": "application",
+      "deps": [
+        "tier-backends",
+        "cache-manager"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "MemoryItem",
+      "path": "src/neuroca/memory/models/memory_item.py",
+      "layer": "domain",
+      "deps": []
+    },
+    {
+      "container": "memory-manager",
+      "name": "MemoryTier",
+      "path": "src/neuroca/core/enums.py",
+      "layer": "domain",
+      "deps": []
+    },
+    {
+      "container": "memory-manager",
+      "name": "BackendFactory",
+      "path": "src/neuroca/memory/backends/factory/",
+      "layer": "infrastructure",
+      "deps": [
+        "backend-implementations"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "RedisBackend",
+      "path": "src/neuroca/memory/backends/redis/",
+      "layer": "infrastructure",
+      "deps": [
+        "redis"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "SQLBackend",
+      "path": "src/neuroca/memory/backends/sql/",
+      "layer": "infrastructure",
+      "deps": [
+        "sqlalchemy",
+        "postgresql"
+      ]
+    },
+    {
+      "container": "memory-manager",
+      "name": "VectorBackend",
+      "path": "src/neuroca/memory/backends/vector/",
+      "layer": "infrastructure",
+      "deps": [
+        "milvus"
+      ]
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "Memory Consolidation",
+      "stages": [
+        {
+          "id": "scan",
+          "title": "Scan STM for candidates",
+          "files": [
+            "src/neuroca/memory/manager/consolidation.py"
+          ],
+          "inputs": [
+            "stm_memories"
+          ],
+          "outputs": [
+            "candidate_list"
+          ]
+        },
+        {
+          "id": "score",
+          "title": "Calculate importance scores",
+          "files": [
+            "src/neuroca/memory/manager/importance.py"
+          ],
+          "inputs": [
+            "candidate_list"
+          ],
+          "outputs": [
+            "scored_memories"
+          ]
+        },
+        {
+          "id": "filter",
+          "title": "Filter by threshold",
+          "files": [
+            "src/neuroca/memory/manager/consolidation.py"
+          ],
+          "inputs": [
+            "scored_memories"
+          ],
+          "outputs": [
+            "consolidation_queue"
+          ]
+        },
+        {
+          "id": "move",
+          "title": "Move to MTM/LTM",
+          "files": [
+            "src/neuroca/memory/manager/consolidation.py"
+          ],
+          "inputs": [
+            "consolidation_queue"
+          ],
+          "outputs": [
+            "consolidated_memories"
+          ]
+        },
+        {
+          "id": "cleanup",
+          "title": "Remove from source tier",
+          "files": [
+            "src/neuroca/memory/manager/consolidation.py"
+          ],
+          "inputs": [
+            "consolidated_memories"
+          ],
+          "outputs": [
+            "cleanup_stats"
+          ]
+        }
+      ],
+      "entrypoints": [
+        "src/neuroca/infrastructure/worker.py"
+      ]
+    },
+    {
+      "name": "LLM Query Processing",
+      "stages": [
+        {
+          "id": "embed",
+          "title": "Generate query embedding",
+          "files": [
+            "src/neuroca/integration/adapters/embedding.py"
+          ],
+          "inputs": [
+            "user_query"
+          ],
+          "outputs": [
+            "query_embedding"
+          ]
+        },
+        {
+          "id": "search",
+          "title": "Multi-tier memory search",
+          "files": [
+            "src/neuroca/memory/manager/search.py"
+          ],
+          "inputs": [
+            "query_embedding",
+            "filters"
+          ],
+          "outputs": [
+            "relevant_memories"
+          ]
+        },
+        {
+          "id": "context",
+          "title": "Assemble LLM context",
+          "files": [
+            "src/neuroca/integration/context/builder.py"
+          ],
+          "inputs": [
+            "query",
+            "relevant_memories"
+          ],
+          "outputs": [
+            "llm_context"
+          ]
+        },
+        {
+          "id": "llm_call",
+          "title": "Call LLM API",
+          "files": [
+            "src/neuroca/integration/langchain/adapter.py"
+          ],
+          "inputs": [
+            "llm_context"
+          ],
+          "outputs": [
+            "llm_response"
+          ]
+        },
+        {
+          "id": "store",
+          "title": "Store interaction as memory",
+          "files": [
+            "src/neuroca/memory/manager/manager.py"
+          ],
+          "inputs": [
+            "query",
+            "llm_response"
+          ],
+          "outputs": [
+            "memory_id"
+          ]
+        }
+      ],
+      "entrypoints": [
+        "src/neuroca/api/routes/query.py"
+      ]
+    }
+  ],
+  "stores": [
+    {
+      "type": "Redis",
+      "usage": "STM storage, caching, pub/sub",
+      "collections": [
+        "stm:*",
+        "cache:*",
+        "session:*"
+      ]
+    },
+    {
+      "type": "PostgreSQL",
+      "usage": "MTM/LTM metadata, sessions",
+      "tables": [
+        "mtm_memories",
+        "ltm_memories",
+        "sessions",
+        "users"
+      ]
+    },
+    {
+      "type": "Milvus",
+      "usage": "Vector embeddings for MTM/LTM",
+      "collections": [
+        "mtm_embeddings",
+        "ltm_embeddings"
+      ]
+    }
+  ],
+  "integrations": [
+    {
+      "name": "LLM Providers",
+      "paths": [
+        "src/neuroca/integration/adapters/"
+      ]
+    },
+    {
+      "name": "LangChain",
+      "paths": [
+        "src/neuroca/integration/langchain/"
+      ]
+    },
+    {
+      "name": "Prometheus",
+      "paths": [
+        "src/neuroca/monitoring/metrics/"
+      ]
+    },
+    {
+      "name": "OpenTelemetry",
+      "paths": [
+        "src/neuroca/monitoring/tracing/"
+      ]
+    }
+  ],
+  "apis": [
+    {
+      "name": "REST API",
+      "type": "rest",
+      "endpoints": [
+        "POST /memory",
+        "GET /memory/{id}",
+        "GET /memory/search",
+        "POST /query",
+        "GET /session/{id}",
+        "GET /health",
+        "GET /metrics"
+      ],
+      "spec": "See 17_api_surface_openapi.json"
+    },
+    {
+      "name": "CLI",
+      "type": "cli",
+      "endpoints": [
+        "neuroca session init",
+        "neuroca memory list",
+        "neuroca process <text>",
+        "neuroca consolidate"
+      ]
+    }
+  ],
+  "metrics": {
+    "cycles": [],
+    "hotspots": [
+      "memory/manager/manager.py",
+      "core/health/dynamics.py",
+      "db/repositories/memory_repository.py"
+    ],
+    "test_coverage": {
+      "overall": 45.0,
+      "by_module": {
+        "api": 60.0,
+        "memory": 50.0,
+        "core": 40.0,
+        "integration": 30.0,
+        "db": 55.0
+      }
+    }
+  },
+  "risks": [
+    {
+      "id": "R01",
+      "title": "Memory consolidation backpressure under high load",
+      "severity": "H",
+      "where": "ConsolidationService",
+      "rationale": "Sequential processing can't keep up with high ingestion rates"
+    },
+    {
+      "id": "R02",
+      "title": "Vector store connection exhaustion",
+      "severity": "H",
+      "where": "Milvus backend",
+      "rationale": "No connection pooling; can exhaust available connections"
+    },
+    {
+      "id": "R03",
+      "title": "Unbounded memory growth in STM",
+      "severity": "M",
+      "where": "InMemory backend",
+      "rationale": "No hard capacity limits; can cause OOM"
+    },
+    {
+      "id": "R04",
+      "title": "Secret exposure in logs/traces",
+      "severity": "H",
+      "where": "Logging infrastructure",
+      "rationale": "No log sanitization for secrets/PII"
+    },
+    {
+      "id": "R05",
+      "title": "LLM provider rate limiting cascades",
+      "severity": "M",
+      "where": "Integration layer",
+      "rationale": "No circuit breaker; rate limit failures cascade"
+    },
+    {
+      "id": "R06",
+      "title": "Database migration compatibility",
+      "severity": "M",
+      "where": "Alembic migrations",
+      "rationale": "No backward compatibility testing"
+    },
+    {
+      "id": "R07",
+      "title": "No graceful degradation for vector search",
+      "severity": "M",
+      "where": "SearchCoordinator",
+      "rationale": "Milvus failure causes complete service failure"
+    },
+    {
+      "id": "R08",
+      "title": "Inconsistent error handling",
+      "severity": "M",
+      "where": "Global",
+      "rationale": "Exception handling patterns vary across layers"
+    },
+    {
+      "id": "R09",
+      "title": "No distributed tracing implementation",
+      "severity": "L",
+      "where": "Observability",
+      "rationale": "OpenTelemetry hooks present but not fully implemented"
+    },
+    {
+      "id": "R10",
+      "title": "Limited test coverage for edge cases",
+      "severity": "M",
+      "where": "Tests",
+      "rationale": "~45% coverage; critical paths undertested"
+    }
+  ]
+}

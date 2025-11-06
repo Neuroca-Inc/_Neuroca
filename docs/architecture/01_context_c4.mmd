@@ -1,0 +1,51 @@
+%% C4 Context Diagram - Neuroca NeuroCognitive Architecture
+%% System Context showing external actors and systems
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph TB
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#999,stroke:#666,color:#fff
+    
+    %% Actors
+    Developer[("Developer<br/>[Person]<br/>Builds AI applications<br/>with persistent memory")]:::person
+    EndUser[("End User<br/>[Person]<br/>Interacts with<br/>AI applications")]:::person
+    DataScientist[("Data Scientist<br/>[Person]<br/>Analyzes memory<br/>patterns & behavior")]:::person
+    
+    %% Core System
+    Neuroca["Neuroca<br/>[Software System]<br/>NeuroCognitive Architecture<br/>Multi-tiered persistent memory<br/>for LLMs with biological<br/>cognitive processes"]:::system
+    
+    %% External Systems
+    LLMProviders["LLM Providers<br/>[External System]<br/>OpenAI, Anthropic,<br/>Local Models<br/>Provides language<br/>understanding"]:::external
+    
+    VectorDB["Vector Database<br/>[External System]<br/>Milvus/FAISS<br/>Stores and retrieves<br/>embeddings"]:::external
+    
+    Monitoring["Monitoring<br/>[External System]<br/>Prometheus + Grafana<br/>Metrics collection<br/>& visualization"]:::external
+    
+    PostgreSQL["PostgreSQL<br/>[External System]<br/>Relational Database<br/>Persistent storage for<br/>memory metadata"]:::external
+    
+    Redis["Redis<br/>[External System]<br/>In-Memory Store<br/>High-speed cache &<br/>pub/sub messaging"]:::external
+    
+    OTLP["OpenTelemetry<br/>[External System]<br/>Distributed Tracing<br/>Trace collection<br/>& analysis"]:::external
+    
+    %% Relationships
+    Developer -->|"Uses REST API,<br/>Python SDK, CLI<br/>[HTTPS/JSON]"| Neuroca
+    EndUser -->|"Interacts with<br/>AI applications<br/>[HTTP/WebSocket]"| Neuroca
+    DataScientist -->|"Analyzes memory<br/>& metrics<br/>[HTTPS]"| Neuroca
+    
+    Neuroca -->|"Generates embeddings,<br/>queries LLM<br/>[HTTPS/JSON]"| LLMProviders
+    Neuroca -->|"Stores/retrieves<br/>vector embeddings<br/>[gRPC]"| VectorDB
+    Neuroca -->|"Reads/writes<br/>memory metadata<br/>[PostgreSQL Protocol]"| PostgreSQL
+    Neuroca -->|"Caches data,<br/>pub/sub events<br/>[Redis Protocol]"| Redis
+    Neuroca -->|"Exports metrics<br/>[Prometheus Protocol]"| Monitoring
+    Neuroca -->|"Sends traces<br/>[OTLP/gRPC]"| OTLP
+    
+    DataScientist -->|"Views dashboards<br/>[HTTPS]"| Monitoring
+    
+    %% Legend
+    subgraph Legend
+        L1["Person: External user or operator"]:::person
+        L2["System: Neuroca core system"]:::system
+        L3["External: Third-party system"]:::external
+    end

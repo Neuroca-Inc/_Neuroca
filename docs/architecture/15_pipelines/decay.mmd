@@ -1,0 +1,43 @@
+%% Pipeline Activity Diagram - Memory Decay Process
+%% Shows the decay pipeline that prunes old/irrelevant memories
+%% Last Updated: 2025-11-06
+
+graph TD
+    Start([Decay Process<br/>Triggered Hourly]) --> ScanAll[Scan All Tiers<br/>STM, MTM, LTM]
+    
+    ScanAll --> ForEachMemory{For each<br/>memory}
+    
+    ForEachMemory --> CalcRelevance[Calculate<br/>Relevance Score]
+    CalcRelevance --> GetAge[Get Memory Age]
+    GetAge --> GetAccessPattern[Get Access<br/>Pattern]
+    
+    GetAccessPattern --> ApplyDecayFunc[Apply Decay<br/>Function<br/>Exponential/Linear]
+    
+    ApplyDecayFunc --> CheckThreshold{Relevance <<br/>threshold?}
+    
+    CheckThreshold -->|Yes, Delete| DeleteMemory[Delete Memory]
+    CheckThreshold -->|No, Demote| CheckTier{Current<br/>Tier?}
+    CheckThreshold -->|No, Keep| KeepMemory[Keep Memory]
+    
+    CheckTier -->|MTM| DemoteToSTM[Demote to STM<br/>Set new TTL]
+    CheckTier -->|LTM| DemoteToMTM[Demote to MTM]
+    
+    DeleteMemory --> RecordMetric1[Record:<br/>memory.deleted]
+    DemoteToSTM --> RecordMetric2[Record:<br/>memory.demoted]
+    DemoteToMTM --> RecordMetric2
+    
+    RecordMetric1 --> UpdateStats[Update Tier<br/>Statistics]
+    RecordMetric2 --> UpdateStats
+    KeepMemory --> UpdateStats
+    
+    UpdateStats --> MoreMemories{More<br/>memories?}
+    MoreMemories -->|Yes| ForEachMemory
+    MoreMemories -->|No| PublishEvent[Publish Event:<br/>decay.completed]
+    
+    PublishEvent --> End([Complete])
+    
+    style Start fill:#e1f5e1
+    style End fill:#fce4ec
+    style DeleteMemory fill:#ffebee
+    style DemoteToSTM fill:#fff3e0
+    style DemoteToMTM fill:#fff3e0

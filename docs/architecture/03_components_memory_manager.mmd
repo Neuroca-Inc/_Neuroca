@@ -1,0 +1,85 @@
+%% C4 Component Diagram - Memory Manager Container
+%% Shows components within the Memory Manager
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph TB
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000
+    classDef external fill:#999,stroke:#666,color:#fff
+    classDef database fill:#2e7d32,stroke:#1b5e20,color:#fff
+    
+    %% External Components
+    APIService["API Service<br/>[External]"]:::external
+    
+    %% Memory Manager Components
+    subgraph MemoryManager["Memory Manager Container"]
+        Orchestrator["Memory Orchestrator<br/>[Core Component]<br/>Tier selection,<br/>routing logic,<br/>transaction coordination"]:::component
+        
+        ConsolidationEngine["Consolidation Engine<br/>[Background Process]<br/>STM→MTM→LTM,<br/>importance scoring,<br/>batch processing"]:::component
+        
+        DecayEngine["Decay Engine<br/>[Background Process]<br/>Relevance scoring,<br/>TTL management,<br/>pruning logic"]:::component
+        
+        SearchCoordinator["Search Coordinator<br/>[Query Component]<br/>Multi-tier search,<br/>result merging,<br/>ranking"]:::component
+        
+        BackendFactory["Backend Factory<br/>[Factory Pattern]<br/>Backend instantiation,<br/>configuration,<br/>lifecycle management"]:::component
+        
+        TierStrategy["Tier Strategy<br/>[Strategy Pattern]<br/>Routing rules,<br/>capacity checks,<br/>tier selection"]:::component
+        
+        ImportanceScorer["Importance Scorer<br/>[Algorithm Component]<br/>Frequency tracking,<br/>recency weighting,<br/>manual overrides"]:::component
+        
+        EventPublisher["Event Publisher<br/>[Pub/Sub Component]<br/>Memory events,<br/>consolidation events,<br/>metric events"]:::component
+        
+        CacheManager["Cache Manager<br/>[Caching Component]<br/>Query result cache,<br/>embedding cache"]:::component
+    end
+    
+    %% Tier Services
+    STM["STM Service<br/>[Tier Implementation]"]:::external
+    MTM["MTM Service<br/>[Tier Implementation]"]:::external
+    LTM["LTM Service<br/>[Tier Implementation]"]:::external
+    
+    %% Supporting Services
+    Redis[("Redis<br/>[Cache & Events]")]:::database
+    Monitoring["Monitoring Service"]:::external
+    
+    %% API → Manager
+    APIService -->|"Add memory request"| Orchestrator
+    APIService -->|"Search request"| SearchCoordinator
+    
+    %% Orchestrator Flow
+    Orchestrator -->|"Select tier"| TierStrategy
+    TierStrategy -->|"Route to tier"| STM
+    TierStrategy -->|"Route to tier"| MTM
+    TierStrategy -->|"Route to tier"| LTM
+    
+    Orchestrator -->|"Get backend"| BackendFactory
+    BackendFactory -->|"Create/return backend"| STM
+    BackendFactory -->|"Create/return backend"| MTM
+    BackendFactory -->|"Create/return backend"| LTM
+    
+    %% Consolidation Flow
+    ConsolidationEngine -->|"Score memories"| ImportanceScorer
+    ImportanceScorer -->|"Retrieve candidates"| STM
+    ImportanceScorer -->|"Retrieve candidates"| MTM
+    ConsolidationEngine -->|"Move memory"| Orchestrator
+    ConsolidationEngine -->|"Publish event"| EventPublisher
+    
+    %% Decay Flow
+    DecayEngine -->|"Calculate relevance"| ImportanceScorer
+    DecayEngine -->|"Delete/demote"| Orchestrator
+    DecayEngine -->|"Publish event"| EventPublisher
+    
+    %% Search Flow
+    SearchCoordinator -->|"Check cache"| CacheManager
+    SearchCoordinator -->|"Search STM"| STM
+    SearchCoordinator -->|"Search MTM"| MTM
+    SearchCoordinator -->|"Search LTM"| LTM
+    SearchCoordinator -->|"Cache results"| CacheManager
+    
+    %% Event Publishing
+    EventPublisher -->|"Publish to Redis"| Redis
+    
+    %% Monitoring
+    Orchestrator -.->|"Metrics"| Monitoring
+    ConsolidationEngine -.->|"Metrics"| Monitoring
+    DecayEngine -.->|"Metrics"| Monitoring
+    SearchCoordinator -.->|"Metrics"| Monitoring

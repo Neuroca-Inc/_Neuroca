@@ -225,3 +225,7 @@ neuroca_temporal_analysis.db-wal
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+# Architecture documentation exceptions (allow CSV and JSON in architecture docs)
+!docs/architecture/*.csv
+!docs/architecture/*.json
