@@ -1,0 +1,208 @@
+%% Domain Model Diagram - Neuroca Core Entities
+%% Shows entities, aggregates, and value objects in the domain
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+classDiagram
+    %% Core Entities
+    class MemoryItem {
+        <<Entity>>
+        +UUID id
+        +String content
+        +Vector embedding
+        +MemoryTier tier
+        +DateTime created_at
+        +DateTime updated_at
+        +DateTime accessed_at
+        +int access_count
+        +float importance_score
+        +MemoryMetadata metadata
+        +calculate_relevance() float
+        +update_access_stats() void
+        +promote_tier() void
+        +demote_tier() void
+    }
+    
+    class MemoryMetadata {
+        <<Value Object>>
+        +String source
+        +List~String~ tags
+        +String session_id
+        +String user_id
+        +Dict~String,Any~ custom_fields
+        +DateTime ttl_expires_at
+        +validate() bool
+        +merge(other) MemoryMetadata
+    }
+    
+    class MemoryTier {
+        <<Enumeration>>
+        STM
+        MTM
+        LTM
+        +get_ttl() int
+        +get_capacity() int
+        +get_backend_type() BackendType
+    }
+    
+    class Session {
+        <<Aggregate Root>>
+        +UUID session_id
+        +String user_id
+        +DateTime created_at
+        +DateTime last_active_at
+        +SessionState state
+        +List~MemoryItem~ active_memories
+        +ConversationContext context
+        +add_memory(content) MemoryItem
+        +get_context() ConversationContext
+        +close() void
+    }
+    
+    class ConversationContext {
+        <<Value Object>>
+        +List~Message~ messages
+        +Dict~String,Any~ metadata
+        +int token_count
+        +add_message(role, content) void
+        +trim_to_limit(max_tokens) void
+        +to_llm_format() List~Dict~
+    }
+    
+    class Message {
+        <<Value Object>>
+        +MessageRole role
+        +String content
+        +DateTime timestamp
+        +MemoryItem? source_memory
+    }
+    
+    class ConsolidationRule {
+        <<Entity>>
+        +UUID rule_id
+        +MemoryTier source_tier
+        +MemoryTier target_tier
+        +ConsolidationStrategy strategy
+        +float importance_threshold
+        +int frequency_threshold
+        +int age_threshold_hours
+        +evaluate(memory) bool
+    }
+    
+    class ConsolidationStrategy {
+        <<Enumeration>>
+        IMPORTANCE_BASED
+        FREQUENCY_BASED
+        RECENCY_BASED
+        CUSTOM
+    }
+    
+    class DecayPolicy {
+        <<Entity>>
+        +UUID policy_id
+        +MemoryTier tier
+        +DecayFunction function
+        +float decay_rate
+        +int base_ttl_hours
+        +calculate_relevance(memory) float
+        +should_prune(memory) bool
+    }
+    
+    class DecayFunction {
+        <<Enumeration>>
+        LINEAR
+        EXPONENTIAL
+        LOGARITHMIC
+        CUSTOM
+    }
+    
+    class MemoryBackend {
+        <<Interface>>
+        +store(memory) UUID
+        +retrieve(id) MemoryItem?
+        +search(query, filters) List~MemoryItem~
+        +delete(id) bool
+        +update(id, memory) bool
+    }
+    
+    class InMemoryBackend {
+        +Dict~UUID,MemoryItem~ storage
+        +LRUCache cache
+        +store(memory) UUID
+        +retrieve(id) MemoryItem?
+    }
+    
+    class SQLBackend {
+        +Connection conn
+        +SessionLocal session
+        +store(memory) UUID
+        +retrieve(id) MemoryItem?
+    }
+    
+    class VectorBackend {
+        +MilvusClient client
+        +String collection_name
+        +store(memory) UUID
+        +search(embedding, k) List~MemoryItem~
+    }
+    
+    class ImportanceScorer {
+        <<Service>>
+        +calculate_base_score(memory) float
+        +apply_recency_boost(score, age) float
+        +apply_frequency_boost(score, count) float
+        +apply_manual_override(score, metadata) float
+        +score(memory) float
+    }
+    
+    class MemoryManager {
+        <<Aggregate Root>>
+        +BackendFactory factory
+        +Map~MemoryTier,MemoryBackend~ backends
+        +List~ConsolidationRule~ rules
+        +List~DecayPolicy~ policies
+        +add_memory(content, tier) MemoryItem
+        +search_memories(query) List~MemoryItem~
+        +consolidate() ConsolidationStats
+        +decay() DecayStats
+    }
+    
+    class BackendFactory {
+        <<Factory>>
+        +create_backend(tier, config) MemoryBackend
+        +register_backend_type(type, class) void
+    }
+    
+    %% Relationships
+    MemoryItem "1" *-- "1" MemoryMetadata : contains
+    MemoryItem "1" --> "1" MemoryTier : belongs to
+    
+    Session "1" *-- "0..*" MemoryItem : active memories
+    Session "1" *-- "1" ConversationContext : has
+    
+    ConversationContext "1" *-- "0..*" Message : contains
+    Message "0..*" --> "0..1" MemoryItem : sourced from
+    
+    MemoryManager "1" --> "0..*" MemoryBackend : manages
+    MemoryManager "1" *-- "0..*" ConsolidationRule : applies
+    MemoryManager "1" *-- "0..*" DecayPolicy : applies
+    MemoryManager "1" --> "1" BackendFactory : uses
+    
+    ConsolidationRule "1" --> "1" ConsolidationStrategy : uses
+    ConsolidationRule "1" --> "2" MemoryTier : source/target
+    
+    DecayPolicy "1" --> "1" DecayFunction : uses
+    DecayPolicy "1" --> "1" MemoryTier : applies to
+    
+    BackendFactory ..> MemoryBackend : creates
+    MemoryBackend <|.. InMemoryBackend : implements
+    MemoryBackend <|.. SQLBackend : implements
+    MemoryBackend <|.. VectorBackend : implements
+    
+    ImportanceScorer ..> MemoryItem : scores
+    MemoryManager ..> ImportanceScorer : uses
+    
+    %% Invariants (documented as notes)
+    note for MemoryItem "Invariants:\n- importance_score ∈ [0.0, 1.0]\n- created_at ≤ updated_at ≤ accessed_at\n- access_count ≥ 0"
+    note for Session "Invariants:\n- session must have at least 1 user_id\n- active_memories are in STM or MTM only"
+    note for ConsolidationRule "Invariants:\n- source_tier < target_tier (STM→MTM→LTM)\n- thresholds must be positive"

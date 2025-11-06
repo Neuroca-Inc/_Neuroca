@@ -1,0 +1,69 @@
+%% C4 Component Diagram - API Service Container
+%% Shows components within the API Service
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph TB
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000
+    classDef external fill:#999,stroke:#666,color:#fff
+    classDef database fill:#2e7d32,stroke:#1b5e20,color:#fff
+    
+    %% External Actors
+    Client["Client<br/>[External]"]:::external
+    
+    %% API Container Components
+    subgraph API["API Service Container"]
+        Router["API Router<br/>[FastAPI Router]<br/>Route registration,<br/>path matching,<br/>middleware chain"]:::component
+        
+        MemoryRoutes["Memory Routes<br/>[Route Handler]<br/>/memory endpoints,<br/>CRUD operations,<br/>search queries"]:::component
+        
+        SessionRoutes["Session Routes<br/>[Route Handler]<br/>/session endpoints,<br/>lifecycle management"]:::component
+        
+        HealthRoutes["Health Routes<br/>[Route Handler]<br/>/health, /ready,<br/>/metrics endpoints"]:::component
+        
+        WebSocketHandler["WebSocket Handler<br/>[WebSocket Manager]<br/>Real-time updates,<br/>event streaming"]:::component
+        
+        AuthMiddleware["Auth Middleware<br/>[Middleware]<br/>Token validation,<br/>RBAC enforcement"]:::component
+        
+        RateLimiter["Rate Limiter<br/>[Middleware]<br/>Request throttling,<br/>quota management"]:::component
+        
+        ErrorHandler["Error Handler<br/>[Middleware]<br/>Exception catching,<br/>error formatting"]:::component
+        
+        RequestValidator["Request Validator<br/>[Pydantic Schemas]<br/>Input validation,<br/>type checking"]:::component
+        
+        ResponseSerializer["Response Serializer<br/>[Pydantic Schemas]<br/>Output formatting,<br/>JSON serialization"]:::component
+    end
+    
+    %% External Components
+    MemoryManager["Memory Manager<br/>[Internal Service]"]:::external
+    MonitoringService["Monitoring Service<br/>[Internal Service]"]:::external
+    
+    %% Client Interactions
+    Client -->|"HTTP Request"| Router
+    
+    %% Routing Flow
+    Router -->|"Apply middleware"| AuthMiddleware
+    AuthMiddleware -->|"Rate check"| RateLimiter
+    RateLimiter -->|"Route request"| MemoryRoutes
+    RateLimiter -->|"Route request"| SessionRoutes
+    RateLimiter -->|"Route request"| HealthRoutes
+    Router -->|"WebSocket upgrade"| WebSocketHandler
+    
+    %% Request Processing
+    MemoryRoutes -->|"Validate input"| RequestValidator
+    SessionRoutes -->|"Validate input"| RequestValidator
+    RequestValidator -->|"Call service"| MemoryManager
+    
+    %% Response Flow
+    MemoryManager -->|"Return data"| ResponseSerializer
+    ResponseSerializer -->|"Format response"| Router
+    Router -->|"HTTP Response"| Client
+    
+    %% Error Handling
+    Router -.->|"Catch exceptions"| ErrorHandler
+    ErrorHandler -.->|"Formatted error"| Client
+    
+    %% Monitoring
+    MemoryRoutes -.->|"Record metrics"| MonitoringService
+    SessionRoutes -.->|"Record metrics"| MonitoringService
+    WebSocketHandler -.->|"Record events"| MonitoringService

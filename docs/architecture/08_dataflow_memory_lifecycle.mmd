@@ -1,0 +1,117 @@
+%% Dataflow Diagram - Memory Lifecycle & Storage
+%% Shows end-to-end data flow through memory tiers and storage systems
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph LR
+    classDef input fill:#e1f5e1,stroke:#4caf50,color:#000
+    classDef process fill:#e3f2fd,stroke:#2196f3,color:#000
+    classDef storage fill:#fff3e0,stroke:#ff9800,color:#000
+    classDef output fill:#fce4ec,stroke:#e91e63,color:#000
+    
+    %% Inputs
+    UserInput["User Input<br/>(Text/Query)"]:::input
+    LLMResponse["LLM Response"]:::input
+    ExternalData["External Data<br/>(Documents/APIs)"]:::input
+    
+    %% Processing Stages
+    Embed["Embedding Generation<br/>(Transformers)"]:::process
+    Validate["Validation &<br/>Metadata Enrichment"]:::process
+    TierRoute["Tier Routing<br/>(Strategy Pattern)"]:::process
+    
+    Consolidate["Consolidation<br/>Process<br/>(Background)"]:::process
+    Decay["Decay Process<br/>(Background)"]:::process
+    
+    Search["Multi-Tier<br/>Search"]:::process
+    Rank["Result Ranking<br/>& Merging"]:::process
+    Context["Context Assembly"]:::process
+    
+    %% Storage Tiers
+    subgraph STM_Tier["Short-Term Memory (STM)"]
+        STM_Redis[("Redis<br/>In-Memory<br/>TTL: 1-24h")]:::storage
+        STM_Emb["Embeddings<br/>(Optional)"]:::storage
+    end
+    
+    subgraph MTM_Tier["Medium-Term Memory (MTM)"]
+        MTM_SQL[("PostgreSQL<br/>Metadata & Text")]:::storage
+        MTM_Vector[("Milvus<br/>Embeddings")]:::storage
+    end
+    
+    subgraph LTM_Tier["Long-Term Memory (LTM)"]
+        LTM_SQL[("PostgreSQL<br/>Consolidated Data")]:::storage
+        LTM_Vector[("Milvus<br/>Semantic Index")]:::storage
+    end
+    
+    %% Caches & Indices
+    QueryCache[("Query Result<br/>Cache<br/>(Redis)")]:::storage
+    EmbedCache[("Embedding<br/>Cache<br/>(Redis)")]:::storage
+    
+    %% Outputs
+    MemoryResults["Retrieved<br/>Memories"]:::output
+    Metrics["Metrics &<br/>Telemetry"]:::output
+    
+    %% Input Flow
+    UserInput --> Embed
+    LLMResponse --> Embed
+    ExternalData --> Embed
+    
+    Embed --> Validate
+    Validate --> TierRoute
+    
+    %% Storage Flow
+    TierRoute -->|"High importance<br/>or recent"| STM_Redis
+    TierRoute -->|"Metadata"| STM_Emb
+    TierRoute -->|"Medium importance"| MTM_SQL
+    TierRoute -->|"Embeddings"| MTM_Vector
+    
+    %% Consolidation Flow
+    STM_Redis -->|"Age > threshold<br/>Score >= 0.7"| Consolidate
+    Consolidate --> MTM_SQL
+    Consolidate --> MTM_Vector
+    
+    MTM_SQL -->|"Importance >= 0.9<br/>Frequency > 5"| Consolidate
+    MTM_Vector -->|"Semantic clustering"| Consolidate
+    Consolidate --> LTM_SQL
+    Consolidate --> LTM_Vector
+    
+    %% Decay Flow
+    STM_Redis --> Decay
+    MTM_SQL --> Decay
+    Decay -->|"Delete or demote"| STM_Redis
+    Decay -->|"Archive or delete"| MTM_SQL
+    
+    %% Search Flow
+    UserInput -->|"Query"| Search
+    Search -->|"Vector similarity"| STM_Redis
+    Search -->|"Vector search"| MTM_Vector
+    Search -->|"Semantic search"| LTM_Vector
+    
+    Search --> QueryCache
+    QueryCache -.->|"Cache hit"| Rank
+    
+    STM_Redis --> Rank
+    MTM_SQL --> Rank
+    MTM_Vector --> Rank
+    LTM_SQL --> Rank
+    LTM_Vector --> Rank
+    
+    Rank --> MemoryResults
+    MemoryResults --> Context
+    
+    %% Caching
+    Embed -.->|"Store embeddings"| EmbedCache
+    EmbedCache -.->|"Reuse"| Search
+    
+    %% Monitoring
+    Consolidate -.-> Metrics
+    Decay -.-> Metrics
+    Search -.-> Metrics
+    TierRoute -.-> Metrics
+    
+    %% Legend
+    subgraph Legend
+        L1["Input/Source"]:::input
+        L2["Process/Transform"]:::process
+        L3["Storage/Database"]:::storage
+        L4["Output/Result"]:::output
+    end

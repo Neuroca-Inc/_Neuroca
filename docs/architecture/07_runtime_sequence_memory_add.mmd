@@ -1,0 +1,80 @@
+%% Runtime Sequence Diagram - Memory Add & Consolidation Flow
+%% Shows the complete lifecycle of adding memory and background consolidation
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+sequenceDiagram
+    autonumber
+    actor User
+    participant API as API Service
+    participant Auth as Auth Middleware
+    participant MemMgr as Memory Manager
+    participant TierStrat as Tier Strategy
+    participant STM as STM Backend
+    participant Redis as Redis
+    participant EventBus as Event Bus
+    participant Worker as Background Worker
+    participant MTM as MTM Backend
+    participant PostgreSQL as PostgreSQL
+    
+    %% Add Memory Request
+    User->>+API: POST /memory {"content": "...", "importance": 0.8}
+    API->>+Auth: Validate token
+    Auth-->>-API: Authorized
+    
+    API->>+MemMgr: add_memory(content, metadata)
+    MemMgr->>+TierStrat: select_tier(metadata)
+    
+    alt High importance or explicit STM
+        TierStrat-->>MemMgr: MemoryTier.STM
+        MemMgr->>+STM: store(memory_item)
+        STM->>+Redis: SET key value EX ttl
+        Redis-->>-STM: OK
+        STM-->>-MemMgr: memory_id
+    else Normal importance
+        TierStrat-->>MemMgr: MemoryTier.MTM
+        MemMgr->>+MTM: store(memory_item)
+        MTM->>+PostgreSQL: INSERT INTO mtm_memories
+        PostgreSQL-->>-MTM: row_id
+        MTM-->>-MemMgr: memory_id
+    end
+    
+    MemMgr->>EventBus: publish("memory.added", metadata)
+    MemMgr-->>-API: {"id": "mem_123", "tier": "STM"}
+    API-->>-User: 201 Created
+    
+    %% Background Consolidation (triggered periodically)
+    Note over Worker,PostgreSQL: Background Consolidation Process (runs every 60s)
+    
+    Worker->>+MemMgr: consolidate_memories()
+    MemMgr->>+STM: get_consolidation_candidates(threshold=0.7)
+    STM->>+Redis: SCAN 0 MATCH stm:*
+    Redis-->>-STM: [key1, key2, ...]
+    STM->>+Redis: MGET key1 key2 ...
+    Redis-->>-STM: [memory_items]
+    STM-->>-MemMgr: [candidate_memories]
+    
+    loop For each candidate
+        MemMgr->>MemMgr: score_importance(memory)
+        
+        alt Score >= MTM threshold
+            MemMgr->>+MTM: store(memory_item)
+            MTM->>+PostgreSQL: INSERT INTO mtm_memories
+            PostgreSQL-->>-MTM: row_id
+            MTM-->>-MemMgr: new_memory_id
+            
+            MemMgr->>+STM: delete(old_memory_id)
+            STM->>+Redis: DEL key
+            Redis-->>-STM: OK
+            STM-->>-MemMgr: deleted
+            
+            MemMgr->>EventBus: publish("memory.consolidated", {from: "STM", to: "MTM"})
+        else Score < threshold
+            Note over MemMgr: Keep in STM
+        end
+    end
+    
+    MemMgr-->>-Worker: Consolidation complete
+    Worker->>EventBus: publish("consolidation.completed", stats)
+    
+    Note over Worker: Next consolidation in 60s

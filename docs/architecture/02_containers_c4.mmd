@@ -1,0 +1,82 @@
+%% C4 Container Diagram - Neuroca Architecture
+%% Shows major containers (services) within Neuroca system
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+graph TB
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef database fill:#2e7d32,stroke:#1b5e20,color:#fff
+    classDef external fill:#999,stroke:#666,color:#fff
+    
+    %% External Actors
+    Developer[("Developer")]:::person
+    EndUser[("End User")]:::person
+    
+    %% Containers within Neuroca System
+    subgraph Neuroca["Neuroca System"]
+        API["API Service<br/>[Container: FastAPI]<br/>REST API endpoints,<br/>WebSocket support,<br/>request routing"]:::container
+        
+        WorkerService["Background Workers<br/>[Container: Python]<br/>Consolidation,<br/>decay processing,<br/>scheduled tasks"]:::container
+        
+        MemoryManager["Memory Manager<br/>[Container: Python]<br/>Core orchestration,<br/>tier management,<br/>consolidation logic"]:::container
+        
+        STMService["STM Service<br/>[Container: Python+Redis]<br/>Short-term memory,<br/>high-speed operations,<br/>TTL-based expiry"]:::container
+        
+        MTMService["MTM Service<br/>[Container: Python+SQL]<br/>Medium-term memory,<br/>capacity-limited buffer,<br/>decay management"]:::container
+        
+        LTMService["LTM Service<br/>[Container: Python+Vector]<br/>Long-term memory,<br/>persistent knowledge,<br/>semantic search"]:::container
+        
+        Integration["LLM Integration<br/>[Container: Python]<br/>LangChain adapter,<br/>prompt engineering,<br/>context assembly"]:::container
+        
+        Monitoring["Monitoring Service<br/>[Container: Python]<br/>Metrics collection,<br/>health checks,<br/>tracing"]:::container
+    end
+    
+    %% External Systems
+    PostgreSQL[("PostgreSQL<br/>[Database]<br/>Memory metadata,<br/>session data")]:::database
+    
+    Redis[("Redis<br/>[Cache]<br/>STM storage,<br/>pub/sub")]:::database
+    
+    Milvus[("Milvus<br/>[Vector DB]<br/>Embeddings,<br/>similarity search")]:::database
+    
+    LLMProviders["LLM Providers<br/>[External]<br/>OpenAI, Anthropic,<br/>local models"]:::external
+    
+    Prometheus["Prometheus<br/>[External]<br/>Metrics storage"]:::external
+    
+    OTLP["OTLP Collector<br/>[External]<br/>Trace aggregation"]:::external
+    
+    %% User → API
+    Developer -->|"HTTP/HTTPS<br/>REST, WebSocket"| API
+    EndUser -->|"HTTP/HTTPS<br/>Application requests"| API
+    
+    %% API → Internal Services
+    API -->|"Async calls<br/>[Python]"| MemoryManager
+    API -->|"Query routing<br/>[HTTP]"| Integration
+    API -->|"Metrics export<br/>[Prometheus]"| Monitoring
+    
+    %% Memory Manager → Tier Services
+    MemoryManager -->|"Store/retrieve<br/>[Python API]"| STMService
+    MemoryManager -->|"Store/retrieve<br/>[Python API]"| MTMService
+    MemoryManager -->|"Store/retrieve<br/>[Python API]"| LTMService
+    
+    %% Background Workers
+    WorkerService -->|"Consolidation<br/>[Python API]"| MemoryManager
+    WorkerService -->|"Decay operations<br/>[Python API]"| MemoryManager
+    
+    %% Tier Services → Databases
+    STMService -->|"Read/write<br/>[Redis Protocol]"| Redis
+    MTMService -->|"Read/write<br/>[SQL]"| PostgreSQL
+    MTMService -->|"Vector ops<br/>[gRPC]"| Milvus
+    LTMService -->|"Read/write<br/>[SQL]"| PostgreSQL
+    LTMService -->|"Vector search<br/>[gRPC]"| Milvus
+    
+    %% Integration → External LLMs
+    Integration -->|"API calls<br/>[HTTPS/JSON]"| LLMProviders
+    
+    %% Monitoring → External
+    Monitoring -->|"Push metrics<br/>[HTTP]"| Prometheus
+    Monitoring -->|"Send traces<br/>[gRPC]"| OTLP
+    
+    %% Cross-cutting
+    API -.->|"Pub/sub events"| Redis
+    WorkerService -.->|"Subscribe events"| Redis

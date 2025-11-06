@@ -1,0 +1,82 @@
+%% Runtime Sequence Diagram - LLM Query with Memory Context
+%% Shows how memories are retrieved and integrated into LLM context
+%% Last Updated: 2025-11-06
+%% Commit: 563c5ce81e92499cf83c4f674f6dc1ebf86a4906
+
+sequenceDiagram
+    autonumber
+    actor User
+    participant API as API Service
+    participant Integration as LLM Integration
+    participant MemMgr as Memory Manager
+    participant SearchCoord as Search Coordinator
+    participant STM as STM Backend
+    participant MTM as MTM Backend
+    participant LTM as LTM Backend
+    participant Milvus as Milvus Vector DB
+    participant LLM as LLM Provider
+    participant Cache as Cache Manager
+    
+    %% User query
+    User->>+API: POST /query {"prompt": "What did we discuss about..."}
+    API->>+Integration: process_query(prompt, session_id)
+    
+    %% Generate query embedding
+    Integration->>Integration: generate_embedding(prompt)
+    Note over Integration: Uses local embedding model<br/>(faster than LLM call)
+    
+    %% Search memories
+    Integration->>+MemMgr: search_memories(query_embedding, session_id)
+    MemMgr->>+SearchCoord: search_across_tiers(embedding, filters)
+    
+    %% Check cache first
+    SearchCoord->>+Cache: get_cached_results(query_hash)
+    Cache-->>-SearchCoord: null (cache miss)
+    
+    %% Parallel search across tiers
+    par Search STM
+        SearchCoord->>+STM: search(embedding, limit=10)
+        STM->>STM: cosine_similarity(query_emb, stored_embs)
+        STM-->>-SearchCoord: [stm_results]
+    and Search MTM
+        SearchCoord->>+MTM: search(embedding, limit=20)
+        MTM->>+Milvus: search(collection="mtm", vector, top_k=20)
+        Milvus-->>-MTM: [mtm_results]
+        MTM-->>-SearchCoord: [mtm_results]
+    and Search LTM
+        SearchCoord->>+LTM: search(embedding, limit=30)
+        LTM->>+Milvus: search(collection="ltm", vector, top_k=30)
+        Milvus-->>-LTM: [ltm_results]
+        LTM-->>-SearchCoord: [ltm_results]
+    end
+    
+    %% Merge and rank results
+    SearchCoord->>SearchCoord: merge_and_rank(stm, mtm, ltm)
+    Note over SearchCoord: Weighted ranking:<br/>STM: 1.0x<br/>MTM: 0.8x<br/>LTM: 0.6x
+    
+    SearchCoord->>+Cache: cache_results(query_hash, results)
+    Cache-->>-SearchCoord: cached
+    
+    SearchCoord-->>-MemMgr: [top_k_memories]
+    MemMgr-->>-Integration: [relevant_memories]
+    
+    %% Assemble context
+    Integration->>Integration: assemble_context(prompt, memories)
+    Note over Integration: Format:<br/>System: "You are..."<br/>Context: [memories]<br/>User: prompt
+    
+    %% Call LLM
+    Integration->>+LLM: POST /v1/chat/completions {messages: context}
+    Note over LLM: External LLM API call<br/>(highest latency component)
+    LLM-->>-Integration: {"response": "Based on our discussion..."}
+    
+    %% Store interaction as new memory
+    Integration->>+MemMgr: add_memory(interaction, importance=0.9)
+    MemMgr->>STM: store(memory_item)
+    MemMgr-->>-Integration: memory_id
+    
+    %% Return response
+    Integration-->>-API: {"response": "...", "sources": [...]}
+    API-->>-User: 200 OK {response}
+    
+    %% Update statistics
+    Note over MemMgr,Cache: Update access counts<br/>for retrieved memories<br/>(influences future ranking)
