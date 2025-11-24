@@ -25,7 +25,7 @@ Usage:
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar, Self
+from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 

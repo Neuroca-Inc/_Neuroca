@@ -6,9 +6,8 @@ which is responsible for maintaining a buffer of context-relevant memories
 for prompt injection and immediate access.
 """
 
-import heapq
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field, field_validator
 

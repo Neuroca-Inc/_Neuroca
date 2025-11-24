@@ -16,10 +16,11 @@ from pydantic import BaseModel, Field, field_validator
 
 class MemoryStatus(str, Enum):
     """Status of a memory item."""
-    
+
     ACTIVE = "active"  # Normal status, actively used
     ARCHIVED = "archived"  # No longer active but preserved
     CONSOLIDATED = "consolidated"  # Moved to a higher tier
+    EXPIRED = "expired"  # Automatically expired from STM tier
     FORGOTTEN = "forgotten"  # Marked for deletion but not yet removed
     DECAYING = "decaying"  # In the process of natural decay
 

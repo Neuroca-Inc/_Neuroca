@@ -350,7 +350,6 @@ async def stream_llm(
     # Local imports to avoid changing module header imports
     from fastapi.responses import StreamingResponse
     import aiohttp
-    import asyncio
     import json
     import time
 
@@ -502,8 +501,9 @@ async def stream_llm(
                                 except Exception:
                                     # Malformed line; continue
                                     continue
-                except Exception as e:
+                except Exception:
                     # On streaming failure, fall back to a single result via manager
+                    logger.exception("Streaming failure encountered; falling back to single-shot query")
                     pass  # Fall through to single-shot path below
 
             # Fallback: single-shot via manager, pseudo-stream once

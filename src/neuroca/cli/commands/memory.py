@@ -1,8 +1,10 @@
 """Operational CLI commands for inspecting and managing the memory system."""
 
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Annotated, Any, Awaitable, Callable, Dict, List, Optional
@@ -18,11 +20,10 @@ from neuroca.cli.commands.memory_utils import (
     coerce_seed_entry,
     format_tags,
     get_vector_backend,
-    load_memory_config,
     load_seed_entries,
-    merge_dicts,
     normalize_tier_name,
     parse_metadata_pairs,
+    run_memory_operation,
     truncate,
 )
 from neuroca.cli.utils import setup_logging
@@ -74,6 +75,13 @@ def list_sample_packs_command() -> None:
         )
 
     console.print(table)
+    # Print a usage hint including default args so users see concrete flags
+    with contextlib.suppress(Exception):
+        first = packs[0]
+        console.print(
+            f"\n[blue]Hint:[/] Use default args when seeding, e.g.: --user {first.default_user}"
+            + (f" --session {first.default_session}" if first.default_session else "")
+        )
 
 
 @sample_pack_app.command("export")
@@ -153,31 +161,6 @@ def _run_cli_coroutine(task: Awaitable[Any]) -> Any:
         raise typer.Exit(code=130) from exc
 
 
-async def _run_memory_operation(
-    context: MemoryCLIContext,
-    operation: Callable[[MemoryManager], Awaitable[Any]],
-    *,
-    config_override: Dict[str, Any] | None = None,
-) -> Any:
-    """Instantiate the memory manager, execute an operation, and shutdown."""
-
-    config = load_memory_config(context.config_path)
-    if config_override:
-        config = merge_dicts(config, config_override)
-
-    manager = create_memory_system(
-        backend_type=context.backend,
-        config=config or None,
-        embedding_dimension=context.embedding_dimension,
-    )
-
-    await manager.initialize()
-    try:
-        return await operation(manager)
-    finally:
-        await manager.shutdown()
-
-
 def _execute_memory_command(
     ctx: typer.Context,
     operation: Callable[[MemoryManager], Awaitable[Any]],
@@ -186,7 +169,13 @@ def _execute_memory_command(
 
     context = _get_context(ctx)
     try:
-        return _run_cli_coroutine(_run_memory_operation(context, operation))
+        return _run_cli_coroutine(
+            run_memory_operation(
+                context,
+                operation,
+                factory=create_memory_system,
+            )
+        )
     except MemoryCLIError as error:
         console.print(f"[red]{error}[/]")
         raise typer.Exit(code=1) from error

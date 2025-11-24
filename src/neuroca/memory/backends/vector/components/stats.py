@@ -7,7 +7,7 @@ This module provides the VectorStats class for collecting statistics about vecto
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from neuroca.memory.backends.vector.components.index import VectorIndex
 from neuroca.memory.backends.vector.components.storage import VectorStorage
@@ -71,6 +71,8 @@ class VectorStats:
                 "dimension": self.index.dimension,
                 "index_path": self.storage.index_path,
                 "status_distribution": status_counts,
+                "active_ratio": self._safe_ratio(active_count, total_count),
+                "archived_ratio": self._safe_ratio(archived_count, total_count),
                 "tag_distribution": self._get_tag_counts(),
             }
             
@@ -153,6 +155,24 @@ class VectorStats:
         """
         metadata_dict = self.storage.get_all_memory_metadata()
         return len(json.dumps(metadata_dict))
+
+    @staticmethod
+    def _safe_ratio(count: int, total_count: int) -> float:
+        """Calculate the ratio for a status bucket relative to the total population.
+
+        Args:
+            count: Number of entries that belong to the status bucket.
+            total_count: Aggregate number of entries observed across all statuses.
+
+        Returns:
+            float: Normalised ratio of the bucket relative to the total count. When
+            ``total_count`` is zero the method returns ``0.0`` to avoid raising a
+            ``ZeroDivisionError``.
+        """
+
+        if total_count == 0:
+            return 0.0
+        return count / total_count
     
     def _get_age_stats(self) -> tuple[float, float, float]:
         """

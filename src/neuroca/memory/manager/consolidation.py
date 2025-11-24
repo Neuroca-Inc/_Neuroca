@@ -7,7 +7,7 @@ This module handles the consolidation of memories between tiers
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata, MemoryStatus
 # Define priority enum for MTM memories since no longer imported from mtm.storage

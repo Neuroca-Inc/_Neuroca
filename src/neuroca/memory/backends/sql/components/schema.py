@@ -5,7 +5,6 @@ This module provides the SQLSchema class for creating and managing database sche
 """
 
 import logging
-from typing import Any, Dict, List, Optional
 
 from neuroca.memory.backends.sql.components.connection import SQLConnection
 from neuroca.memory.exceptions import StorageInitializationError

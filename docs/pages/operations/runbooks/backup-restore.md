@@ -499,10 +499,10 @@ For quick reference, all restore commands are available in the script:
 
 ### Related Documentation
 
-- [System Architecture](../architecture/system-overview.md)
-- [Database Schema](../technical/database-schema.md)
-- [Monitoring Runbook](./monitoring.md)
-- [Disaster Recovery Plan](../planning/disaster-recovery.md)
+- [System Architecture Overview](../deployment.md)
+- Database schema documentation (refer to the repository schema docs)
+- [Monitoring Procedures](../monitoring.md)
+- Disaster recovery runbook (internal operations documentation)
 
 ---
 

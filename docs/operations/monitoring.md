@@ -63,6 +63,34 @@ The NCA monitoring architecture consists of the following components:
 
 ## Key Metrics and KPIs
 
+### Quick Enable (Prometheus)
+
+- Demo: metrics are disabled by default to keep output clean.
+- Production: enable the Prometheus exporter in configuration and scrape the endpoint.
+
+Example (production.yaml):
+
+```yaml
+MONITORING:
+  metrics:
+    enabled: true
+    name: memory_manager
+    endpoint: /metrics
+    port: 9464
+    batch_size: 200
+    flush_interval: 15
+```
+
+The exporter emits series such as:
+- `memory_consolidation_promotions_total`
+- `memory_consolidation_latency_ms`
+- `memory_maintenance_backlog_age_seconds`
+- `memory_decay_events_total`
+- `memory_tier_utilization_percent`
+- `memory_embedding_drift_*`
+
+See `src/neuroca/memory/manager/metrics.py` for metric definitions.
+
 ### System-Level Metrics
 
 1. **Infrastructure Metrics**

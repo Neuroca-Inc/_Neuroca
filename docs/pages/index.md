@@ -42,31 +42,31 @@ The NeuroCognitive Architecture (NCA) is a comprehensive framework that implemen
 
 ### User Documentation
 
-- [Getting Started](user/getting-started/) - Setup and first steps
-- [Configuration](user/configuration/) - Configuration options
-- [Examples](user/examples/) - Example use cases
-- [Integration](user/integration/) - Integrating with existing systems
+- [Getting Started](user/getting-started.md) - Setup and first steps
+- [Configuration](user/configuration.md) - Configuration options
+- [Examples](user/examples.md) - Example use cases
+- [Integration](user/integration.md) - Integrating with existing systems
 
 ### Technical Documentation
 
-- [Architecture Overview](architecture/components/) - System components and interactions
-- [API Reference](api/endpoints/) - API endpoints and schemas
-- [Memory Systems](architecture/decisions/adr-001-memory-tiers/) - Memory implementation details
-- [Health System](architecture/decisions/adr-002-health-system/) - Health dynamics implementation
+- [Architecture Overview](architecture/components.md) - System components and interactions
+- [API Reference](api/endpoints.md) - API endpoints and schemas
+- [Memory Systems](architecture/decisions/adr-001-memory-tiers.md) - Memory implementation details
+- [Health System](architecture/decisions/adr-002-health-system.md) - Health dynamics implementation
 
 ### Developer Documentation
 
-- [Development Environment](development/environment/) - Setting up the development environment
-- [Contributing Guidelines](development/contributing/) - How to contribute
-- [Coding Standards](development/standards/) - Code style and practices
-- [Workflow](development/workflow/) - Development workflow
+- [Development Environment](development/environment.md) - Setting up the development environment
+- [Contributing Guidelines](development/contributing.md) - How to contribute
+- [Coding Standards](development/standards.md) - Code style and practices
+- [Workflow](development/workflow.md) - Development workflow
 
 ### Operations Documentation
 
-- [Deployment](operations/deployment/) - Deployment procedures
-- [Monitoring](operations/monitoring/) - Monitoring and observability
-- [Incident Response](operations/runbooks/incident-response/) - Handling incidents
-- [Backup and Restore](operations/runbooks/backup-restore/) - Data protection procedures
+- [Deployment](operations/deployment.md) - Deployment procedures
+- [Monitoring](operations/monitoring.md) - Monitoring and observability
+- [Incident Response](operations/runbooks/incident-response.md) - Handling incidents
+- [Backup and Restore](operations/runbooks/backup-restore.md) - Data protection procedures
 
 ## Project Status
 
@@ -82,7 +82,7 @@ The NeuroCognitive Architecture has completed its implementation roadmap and is 
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/LICENSE) file for details.
 
 ## Acknowledgments
 

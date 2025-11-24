@@ -426,6 +426,34 @@ def get_component_health(component_id: str) -> HealthResult:
     return health_check.check_component_health(component_id)
 
 
+def run_health_checks(component_id: str | None = None) -> SystemHealthSummary:
+    """Summary: Evaluate component health and return a system summary.
+    Parameters:
+        component_id: Optional identifier to restrict evaluation to a single
+            component. When omitted, all registered components are checked.
+    Returns:
+        SystemHealthSummary: Aggregated health information for the requested scope.
+    Raises:
+        None.
+    Side Effects:
+        Invokes registered component checkers, which may perform IO.
+    Timeout/Retries:
+        No explicit timeout or retry behaviour is implemented here; callers or
+        registered components are responsible for their own policies.
+    """
+
+    health_check = HealthCheck()
+    if component_id is not None:
+        result = health_check.check_component_health(component_id)
+        return SystemHealthSummary(
+            status=result.status,
+            component_results={component_id: result},
+            details=result.details,
+        )
+
+    return health_check.check_system_health()
+
+
 def is_system_healthy() -> bool:
     """
     Convenience function to check if the system is healthy.

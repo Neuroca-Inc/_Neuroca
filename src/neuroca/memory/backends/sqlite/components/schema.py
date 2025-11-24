@@ -6,7 +6,6 @@ tables, indices, and constraints for the memory storage system.
 """
 
 import logging
-import sqlite3
 
 logger = logging.getLogger(__name__)
 

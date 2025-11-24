@@ -124,8 +124,8 @@ We evaluated using third-party integration platforms (e.g., MuleSoft, Zapier) bu
 
 ## Related Decisions
 
-- [ADR-001: Memory System Architecture](./adr-001-memory-system-architecture.md)
-- [ADR-002: Technology Stack Selection](./adr-002-technology-stack-selection.md)
+- [ADR-001: Memory System Architecture](./adr-001-memory-tiers.md)
+- [ADR-002: Health System Architecture](./adr-002-health-system.md)
 
 ## References
 

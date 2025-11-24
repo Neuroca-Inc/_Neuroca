@@ -5,10 +5,9 @@ This module provides the main InMemoryBackend class that integrates all in-memor
 component modules to implement the BaseStorageBackend interface for the memory system.
 """
 
-import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.in_memory.components.batch import InMemoryBatch
@@ -16,8 +15,7 @@ from neuroca.memory.backends.in_memory.components.crud import InMemoryCRUD
 from neuroca.memory.backends.in_memory.components.search import InMemorySearch
 from neuroca.memory.backends.in_memory.components.stats import InMemoryStats
 from neuroca.memory.backends.in_memory.components.storage import InMemoryStorage
-from neuroca.memory.exceptions import StorageBackendError, StorageInitializationError, StorageOperationError
-from neuroca.memory.interfaces import StorageStats
+from neuroca.memory.exceptions import StorageOperationError
 from neuroca.memory.models.memory_item import MemoryItem
 from neuroca.memory.models.search import MemorySearchOptions as SearchFilter, MemorySearchResults as SearchResults
 

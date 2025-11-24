@@ -7,8 +7,7 @@ shutdown, and related lifecycle operations for the Long-Term Memory tier.
 
 import asyncio
 import logging
-import time
-from typing import Any, Dict, Optional, Set, Callable, List, Iterable, Mapping
+from typing import Any, Dict, Set, Callable, List, Iterable, Mapping
 
 from neuroca.memory.backends import BaseStorageBackend
 
@@ -48,7 +47,7 @@ class LTMLifecycle:
             maintenance_func: Function to call for performing maintenance
             config: Configuration options
         """
-        logger.info(f"Initializing LTM tier lifecycle")
+        logger.info("Initializing LTM tier lifecycle")
         
         self._backend = backend
         self._maintenance_func = maintenance_func

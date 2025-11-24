@@ -29,7 +29,7 @@ Thank you for your interest in contributing to the NeuroCognitive Architecture (
 
 ## Code of Conduct
 
-We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](../community/code_of_conduct.md).
+We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/CODE_OF_CONDUCT.md).
 
 ## Getting Started
 
@@ -38,12 +38,14 @@ We are committed to providing a welcoming and inclusive environment for all cont
 1. **Fork the repository**: Start by forking the main repository to your GitHub account.
 
 2. **Clone your fork**:
+
    ```bash
    git clone https://github.com/YOUR-USERNAME/neuroca.git
    cd neuroca
    ```
 
 3. **Add upstream remote**:
+
    ```bash
    git remote add upstream https://github.com/original-org/neuroca.git
    ```
@@ -52,6 +54,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 1. **Install dependencies**:
    We use Poetry for dependency management:
+
    ```bash
    # Install Poetry if you don't have it
    curl -sSL https://install.python-poetry.org | python3 -
@@ -61,17 +64,20 @@ We are committed to providing a welcoming and inclusive environment for all cont
    ```
 
 2. **Set up pre-commit hooks**:
+
    ```bash
    poetry run pre-commit install
    ```
 
 3. **Configure environment variables**:
+
    ```bash
    cp .env.example .env
    # Edit .env with your local configuration
    ```
 
 4. **Docker environment** (optional but recommended):
+
    ```bash
    docker-compose up -d
    ```
@@ -104,6 +110,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) for clear
 ```
 
 Types include:
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -113,6 +120,7 @@ Types include:
 - `chore`: Maintenance tasks
 
 Example:
+
 ```
 feat(memory): implement working memory decay function
 
@@ -219,6 +227,7 @@ git push origin v0.1.0
 - Use docstrings for all modules, classes, and functions.
 
 We use the following tools to enforce standards:
+
 - Black for code formatting
 - isort for import sorting
 - flake8 for linting
@@ -233,6 +242,7 @@ We use the following tools to enforce standards:
 - Add inline comments for complex logic.
 
 Example:
+
 ```python
 def process_memory_item(item: MemoryItem, decay_factor: float = 0.5) -> MemoryItem:
     """
@@ -316,7 +326,7 @@ For feature requests, please:
 
 ## License
 
-By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](../../LICENSE) file for details.
+By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/LICENSE) file for details.
 
 ---
 

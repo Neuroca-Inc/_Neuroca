@@ -6,9 +6,7 @@ statistics about memory tiers.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Union
-
-from neuroca.memory.models.memory_item import MemoryItem
+from typing import Dict, Union
 
 
 class TierStatsManager:

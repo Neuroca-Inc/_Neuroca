@@ -6,7 +6,7 @@ of expired memories in the Short-Term Memory (STM) tier.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from neuroca.memory.backends import BaseStorageBackend
 

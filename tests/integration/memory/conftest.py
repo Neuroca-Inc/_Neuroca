@@ -15,8 +15,7 @@ from neuroca.memory.manager.consolidation import StandardMemoryConsolidator
 # Import from LTM relationship component for concept models
 from neuroca.memory.tiers.ltm.components.relationship import Concept, Relationship, RelationshipType
 
-# Import working memory from models and STM tier
-from neuroca.memory.models.memory_item import MemoryItem
+# Import working memory from STM tier
 from neuroca.memory.tiers.stm.core import ShortTermMemoryTier as WorkingMemory
 
 # Use LTM with appropriate configuration as semantic memory

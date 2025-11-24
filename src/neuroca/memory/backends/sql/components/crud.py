@@ -7,11 +7,11 @@ This module provides the SQLCRUD class for performing CRUD operations on memory 
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from neuroca.memory.backends.sql.components.connection import SQLConnection
 from neuroca.memory.backends.sql.components.schema import SQLSchema
-from neuroca.memory.exceptions import StorageBackendError, StorageOperationError
+from neuroca.memory.exceptions import StorageOperationError
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata
 
 logger = logging.getLogger(__name__)

@@ -41,7 +41,10 @@ class ConsolidationTransaction:
             result = await action()
         except Exception as exc:  # noqa: BLE001
             self._log.exception(
-                "Consolidation transaction %s failed during step %s", self._name, step
+                "Consolidation transaction %s failed during step %s due to %s",
+                self._name,
+                step,
+                exc,
             )
             raise
 

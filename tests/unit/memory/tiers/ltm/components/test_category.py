@@ -5,13 +5,11 @@ This module contains unit tests for the LTMCategory class which handles
 categorization of memories in the LTM tier.
 """
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from neuroca.memory.tiers.ltm.components.category import LTMCategory
 from neuroca.memory.models.memory_item import MemoryItem, MemoryMetadata, MemoryContent, MemoryStatus
-from neuroca.memory.exceptions import TierOperationError
 
 
 class TestLTMCategory:

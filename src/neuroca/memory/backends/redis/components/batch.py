@@ -6,7 +6,7 @@ This module provides the RedisBatch class for handling batch operations on memor
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.backends.redis.components.connection import RedisConnection
 from neuroca.memory.backends.redis.components.crud import RedisCRUD

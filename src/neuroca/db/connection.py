@@ -1,22 +1,13 @@
-"""
-Database Connection Module for NeuroCognitive Architecture.
+"""Database connection helpers for the NeuroCognitive Architecture.
 
-This module provides a unified interface for database connections across
-the NCA system. It serves as a facade over the specific connection implementations
-in the connections package.
-
-Usage:
-    from neuroca.db.connection import get_connection, get_async_connection
-    
-    # Get a synchronous connection
-    with get_connection() as conn:
-        results = conn.execute_query("SELECT * FROM memory_items")
-    
-    # Get an asynchronous connection
-    async with get_async_connection() as conn:
-        results = await conn.execute_query("SELECT * FROM memory_items")
+This module centralizes the factory utilities for creating synchronous and
+asynchronous database connections along with lightweight health probes used by
+the API layer and operational tooling.
 """
 
+from __future__ import annotations
+
+import datetime as dt
 import logging
 from typing import Any, Dict, Optional, Union
 
@@ -24,9 +15,8 @@ from neuroca.db.connections.postgres import (
     PostgresConnection,
     AsyncPostgresConnection,
     PostgresConfig,
-    get_postgres_connection
+    get_postgres_connection,
 )
-from neuroca.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -145,12 +135,55 @@ def check_database_health(connection_type: str = "postgres") -> Dict[str, Any]:
         }
 
 
+def get_db_status(connection_type: str = "postgres") -> Dict[str, Any]:
+    """Return a normalized database status payload for monitoring endpoints.
+
+    Args:
+        connection_type: Database backend identifier to probe. Defaults to
+            ``"postgres"`` which maps to the synchronous Postgres connection
+            helper.
+
+    Returns:
+        A dictionary describing the connection health with the following keys:
+
+        ``connected`` (bool)
+            Flag indicating whether the backend reported a healthy status.
+        ``status`` (str)
+            Original status string returned by :func:`check_database_health`.
+        ``type`` (str)
+            Echo of ``connection_type`` for caller visibility.
+        ``message`` (str | None)
+            Human-readable detail supplied by the backend health probe.
+        ``error`` (str | None)
+            Error information provided when the health probe fails.
+        ``details`` (dict[str, Any])
+            Nested diagnostic information supplied by the backend.
+        ``checked_at`` (str)
+            UTC timestamp indicating when the status payload was generated.
+    """
+
+    health = check_database_health(connection_type)
+    status = health.get("status", "unknown")
+    connected = status == "healthy"
+
+    return {
+        "connected": connected,
+        "status": status,
+        "type": connection_type,
+        "message": health.get("message"),
+        "error": health.get("error"),
+        "details": health.get("details", {}),
+        "checked_at": dt.datetime.utcnow().isoformat(),
+    }
+
+
 # Export main functions
 __all__ = [
     "get_connection",
-    "get_async_connection", 
+    "get_async_connection",
     "get_default_connection",
     "get_default_async_connection",
     "check_database_health",
+    "get_db_status",
     "PostgresConfig",
 ]

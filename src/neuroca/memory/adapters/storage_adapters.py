@@ -9,24 +9,20 @@ This adapter is provided for backward compatibility during migration
 and will be removed in a future version.
 """
 
-import asyncio
 import logging
 import warnings
 from datetime import datetime
-from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 from neuroca.memory.backends import BackendType
 from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
 from neuroca.memory.exceptions import (
     MemoryNotFoundError,
-    StorageBackendError,
     StorageInitializationError,
     StorageOperationError,
 )
-from neuroca.memory.interfaces.storage_backend import StorageBackendInterface
 from neuroca.memory.models.memory_item import MemoryItem
-from neuroca.memory.models.search import SearchFilter, SearchResult
+from neuroca.memory.models.search import SearchFilter
 from neuroca.memory.interfaces import StorageStats
 
 

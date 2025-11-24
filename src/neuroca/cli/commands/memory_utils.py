@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Awaitable, Callable, Dict, List, Sequence
 
 from rich.table import Table
 
 from neuroca.cli.utils import ConfigError, load_config
 from neuroca.core.enums import MemoryTier
+from neuroca.memory.factory import create_memory_system
 from neuroca.memory.manager.memory_manager import MemoryManager
 
 
@@ -249,6 +250,33 @@ def build_integrity_table(report: Any) -> Table:
     return table
 
 
+async def run_memory_operation(
+    context: MemoryCLIContext,
+    operation: Callable[[MemoryManager], Awaitable[Any]],
+    *,
+    config_override: Dict[str, Any] | None = None,
+    factory: Callable[..., MemoryManager] | None = None,
+) -> Any:
+    """Instantiate the memory manager, execute an operation, and shutdown."""
+
+    config = load_memory_config(context.config_path)
+    if config_override:
+        config = merge_dicts(config, config_override)
+
+    memory_factory = factory or create_memory_system
+    manager = memory_factory(
+        backend_type=context.backend,
+        config=config or None,
+        embedding_dimension=context.embedding_dimension,
+    )
+
+    await manager.initialize()
+    try:
+        return await operation(manager)
+    finally:
+        await manager.shutdown()
+
+
 __all__ = [
     "MemoryCLIContext",
     "MemoryCLIError",
@@ -262,4 +290,5 @@ __all__ = [
     "format_tags",
     "get_vector_backend",
     "build_integrity_table",
+    "run_memory_operation",
 ]

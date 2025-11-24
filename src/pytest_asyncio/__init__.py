@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from functools import wraps
-from typing import Any, Callable, Generator, TypeVar
+from typing import Any, Callable, Generator, TypeVar, cast, overload
 
 import pytest
 
@@ -21,9 +21,20 @@ __version__ = "0.0.0-local"
 pytest_plugins = ["pytest_asyncio.plugin"]
 
 _FixtureFunc = TypeVar("_FixtureFunc", bound=Callable[..., Any])
+FixtureDecorator = Callable[[_FixtureFunc], _FixtureFunc]
 
 
-def fixture(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+@overload
+def fixture(func: _FixtureFunc, /) -> _FixtureFunc:
+    """Return a decorated fixture when used directly as ``@fixture``."""
+
+
+@overload
+def fixture(*args: Any, **kwargs: Any) -> FixtureDecorator:
+    """Return a decorator configured with the provided pytest options."""
+
+
+def fixture(*args: Any, **kwargs: Any) -> _FixtureFunc | FixtureDecorator:
     """Decorate an async fixture so it executes within an event loop.
 
     The decorator mirrors ``pytest_asyncio.fixture`` for the limited use
@@ -35,7 +46,6 @@ def fixture(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callabl
 
     def _decorate(func: _FixtureFunc) -> _FixtureFunc:
         if inspect.isasyncgenfunction(func):
-            @pytest.fixture(*args, **kwargs)
             @wraps(func)
             def _async_gen_wrapper(*f_args: Any, **f_kwargs: Any) -> Generator[Any, None, None]:
                 loop = asyncio.new_event_loop()
@@ -54,10 +64,10 @@ def fixture(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callabl
                     asyncio.set_event_loop(None)
                     loop.close()
 
-            return _async_gen_wrapper  # type: ignore[return-value]
+            wrapped = pytest.fixture(*args, **kwargs)(_async_gen_wrapper)
+            return cast(_FixtureFunc, wrapped)
 
         if inspect.iscoroutinefunction(func):
-            @pytest.fixture(*args, **kwargs)
             @wraps(func)
             def _async_wrapper(*f_args: Any, **f_kwargs: Any) -> Any:
                 loop = asyncio.new_event_loop()
@@ -68,12 +78,14 @@ def fixture(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callabl
                     asyncio.set_event_loop(None)
                     loop.close()
 
-            return _async_wrapper  # type: ignore[return-value]
+            wrapped = pytest.fixture(*args, **kwargs)(_async_wrapper)
+            return cast(_FixtureFunc, wrapped)
 
         # Fallback to the standard pytest fixture decorator for sync callables.
-        return pytest.fixture(*args, **kwargs)(func)  # type: ignore[return-value]
+        wrapped = pytest.fixture(*args, **kwargs)(func)
+        return cast(_FixtureFunc, wrapped)
 
     if args and callable(args[0]) and len(args) == 1 and not kwargs:
-        return _decorate(args[0])  # type: ignore[return-value]
+        return _decorate(cast(_FixtureFunc, args[0]))
 
     return _decorate

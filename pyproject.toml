@@ -10,10 +10,10 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "neuroca"
-version = "0.1.0b1"
+version = "1.0.0"
 description = "NeuroCognitive Architecture (NCA) for Large Language Models"
 authors = [
-    {name = "Justin Lietz", email = "jlietz93@gmail.com"},
+    {name = "Justin Lietz", email = "justin@neuroca.ai"},
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,26 +26,28 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.9,<3.14"
 dependencies = [
     # Core dependencies
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "scipy>=1.10.0",
-    "scikit-learn>=1.2.0",
-    "torch>=2.6.0; python_version <= '3.11'",
-    "transformers>=4.36.0",
-    "pydantic>=2.0.0",
+    "scikit-learn>=1.5.0",
+    "transformers>=4.53.0",
+    "pydantic>=2.4.0",
     "fastapi>=0.100.0",
+    "starlette>=0.47.2",
     "uvicorn[standard]>=0.22.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.11.0",
     "psycopg2-binary>=2.9.6",
     "redis>=5.2.1",
-    "httpx>=0.24.1",
+    "httpx>=0.27.2,<0.28.0",
+    "requests>=2.32.4",
     "python-dotenv>=0.21.0",
     "loguru>=0.7.0",
     "typer>=0.9.0",
@@ -55,12 +57,13 @@ dependencies = [
     "opentelemetry-api>=1.18.0",
     "opentelemetry-sdk>=1.18.0",
     "opentelemetry-exporter-otlp>=1.18.0",
-    "langchain>=0.0.325",
-    "langchain-core",
+    # Optional integrations are defined in optional-dependencies below
     "tiktoken>=0.4.0",
     "faiss-cpu>=1.7.4",
+    "qdrant-client>=1.9.0,<2.0.0",
     "pyyaml>=6.0.1",
-    "aiohttp>=3.9.0",
+    "protobuf>=5.29.5",
+    "aiohttp>=3.12.14",
     # Add other production dependencies as needed
     "pydantic-settings>=2.8.1,<3.0.0",
     "tabulate>=0.9.0,<0.10.0",
@@ -92,6 +95,7 @@ dev = [
     "commitizen>=3.2.2",
     "bandit>=1.7.5",
     "safety>=2.3.5",
+    "mutmut>=3.3.1",
     "sphinx>=7.0.1",
     "sphinx-rtd-theme>=1.2.2",
     "mkdocs>=1.4.3",
@@ -107,6 +111,12 @@ test = [
     "pytest-benchmark>=4.0.0",
     "responses>=0.23.1",
     "freezegun>=1.2.2",
+    "trio>=0.26.0",
+    "fakeredis>=2.23.2",
+]
+integrations = [
+    # Secure baseline for LangChain integration (optional)
+    "langchain>=0.2.5",
 ]
 
 [tool.poetry]
@@ -124,7 +134,7 @@ mkdocs-redirects = "^1.2.2"
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311"]
+target-version = ["py39", "py310", "py311", "py312", "py313"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -150,7 +160,7 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -182,7 +192,7 @@ disallow_incomplete_defs = false
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py313"
 src = ["src"]
 exclude = [
     ".git",
@@ -230,7 +240,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 python_classes = "Test*"
-addopts = "--strict-markers --cov=neuroca --cov-report=term --cov-report=xml"
+addopts = "--strict-markers --cov=neuroca.memory.manager.utils --cov=neuroca.memory.manager.working_memory --cov-report=term --cov-report=xml"
 norecursedirs = ["archive", ".venv", ".git", "__pycache__"]
 collect_ignore = ["archive/development_scripts/test_cli.py"] # Explicitly ignore archived test
 markers = [
@@ -240,7 +250,10 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["neuroca"]
+source = [
+    "neuroca.memory.manager.utils",
+    "neuroca.memory.manager.working_memory",
+]
 omit = [
     "tests/*",
     "**/__init__.py",
@@ -255,6 +268,16 @@ exclude_lines = [
     "pass",
     "raise ImportError",
 ]
+
+[tool.mutmut]
+paths_to_mutate = [
+    "src/neuroca/core/health",
+    "src/neuroca/__init__.py",
+    "src/neuroca/core/enums.py",
+]
+tests_dir = ["tests/unit/health"]
+also_copy = ["src/neuroca"]
+runner = "python tests/run_mutmut_pytest.py"
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs"]

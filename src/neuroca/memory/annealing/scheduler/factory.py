@@ -6,7 +6,6 @@ for creating annealing scheduler instances.
 """
 
 import logging
-from typing import Type
 
 from neuroca.memory.annealing.scheduler.types import SchedulerType
 from neuroca.memory.annealing.scheduler.core import AnnealingScheduler

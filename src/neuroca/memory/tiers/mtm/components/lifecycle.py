@@ -7,8 +7,7 @@ shutdown, and related lifecycle operations for the Medium-Term Memory tier.
 
 import asyncio
 import logging
-import time
-from typing import Any, Dict, Optional, Set, Callable
+from typing import Any, Dict, Callable
 
 from neuroca.memory.backends import BaseStorageBackend
 

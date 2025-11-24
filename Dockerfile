@@ -101,7 +101,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     VENV_PATH="/opt/pysetup/.venv" \
-    PATH="/opt/pysetup/.venv/bin:$PATH"
+    PATH="/opt/pysetup/.venv/bin:$PATH" \
+    ENV=production \
+    NCA_ENV=production
 
 # Install system runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -142,4 +144,4 @@ EXPOSE 8000
 # Label the image with metadata
 LABEL maintainer="NeuroCognitive Architecture Team" \
       description="NeuroCognitive Architecture (NCA) for LLMs" \
-      version="0.1.0"
+      version="1.0.0"

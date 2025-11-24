@@ -5,7 +5,6 @@ These tests verify that the configuration system properly integrates with the ba
 factory and the created backends use the provided configuration values.
 """
 
-import os
 import pytest
 import tempfile
 import yaml
@@ -14,9 +13,8 @@ from typing import Dict, Any
 
 from neuroca.memory.backends.factory.backend_type import BackendType
 from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
-from neuroca.memory.backends.base import BaseStorageBackend
 from neuroca.memory.backends.in_memory.core import InMemoryBackend
-from neuroca.memory.config.loader import ConfigurationLoader, get_backend_config
+from neuroca.memory.config.loader import ConfigurationLoader
 
 
 @pytest.fixture

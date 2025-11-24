@@ -13,42 +13,24 @@ Core Models:
 - WorkingMemoryItem: Memory item in the working memory buffer
 """
 
+from neuroca.memory.models.episodic_memory_item import EpisodicMemoryItem
 from neuroca.memory.models.memory_item import (
     MemoryItem,
     MemoryMetadata,
     MemoryContent,
     MemoryStatus,
 )
+from neuroca.memory.models.memory_query import MemoryQuery
+from neuroca.memory.models.retrieval import MemoryRetrievalResult
 from neuroca.memory.models.search import (
     MemorySearchResult,
     MemorySearchOptions,
 )
+from neuroca.memory.models.semantic_memory_item import SemanticMemoryItem
 from neuroca.memory.models.working_memory import (
     WorkingMemoryItem,
     WorkingMemoryBuffer,
 )
-
-# Add stub classes for compatibility
-class EpisodicMemoryItem(MemoryItem):
-    """Stub episodic memory item for compatibility."""
-    pass
-
-class SemanticMemoryItem(MemoryItem):
-    """Stub semantic memory item for compatibility."""
-    pass
-
-class MemoryQuery:
-    """Stub memory query for compatibility."""
-    def __init__(self, query: str, filters=None):
-        self.query = query
-        self.filters = filters or {}
-
-class MemoryRetrievalResult:
-    """Stub memory retrieval result for compatibility."""
-    def __init__(self, item=None, relevance: float = 0.0):
-        self.item = item
-        self.relevance = relevance
-        self.content = item.content if item else None
 
 __all__ = [
     # Memory Item Models
@@ -64,10 +46,10 @@ __all__ = [
     # Working Memory Models
     "WorkingMemoryItem",
     "WorkingMemoryBuffer",
-    
+
     # Compatibility stubs
     "EpisodicMemoryItem",
-    "SemanticMemoryItem", 
+    "SemanticMemoryItem",
     "MemoryQuery",
     "MemoryRetrievalResult",
 ]

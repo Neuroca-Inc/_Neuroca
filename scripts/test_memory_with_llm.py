@@ -6,15 +6,17 @@ This script demonstrates how to use the memory system to create a conversational
 that can remember previous interactions and use those memories in context.
 """
 
+# ruff: noqa: E402
+
 import asyncio
 import os
-import json
-import time
 import argparse
-from typing import Dict, List, Any, Optional
-import uuid
+import json
 import sys
+import time
+import uuid
 from pathlib import Path
+from typing import List
 
 # Ensure repository sources are importable when running directly from the repo root.
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -27,16 +29,19 @@ if str(SRC_DIR) not in sys.path:
 from neuroca.memory.backends import BackendType
 from neuroca.memory.manager import MemoryManager
 from neuroca.memory.models.memory_item import MemoryItem
-from neuroca.memory.models.search import MemorySearchOptions, MemorySearchResult # Import MemorySearchResult
+from neuroca.memory.models.search import MemorySearchResult
 
 # Uncomment to use OpenAI API. Add your API key to .env first.
 try:
-    import openai
     from dotenv import load_dotenv
-    OPENAI_AVAILABLE = True
+    from openai import OpenAI
 except ImportError:
+    load_dotenv = None  # type: ignore[assignment]
+    OpenAI = None  # type: ignore[assignment]
     print("OpenAI package not available. Install with: pip install openai python-dotenv")
     OPENAI_AVAILABLE = False
+else:
+    OPENAI_AVAILABLE = True
 
 # Optional local LLM fallback (Ollama)
 try:
@@ -47,22 +52,29 @@ except ImportError:
 class ConversationalAgent:
     """A simple conversational agent that uses the memory system to remember context."""
     
-    def __init__(self, use_sqlite: bool = False):
+    def __init__(self, use_sqlite: bool = False, fast_tiers: bool = False, history_window: int | None = None):
         """Initialize the agent with memory system."""
         self.conversation_history = []
         self.memory_manager = None
         self.backend_type = BackendType.SQLITE if use_sqlite else BackendType.MEMORY
         self.conversation_id = str(uuid.uuid4())
+        self.fast_tiers = fast_tiers or os.getenv("FAST_TIERS", "").strip().lower() in ("1", "true", "yes")
+        try:
+            self.history_window = int(history_window) if history_window is not None else None
+        except Exception:
+            self.history_window = None
         
         # OpenAI setup if available
         self._openai_client = None
-        if OPENAI_AVAILABLE:
+        if OPENAI_AVAILABLE and load_dotenv:
             load_dotenv()
             api_key = os.getenv("OPENAI_API_KEY")
-            try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=api_key) if api_key else None
-            except Exception:
+            if OpenAI and api_key:
+                try:
+                    self._openai_client = OpenAI(api_key=api_key)
+                except Exception:
+                    self._openai_client = None
+            else:
                 self._openai_client = None
             if not api_key:
                 print("Warning: OPENAI_API_KEY not found in .env file")
@@ -81,20 +93,35 @@ class ConversationalAgent:
         self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
         self.scope = os.getenv("MEMORY_SCOPE", "all").strip().lower()
         self.use_full_memory = (self.scope == "all")
+
+        # Prefer Responses API for newer models unless explicitly overridden
+        self.prefer_responses = os.getenv("OPENAI_USE_RESPONSES", "").strip().lower() in ("1", "true", "yes")
+        if self.provider == "openai":
+            m = (self.openai_model or "").lower()
+            # Heuristic: models like gpt-5, gpt-4o, gpt-4.1, o3, o4 tend to require Responses API or different params
+            if any(key in m for key in ("gpt-5", "gpt-4o", "gpt-4.1", "o3", "o4")):
+                self.prefer_responses = True or self.prefer_responses
     
     async def initialize(self):
         """Initialize the memory system."""
         print(f"Initializing memory system with {self.backend_type} backend...")
+        # Base config
+        config = {
+            "stm": {"default_ttl": 3600},  # 1 hour TTL
+            "mtm": {"max_capacity": 1000},
+            "ltm": {"maintenance_interval": 86400},  # 24 hours
+            "monitoring": {"metrics": {"enabled": False}, "events": {"enabled": False}},
+        }
+        # Fast tier mode to exercise STM -> MTM -> LTM promotions during a short demo
+        if self.fast_tiers:
+            config["stm"]["default_ttl"] = 15
+            # Small capacity to force promotion pressure
+            config["mtm"].update({"max_capacity": 20, "consolidation_interval": 5})
+            # Frequent LTM maintenance
+            config["ltm"].update({"maintenance_interval": 10})
+
         self.memory_manager = MemoryManager(
-            config={
-                "stm": {"default_ttl": 3600},  # 1 hour TTL for STM memories
-                "mtm": {"max_capacity": 1000},
-                "ltm": {"maintenance_interval": 86400},  # 24 hours
-                "monitoring": {
-                    "metrics": {"enabled": False},
-                    "events": {"enabled": False}
-                }
-            },
+            config=config,
             mtm_storage_type=self.backend_type,
             ltm_storage_type=self.backend_type,
             vector_storage_type=BackendType.MEMORY  # Use in-memory for vector storage
@@ -165,6 +192,12 @@ class ConversationalAgent:
 
     async def process_message(self, user_message: str) -> str:
         """Process a user message and generate a response."""
+        if not (user_message or "").strip():
+            # Ignore empty inputs gracefully
+            fallback = "I didn't catch any text. How can I help?"
+            await self.store_memory(fallback, "assistant")
+            self.conversation_history.append({"role": "assistant", "content": fallback})
+            return fallback
         # Store the user's message in memory
         await self.store_memory(user_message, "user")
         
@@ -207,19 +240,67 @@ You can remember previous parts of the conversation.
 {memory_context if memory_context else "No relevant memories found."}
 
 Base your response on the conversation history and relevant memories."""
+                hist = self.conversation_history
+                if self.history_window is not None:
+                    hist = hist[-self.history_window:] if self.history_window > 0 else []
                 messages = [
                     {"role": "system", "content": system_message},
-                    *self.conversation_history
+                    *hist,
                 ]
                 client = self._openai_client
-                # Primary request (strict same-model)
-                completion = client.chat.completions.create(
-                    model=self.openai_model,
-                    messages=messages,
-                    max_tokens=500,
-                    temperature=0.7,
-                    top_p=0.9
-                )
+
+                def _to_plaintext(messages: list[dict[str, str]]) -> str:
+                    conv_text: list[str] = []
+                    for m in messages:
+                        role = m.get("role", "user")
+                        content = m.get("content", "")
+                        conv_text.append(f"{role.upper()}: {content}")
+                    return "\n\n".join(conv_text)
+
+                completion = None
+
+                def _responses_minimal():
+                    # Responses API with minimal parameters; avoids 400s on strict models
+                    return client.responses.create(
+                        model=self.openai_model,
+                        input=_to_plaintext(messages),
+                        max_output_tokens=500,
+                    )
+
+                if self.prefer_responses:
+                    # Go straight to Responses API for known strict models
+                    completion = _responses_minimal()
+                else:
+                    # Try classic Chat Completions with full params → then progressively drop incompatible params
+                    try:
+                        completion = client.chat.completions.create(
+                            model=self.openai_model,
+                            messages=messages,
+                            max_tokens=500,
+                            temperature=0.7,
+                            top_p=0.9,
+                        )
+                    except Exception as e1:
+                        e1s = str(e1)
+                        try:
+                            if ("max_tokens" in e1s and "max_completion_tokens" in e1s):
+                                completion = client.chat.completions.create(
+                                    model=self.openai_model,
+                                    messages=messages,
+                                    max_completion_tokens=500,
+                                    temperature=0.7,
+                                    top_p=0.9,
+                                )
+                            elif "temperature" in e1s or "top_p" in e1s:
+                                completion = client.chat.completions.create(
+                                    model=self.openai_model,
+                                    messages=messages,
+                                    max_tokens=500,
+                                )
+                            else:
+                                raise
+                        except Exception:
+                            completion = _responses_minimal()
                 # Parse content
                 content_text = ""
                 try:
@@ -229,10 +310,14 @@ Base your response on the conversation history and relevant memories."""
                             print(f"DEBUG: Message object: {msg}")
                             content_text = (getattr(msg, "content", "") or "").strip()
                             if not content_text:
-                                # capture any refusal artifacts for debugging
                                 refusal = getattr(msg, "refusal", None)
                                 if refusal:
                                     print(f"DEBUG: refusal: {refusal}")
+                    elif hasattr(completion, "output") or hasattr(completion, "output_text"):
+                        # Responses API – SDK surfaces .output or .output_text depending on version
+                        content_text = getattr(completion, "output_text", None) or getattr(completion, "output", "")
+                        if isinstance(content_text, str):
+                            content_text = content_text.strip()
                 except Exception as parse_err:
                     print(f"DEBUG: Error parsing completion: {parse_err}")
 
@@ -243,13 +328,44 @@ Base your response on the conversation history and relevant memories."""
                         {"role": "user", "content": "Please respond in plain text to the previous message."}
                     ]
                     try:
-                        retry = client.chat.completions.create(
-                            model=self.openai_model,
-                            messages=retry_messages,
-                            max_tokens=400,
-                            temperature=0.7,
-                            top_p=0.9
-                        )
+                        # Retry with either max_tokens or max_completion_tokens as needed
+                        try:
+                            if self.prefer_responses:
+                                retry = client.responses.create(
+                                    model=self.openai_model,
+                                    input=_to_plaintext(retry_messages),
+                                    max_output_tokens=400,
+                                )
+                            else:
+                                retry = client.chat.completions.create(
+                                    model=self.openai_model,
+                                    messages=retry_messages,
+                                    max_tokens=400,
+                                    temperature=0.7,
+                                    top_p=0.9,
+                                )
+                        except Exception as param_err2:
+                            e2 = str(param_err2)
+                            if not self.prefer_responses and ("max_tokens" in e2 and "max_completion_tokens" in e2):
+                                retry = client.chat.completions.create(
+                                    model=self.openai_model,
+                                    messages=retry_messages,
+                                    max_completion_tokens=400,
+                                    temperature=0.7,
+                                    top_p=0.9,
+                                )
+                            elif not self.prefer_responses and ("temperature" in e2 or "top_p" in e2):
+                                retry = client.chat.completions.create(
+                                    model=self.openai_model,
+                                    messages=retry_messages,
+                                    max_tokens=400,
+                                )
+                            else:
+                                retry = client.responses.create(
+                                    model=self.openai_model,
+                                    input=_to_plaintext(retry_messages),
+                                    max_output_tokens=400,
+                                )
                         if getattr(retry, "choices", None):
                             rmsg = retry.choices[0].message
                             if rmsg:
@@ -278,9 +394,12 @@ You can remember previous parts of the conversation.
 {memory_context if memory_context else "No relevant memories found."}
 
 Base your response on the conversation history and relevant memories."""
+                hist = self.conversation_history
+                if self.history_window is not None:
+                    hist = hist[-self.history_window:] if self.history_window > 0 else []
                 messages = [
                     {"role": "system", "content": system_message},
-                    *self.conversation_history
+                    *hist,
                 ]
                 result = ollama.chat(model=self.ollama_model, messages=messages)
                 msg = result.get("message", {})
@@ -314,6 +433,7 @@ Base your response on the conversation history and relevant memories."""
             print("Commands:")
             print("  /search <query>        Search memories")
             print("  /stats                 Show system stats")
+            print("  /maint                 Run maintenance cycle now (consolidation/decay)")
             print("  /llm on|off            Toggle LLM usage")
             print("  /provider openai|ollama|none  Select provider")
             print("  /spam <N> [text]       Push N messages into memory (LLM disabled for speed)")
@@ -337,6 +457,14 @@ Base your response on the conversation history and relevant memories."""
                 print(json.dumps(stats, indent=2, default=str))
             except Exception as e:
                 print(f"Error fetching stats: {e}")
+            return True
+
+        if head == "/maint":
+            try:
+                result = await self.memory_manager.run_maintenance()
+                print(json.dumps(result, indent=2, default=str))
+            except Exception as e:
+                print(f"Error running maintenance: {e}")
             return True
 
         if head == "/llm" and len(parts) > 1:
@@ -401,14 +529,20 @@ async def main():
     parser.add_argument("--provider", choices=["openai", "ollama", "none"], help="Override LLM provider")
     parser.add_argument("--llm", choices=["on", "off"], help="Toggle LLM usage")
     parser.add_argument("--backend", choices=["sqlite", "memory"], help="Select memory backend")
+    parser.add_argument("--fast-tiers", action="store_true", help="Use fast tier settings to exercise STM→MTM→LTM in demo")
     parser.add_argument("--prompt", help="Prompt to use in quick mode")
+    parser.add_argument(
+        "--history-window",
+        type=int,
+        help="Only include last N conversation turns in messages (curated context is always included)",
+    )
     parser.add_argument("--model", help="Model name for selected provider (e.g., gpt-5 or gemma3:4b)")
     parser.add_argument("--scope", choices=["all", "stm"], help="Memory scope: all tiers or STM only")
     args = parser.parse_args()
 
     # Backend selection (default: in-memory for easier testing)
     use_sqlite = (args.backend == "sqlite") if args.backend else False
-    agent = ConversationalAgent(use_sqlite=use_sqlite)
+    agent = ConversationalAgent(use_sqlite=use_sqlite, fast_tiers=args.fast_tiers, history_window=args.history_window)
 
     # Apply runtime overrides
     if args.provider:

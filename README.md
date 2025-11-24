@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python Version: 3.9+"/></a>
+  &nbsp; <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11-blue" alt="Python Version: 3.10 or 3.11"/></a>
   &nbsp; <a href="https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img src="https://app.codacy.com/project/badge/Grade/4e0a3952e1464fc5b218571f8339e7f3" alt="Codacy Code Quality Badge"/></a>
 </p>
 
@@ -47,13 +47,13 @@
 ## Key Features
 
 - **Dynamic Multi-Tiered Memory System**: Unlike flat vector databases used in typical RAG, NCA features a structured memory hierarchy inspired by human cognition:
-    - **Short-Term Memory (STM)**: High-speed, temporary storage for immediate context (akin to working memory). Governed by TTL (Time-To-Live).
-    - **Medium-Term Memory (MTM)**: Intermediate storage for recently relevant information, acting as a buffer before long-term consolidation. Managed by capacity limits and decay.
-    - **Long-Term Memory (LTM)**: Persistent storage for consolidated knowledge and core facts. Supports efficient retrieval over large datasets.
+  - **Short-Term Memory (STM)**: High-speed, temporary storage for immediate context (akin to working memory). Governed by TTL (Time-To-Live).
+  - **Medium-Term Memory (MTM)**: Intermediate storage for recently relevant information, acting as a buffer before long-term consolidation. Managed by capacity limits and decay.
+  - **Long-Term Memory (LTM)**: Persistent storage for consolidated knowledge and core facts. Supports efficient retrieval over large datasets.
 - **Biologically-Inspired Processes**:
-    - **Memory Consolidation**: Automatic background process to move important memories from STM -> MTM -> LTM based on relevance, frequency, and importance scores.
-    - **Memory Decay**: Memories naturally lose relevance over time unless reinforced, mimicking forgetting and keeping the memory system focused.
-    - **Importance Scoring**: Allows explicit weighting of memories, influencing retrieval and consolidation priority.
+  - **Memory Consolidation**: Automatic background process to move important memories from STM -> MTM -> LTM based on relevance, frequency, and importance scores.
+  - **Memory Decay**: Memories naturally lose relevance over time unless reinforced, mimicking forgetting and keeping the memory system focused.
+  - **Importance Scoring**: Allows explicit weighting of memories, influencing retrieval and consolidation priority.
 - **Rich Memory Representation**: Stores not just content embeddings but also crucial metadata like timestamps, sources, tags, and importance scores, enabling more complex querying and context association.
 - **Dynamically Managed Backends**: The system automatically selects and manages the optimal storage backend (e.g., high-speed In-Memory for STM, persistent SQLite/Vector DBs for MTM/LTM) for each memory tier based on configuration. This happens transparently, ensuring the best balance of speed, persistence, and scalability for different types of memory without manual intervention. The architecture is designed for easy extension with new backend types.
 - **Advanced Search Capabilities**: Goes beyond simple vector similarity to allow filtering and searching based on metadata, time, importance, and tags across different memory tiers.
@@ -122,45 +122,48 @@ src/neuroca/
 ├── tools/                # Internal development/operational tools
 ├── utils/                # Shared utility functions
 ```
+
 *Note: Top-level directories like `docs/`, `tests/`, `scripts/` (project-level), etc., exist at the project root (`Neuroca/`).*
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.9+
-- Docker and Docker Compose (for containerized deployment, optional)
-- Access to LLM API credentials (if using external models)
+- Python **3.10 or 3.11** (primary tested targets for the 1.0.0 GA release; use 3.12 only for CPU-only
+  workflows because GPU-accelerated extras such as PyTorch do not yet ship wheels for 3.12)
+- Docker and Docker Compose (optional, for containerized deployment)
+- Access to LLM API credentials (if integrating remote providers)
 
-### Install as a Python Package
+### Quick Start (PyPI GA)
 
-#### From PyPI (Recommended)
+Set up a fresh virtual environment and install the general-availability build from
+PyPI. This is the simplest path to evaluate Neuroca with the default SQLite
+backends.
 
 ```bash
-# Install directly from PyPI
-pip install neuroca
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+pip install "neuroca==1.0.0"
 
-# Or in a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install neuroca
+# Verify the CLI entry point resolves and list the available groups
+neuroca --help
 ```
 
-#### From Source
+### Install from Source
 
 ```bash
-# Clone the repository
+# Clone the repository and enter the project root
 git clone https://github.com/justinlietz93/Neuro-Cognitive-Architecture.git
 cd Neuro-Cognitive-Architecture
 
-# Install as a package (development mode with extras)
+# Install the package in editable mode with tooling/test extras
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install --upgrade pip
 pip install -e ".[dev,test]"
 
-# Runtime-only installs can omit extras
-# pip install -e .
-
-# Or build and install the package
-pip install build
+# (Optional) Build a wheel if you need an artefact for deployment
 python -m build
 pip install dist/*.whl
 ```
@@ -210,6 +213,7 @@ docker-compose up -d
 ## Configuration
 
 1. Copy the example environment file:
+
    ```bash
    cp .env.example .env
    ```
@@ -224,9 +228,26 @@ docker-compose up -d
 
 ## Usage
 
+### Quick Verification
+
+After installing Neuroca, run the smoke tests below to confirm the environment is
+ready:
+
+```bash
+# Execute the curated memory system demo (writes to an ephemeral SQLite DB)
+python scripts/basic_memory_test.py
+
+# Capture a snapshot of the live tiers via the CLI
+neuroca memory inspect --tier stm --limit 3
+```
+
+Both commands should complete without warnings and print at least one stored
+memory entry.
+
 ### API
 
-Start the API server:
+Start the FastAPI-powered service using the provided helper or the module entry
+point:
 
 ```bash
 make run-api
@@ -234,25 +255,43 @@ make run-api
 python -m neuroca.api.server
 ```
 
-The API will be available at `http://localhost:8000` by default.
+Once booted, the API listens on `http://localhost:8000`. Probe the health check
+to validate the deployment:
+
+```bash
+curl -sf http://localhost:8000/health
+```
 
 ### CLI
 
-The NCA system provides a command-line interface for direct interaction:
+The `neuroca` binary exposes scoped command groups for day-to-day operations.
+After activating your virtual environment, run `neuroca --help` to see the
+available top-level groups (`llm`, `memory`, `system`). Common flows:
 
 ```bash
-# Get help
+# Display available commands and options
 neuroca --help
 
-# Initialize a new cognitive session
-neuroca session init
+# Run an LLM query using the local Ollama provider without touching the live memory tiers
+neuroca llm query "summarise the latest log entries" \
+  --provider ollama --model gemma3:4b --no-memory --no-health --no-goals
 
-# Process input through the cognitive architecture
-neuroca process "Your input text here"
+# Seed a short-term memory file and inspect stored entries
+neuroca memory seed ./examples/memories.json --tier stm --user demo-user
+neuroca memory inspect --tier stm --limit 5
 
-# View memory contents
-neuroca memory list --type=working
+# Create a database backup (PostgreSQL) or copy a local SQLite database
+neuroca system backup --path ./backups/$(date +%Y%m%d).sql
+
+# Restore from a previously created backup
+neuroca system restore ./backups/20250919.sql
 ```
+
+Each command supports `--help` for additional switches; for example,
+`neuroca memory --help` details vector-index maintenance utilities and other
+maintenance tasks covered by the automated tests. The CLI always respects the
+active configuration file (development or production) so long as the
+`NCA_ENV` environment variable is exported.
 
 ### Python Library
 
@@ -324,9 +363,7 @@ pre-commit install
 
 ```bash
 # Run all tests
-make test
-# or
-pytest
+pytest -q
 
 # Run specific test modules
 pytest tests/memory/
@@ -336,14 +373,13 @@ pytest tests/memory/
 
 ```bash
 # Run linting
-make lint
-# or
-flake8 neuroca tests
+ruff check
+
+# Verify formatting
+black --check .
 
 # Run type checking
-make typecheck
-# or
-mypy neuroca
+mypy --hide-error-context --no-error-summary src
 ```
 
 ## Documentation
@@ -362,7 +398,7 @@ cd Neuroca/docs
 mkdocs serve
 ```
 
-The documentation site will typically be available at `http://127.0.0.1:8000`. 
+The documentation site will typically be available at `http://127.0.0.1:8000`.
 **Note:** The `mkdocs.yml` configuration file may currently be out of sync with the actual documentation file structure and require updates to build correctly. Refer to the `mkdocs.yml` file for configuration details.
 
 ## Contributing
@@ -394,8 +430,8 @@ The NCA project is actively evolving. Key areas for future development include:
 - **Benchmarking**: Conducting rigorous benchmarks comparing NCA's performance (speed, scalability, retrieval accuracy, context quality) against other popular memory systems and RAG frameworks.
 - **Expanded Backend Support**: Adding support for more database and vector store backends (e.g., PostgreSQL, Redis, specialized vector databases like Weaviate or Pinecone) to provide greater flexibility.
 - **Framework Compatibility & Integrations**:
-    - **LangChain**: Enhancing the native integration with LangChain, providing seamless compatibility with LangChain's ecosystem of tools and agents. We aim to offer NCA as a sophisticated, stateful memory alternative within LangChain workflows.
-    - **Other Frameworks**: Exploring integrations with other popular AI/LLM frameworks (e.g., LlamaIndex, Haystack) to broaden NCA's applicability.
+  - **LangChain**: Enhancing the native integration with LangChain, providing seamless compatibility with LangChain's ecosystem of tools and agents. We aim to offer NCA as a sophisticated, stateful memory alternative within LangChain workflows.
+  - **Other Frameworks**: Exploring integrations with other popular AI/LLM frameworks (e.g., LlamaIndex, Haystack) to broaden NCA's applicability.
 - **Enhanced Tooling**: Developing better tools for monitoring memory state, debugging cognitive processes, and visualizing memory dynamics.
 
 ## License
@@ -418,10 +454,9 @@ For detailed performance comparisons and benchmarks demonstrating Neuroca’s pe
 - **Justin Lietz** - *Initial work & Lead Developer*
 - Justin's first prototype of the **Autonomous Project Generator** with **Claude 3.7 Sonnet** (who produced > 70% of the codebase in one prompt)
 
-
 ## Contact
 
-For questions, feedback, or collaboration opportunities, please open an issue on this repository or contact Justin Lietz. jlietz93@gmail.com
+For questions, feedback, or collaboration opportunities, please open an issue on this repository or contact Justin Lietz. <jlietz93@gmail.com>
 
 ---
 
@@ -430,3 +465,34 @@ For questions, feedback, or collaboration opportunities, please open an issue on
 ---
 
 <p align="center"><em>Updated as of 4/15/2025</em></p>
+### Demo Script
+
+Run a minimal demo to insert and search a memory (clean, no warnings):
+
+```bash
+python scripts/basic_memory_test.py
+```
+
+### Production via Docker
+
+The Docker image defaults to production settings (ENV/NCA_ENV=production). A production configuration file is provided at `config/production.yaml`.
+
+Build and run:
+
+```bash
+docker build -t neuroca:1.0.0 .
+docker run --rm -p 8000:8000 neuroca:1.0.0
+```
+
+Prometheus metrics are disabled by default in the demo and can be enabled via configuration in production.
+
+### Deploy with Docker Compose (Production‑ready quick start)
+
+Run Neuroca with Postgres using the provided compose file:
+
+```bash
+docker compose -f docker-compose.agent.yml up -d --build
+curl -sf http://localhost:8000/health
+```
+
+Environment defaults select production settings and wire the DB connection. Health checks are enabled. For a multi‑day soak, see docs/operations/runbooks/soak-test.md.

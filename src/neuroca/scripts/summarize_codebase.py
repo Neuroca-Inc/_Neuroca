@@ -11,14 +11,12 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from ..analysis.summarization_engine import (
-    CodebaseSummarizationEngine, 
+    CodebaseSummarizationEngine,
     ScopeConfig,
-    create_summarization_engine
 )
-from ..utils.logging import setup_logging
 
 
 def setup_cli_logging(level: str = "INFO"):

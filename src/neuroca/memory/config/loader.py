@@ -9,7 +9,7 @@ import logging
 import os
 import yaml
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Union
+from typing import Any, Dict, Optional, List
 
 from neuroca.core.exceptions import ConfigurationError
 

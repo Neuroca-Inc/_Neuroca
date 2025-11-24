@@ -6,12 +6,8 @@ This module provides CI/CD integration and automation capabilities for the
 and alerting functionality.
 """
 
-import asyncio
 import json
-import yaml
-import logging
 import os
-import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any

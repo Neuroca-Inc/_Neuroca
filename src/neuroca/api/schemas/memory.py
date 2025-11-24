@@ -16,7 +16,7 @@ import logging
 import uuid
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, FieldValidationInfo, field_validator, model_validator
 from pydantic.types import confloat, conint
 
 # Configure module logger
@@ -67,13 +67,13 @@ class MemoryEmotion(BaseModel):
         description="Mapping of emotion labels to their confidence scores"
     )
 
-    @validator('emotion_labels')
-    def validate_emotion_scores(cls, v):
+    @field_validator('emotion_labels')
+    def validate_emotion_scores(cls, value: dict[str, float]) -> dict[str, float]:
         """Ensure emotion confidence scores are between 0.0 and 1.0."""
-        for emotion, score in v.items():
+        for emotion, score in value.items():
             if not 0.0 <= score <= 1.0:
                 raise ValueError(f"Emotion score for '{emotion}' must be between 0.0 and 1.0")
-        return v
+        return value
 
 
 class MemoryContext(BaseModel):
@@ -190,14 +190,19 @@ class BaseMemory(BaseModel):
         self.activation_level = min(1.0, self.activation_level + 0.1)
         logger.debug(f"Updated access metadata for memory {self.id}")
 
-    @validator('associations')
-    def validate_associations(cls, v, values):
+    @field_validator('associations')
+    def validate_associations(
+        cls,
+        value: list[MemoryAssociation],
+        info: FieldValidationInfo,
+    ) -> list[MemoryAssociation]:
         """Validate that associations don't reference the memory itself."""
-        if 'id' in values:
-            for assoc in v:
-                if assoc.target_id == values['id']:
+        memory_id = info.data.get('id') if info.data is not None else None
+        if memory_id is not None:
+            for association in value:
+                if association.target_id == memory_id:
                     raise ValueError("Memory cannot have an association to itself")
-        return v
+        return value
 
     class Config:
         """Pydantic configuration."""
@@ -241,13 +246,13 @@ class WorkingMemory(BaseMemory):
         description="Current processing stage (e.g., 'initial', 'processing', 'ready')"
     )
 
-    @root_validator
-    def set_default_expiration(cls, values):
+    @model_validator(mode='after')
+    def set_default_expiration(self) -> 'WorkingMemory':
         """Set default expiration time if not provided."""
-        if values.get('expiration') is None:
+        if self.expiration is None:
             # Default working memory items expire in 30 minutes if not accessed
-            values['expiration'] = datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
-        return values
+            self.expiration = datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+        return self
 
     def is_expired(self) -> bool:
         """Check if the working memory item has expired."""
@@ -417,16 +422,17 @@ class MemoryQuery(BaseModel):
         description="How to sort results (relevance, recency, priority, activation)"
     )
     
-    @root_validator
-    def validate_date_ranges(cls, values):
+    @model_validator(mode='after')
+    def validate_date_ranges(self) -> 'MemoryQuery':
         """Validate that date ranges are logical."""
-        created_after = values.get('created_after')
-        created_before = values.get('created_before')
-        
-        if created_after and created_before and created_after > created_before:
+        if (
+            self.created_after
+            and self.created_before
+            and self.created_after > self.created_before
+        ):
             raise ValueError("created_after must be earlier than created_before")
-        
-        return values
+
+        return self
 
 
 class MemoryUpdateRequest(BaseModel):
@@ -441,16 +447,20 @@ class MemoryUpdateRequest(BaseModel):
     associations_to_remove: Optional[list[uuid.UUID]] = None
     emotion: Optional[MemoryEmotion] = None
     
-    @validator('associations_to_add')
-    def validate_associations(cls, v):
+    @field_validator('associations_to_add')
+    def validate_associations(
+        cls, value: Optional[list[MemoryAssociation]]
+    ) -> Optional[list[MemoryAssociation]]:
         """Validate that associations are properly formed."""
-        if v is not None:
+        if value is not None:
             seen_ids = set()
-            for assoc in v:
-                if assoc.target_id in seen_ids:
-                    raise ValueError(f"Duplicate association to target {assoc.target_id}")
-                seen_ids.add(assoc.target_id)
-        return v
+            for association in value:
+                if association.target_id in seen_ids:
+                    raise ValueError(
+                        f"Duplicate association to target {association.target_id}"
+                    )
+                seen_ids.add(association.target_id)
+        return value
 
 
 class MemoryOperationResponse(BaseModel):

@@ -112,6 +112,33 @@ class MemorySanitizer:
 
         return self._sanitize_value(field, value)
 
+    def sanitize_content(self, value: Any) -> dict[str, Any]:
+        """Sanitize memory content payloads for storage or updates.
+
+        Args:
+            value: Arbitrary memory content supplied by a caller.
+
+        Returns:
+            A mapping of sanitized content fields suitable for persistence.
+        """
+
+        if value is None:
+            return {}
+
+        if isinstance(value, str):
+            return {"text": self._sanitize_string("content", value)}
+
+        sanitized_value = self._sanitize_value("content", value)
+
+        if isinstance(sanitized_value, Mapping):
+            return dict(sanitized_value)
+
+        if isinstance(sanitized_value, (list, tuple, set)):
+            ordered = list(sanitized_value)
+            return {"raw_content": ordered}
+
+        return {"raw_content": sanitized_value}
+
     def sanitize_metadata(
         self, metadata: Mapping[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]]:

@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from neuroca.memory.models.memory_item import MemoryItem, MemoryStatus
+from neuroca.memory.models.memory_item import MemoryItem
 
 
 logger = logging.getLogger(__name__)

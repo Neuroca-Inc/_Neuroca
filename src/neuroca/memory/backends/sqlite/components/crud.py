@@ -7,12 +7,11 @@ operations on memory items in the SQLite database.
 
 import json
 import logging
-import sqlite3
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
-from neuroca.memory.models.memory_item import MemoryItem
+from neuroca.memory.models.memory_item import MemoryContent, MemoryItem, MemoryMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +32,81 @@ class SQLiteCRUD:
             connection_manager: SQLiteConnection instance to manage database connections
         """
         self.connection_manager = connection_manager
+
+    def _serialise_content(self, content: Any) -> str:
+        """Return a database-friendly representation of ``content``."""
+
+        if isinstance(content, MemoryContent):
+            return json.dumps(content.model_dump(exclude_none=True))
+        if isinstance(content, dict):
+            return json.dumps(content)
+        if isinstance(content, str):
+            return content
+        if content is None:
+            return ""
+        try:
+            return json.dumps(content)
+        except TypeError:
+            return str(content)
+
+    def _serialise_metadata(self, metadata: Any) -> Tuple[Dict[str, Any], List[str]]:
+        """Normalise ``metadata`` into a JSON payload and flattened tag list."""
+
+        if metadata is None:
+            return {}, []
+
+        if isinstance(metadata, MemoryMetadata):
+            metadata_dict: Dict[str, Any] = metadata.model_dump(exclude_none=True)
+        elif isinstance(metadata, dict):
+            metadata_dict = dict(metadata)
+        else:
+            return {}, []
+
+        tags_field = metadata_dict.get("tags")
+        if isinstance(tags_field, dict):
+            tag_list = [str(tag) for tag, enabled in tags_field.items() if enabled]
+        elif isinstance(tags_field, list):
+            tag_list = [str(tag) for tag in tags_field]
+        elif tags_field is None:
+            tag_list = []
+        else:
+            tag_list = [str(tags_field)]
+
+        metadata_dict["tags"] = tag_list
+        metadata_dict = self._make_json_safe(metadata_dict)
+        return metadata_dict, tag_list
+
+    def _deserialise_content(self, stored_value: Any) -> Any:
+        """Convert stored SQLite content back into the MemoryContent payload."""
+
+        if stored_value is None:
+            return {}
+        if isinstance(stored_value, (dict, list)):
+            return stored_value
+        if isinstance(stored_value, str):
+            try:
+                return json.loads(stored_value)
+            except json.JSONDecodeError:
+                return stored_value
+        return stored_value
+
+    def _make_json_safe(self, value: Any) -> Any:
+        """Recursively convert metadata payloads into JSON-serialisable structures."""
+
+        if isinstance(value, dict):
+            return {key: self._make_json_safe(val) for key, val in value.items()}
+        if isinstance(value, list):
+            return [self._make_json_safe(item) for item in value]
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc).isoformat()
+        return value
+
+    def _now_iso(self) -> str:
+        """Return the current UTC timestamp in ISO 8601 format."""
+
+        return datetime.now(timezone.utc).isoformat()
     
     def store(self, memory_item: MemoryItem) -> str:
         """
@@ -91,6 +165,8 @@ class SQLiteCRUD:
         conn = self.connection_manager.get_connection()
         
         # Store the memory item
+        serialised_content = self._serialise_content(memory_item.content)
+
         conn.execute(
             """
             INSERT INTO memory_items (id, content, summary, created_at)
@@ -98,12 +174,12 @@ class SQLiteCRUD:
             """,
             (
                 memory_id,
-                memory_item.content,
+                serialised_content,
                 memory_item.summary,
-                datetime.now()
+                self._now_iso()
             )
         )
-        
+
         # Store metadata if it exists
         if memory_item.metadata:
             self._store_metadata(memory_id, memory_item.metadata)
@@ -144,16 +220,18 @@ class SQLiteCRUD:
             SET last_accessed = ?
             WHERE id = ?
             """,
-            (datetime.now(), memory_id)
+            (self._now_iso(), memory_id)
         )
         
         # Get metadata
         metadata = self._retrieve_metadata(memory_id)
         
         # Create the memory item
+        content_payload = self._deserialise_content(memory_row[1])
+
         memory_item = MemoryItem(
             id=memory_row[0],
-            content=memory_row[1],
+            content=content_payload,
             summary=memory_row[2],
             metadata=metadata
         )
@@ -229,6 +307,8 @@ class SQLiteCRUD:
         conn = self.connection_manager.get_connection()
         
         # Update the memory item
+        serialised_content = self._serialise_content(memory_item.content)
+
         conn.execute(
             """
             UPDATE memory_items
@@ -236,13 +316,13 @@ class SQLiteCRUD:
             WHERE id = ?
             """,
             (
-                memory_item.content,
+                serialised_content,
                 memory_item.summary,
-                datetime.now(),
+                self._now_iso(),
                 memory_id
             )
         )
-        
+
         # Update metadata if it exists
         if memory_item.metadata:
             self._update_metadata(memory_id, memory_item.metadata)
@@ -283,19 +363,23 @@ class SQLiteCRUD:
             logger.debug(f"Deleted memory with ID: {memory_id}")
             return True
     
-    def _store_metadata(self, memory_id: str, metadata: Dict) -> None:
+    def _store_metadata(self, memory_id: str, metadata: Any) -> None:
         """
         Store metadata for a memory item.
-        
+
         Args:
             memory_id: ID of the memory item
             metadata: Metadata to store
         """
         # Get a connection for the current thread
         conn = self.connection_manager.get_connection()
-        
-        metadata_json = json.dumps(metadata)
-        
+
+        metadata_dict, tag_list = self._serialise_metadata(metadata)
+        if not metadata_dict:
+            return
+
+        metadata_json = json.dumps(metadata_dict)
+
         conn.execute(
             """
             INSERT INTO memory_metadata (memory_id, metadata_json)
@@ -303,10 +387,10 @@ class SQLiteCRUD:
             """,
             (memory_id, metadata_json)
         )
-        
+
         # Store tags if they exist
-        if metadata.get("tags"):
-            for tag in metadata["tags"]:
+        if tag_list:
+            for tag in tag_list:
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO memory_tags (memory_id, tag)
@@ -315,19 +399,31 @@ class SQLiteCRUD:
                     (memory_id, tag)
                 )
     
-    def _update_metadata(self, memory_id: str, metadata: Dict) -> None:
+    def _update_metadata(self, memory_id: str, metadata: Any) -> None:
         """
         Update metadata for a memory item.
-        
+
         Args:
             memory_id: ID of the memory item
             metadata: Updated metadata
         """
         # Get a connection for the current thread
         conn = self.connection_manager.get_connection()
-        
-        metadata_json = json.dumps(metadata)
-        
+
+        metadata_dict, tag_list = self._serialise_metadata(metadata)
+        if not metadata_dict:
+            conn.execute(
+                "DELETE FROM memory_metadata WHERE memory_id = ?",
+                (memory_id,),
+            )
+            conn.execute(
+                "DELETE FROM memory_tags WHERE memory_id = ?",
+                (memory_id,),
+            )
+            return
+
+        metadata_json = json.dumps(metadata_dict)
+
         # Check if metadata exists
         metadata_exists = conn.execute(
             "SELECT 1 FROM memory_metadata WHERE memory_id = ?",
@@ -353,15 +449,15 @@ class SQLiteCRUD:
             )
         
         # Update tags
-        if metadata.get("tags"):
+        if tag_list:
             # Delete existing tags
             conn.execute(
                 "DELETE FROM memory_tags WHERE memory_id = ?",
                 (memory_id,)
             )
-            
+
             # Add new tags
-            for tag in metadata["tags"]:
+            for tag in tag_list:
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO memory_tags (memory_id, tag)
@@ -369,7 +465,7 @@ class SQLiteCRUD:
                     """,
                     (memory_id, tag)
                 )
-    
+
     def _retrieve_metadata(self, memory_id: str) -> Dict:
         """
         Retrieve metadata for a memory item.
@@ -393,8 +489,12 @@ class SQLiteCRUD:
         ).fetchone()
         
         if metadata_row:
-            return json.loads(metadata_row[0])
-        
+            metadata_dict = json.loads(metadata_row[0])
+            tags_field = metadata_dict.get("tags")
+            if isinstance(tags_field, list):
+                metadata_dict["tags"] = {str(tag): True for tag in tags_field}
+            return metadata_dict
+
         return {}
     
     def _generate_id(self) -> str:

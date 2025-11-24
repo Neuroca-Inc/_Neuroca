@@ -6,10 +6,10 @@ tasks for the Long-Term Memory (LTM) tier.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Callable
+from typing import Any, Dict
 
 from neuroca.memory.backends import BaseStorageBackend
-from neuroca.memory.models.memory_item import MemoryItem, MemoryStatus
+from neuroca.memory.models.memory_item import MemoryItem
 
 
 logger = logging.getLogger(__name__)

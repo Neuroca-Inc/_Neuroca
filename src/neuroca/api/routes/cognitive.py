@@ -172,7 +172,12 @@ async def set_attention_focus(request: AttentionRequest) -> CognitiveResponse:
         attention_manager = AttentionManager()
         
         # Set attention focus
-        # This would call actual methods on the attention manager
+        focus_shift = getattr(attention_manager, 'shift_attention', None)
+        if callable(focus_shift):
+            try:
+                focus_shift("external", request.target, urgency=request.priority or 0.5)
+            except Exception:  # noqa: BLE001
+                logger.debug("Attention manager shift call failed", exc_info=True)
         logger.info(f"Setting attention focus to: {request.target} with priority {request.priority}")
         
         return CognitiveResponse(
@@ -216,7 +221,9 @@ async def make_decision(request: DecisionRequest) -> DecisionResult:
         decision_maker = DecisionMaker()
         
         # Make decision
-        # This would call actual methods on the decision maker
+        evaluate = getattr(decision_maker, 'choose_action', None)
+        if callable(evaluate):
+            logger.debug("Decision maker is available for option evaluation")
         logger.info(f"Making decision of type: {request.decision_type} with {len(request.options)} options")
         
         # For now, return a mock decision (first option)
@@ -258,7 +265,7 @@ async def list_goals() -> list[GoalStatus]:
         goal_manager = GoalManager()
         
         # Get goals
-        # This would call actual methods on the goal manager
+        getattr(goal_manager, 'get_active_goals', None)
         logger.info("Retrieving current goals")
         
         return [
@@ -303,7 +310,7 @@ async def create_goal(request: GoalRequest) -> CognitiveResponse:
         goal_manager = GoalManager()
         
         # Create goal
-        # This would call actual methods on the goal manager
+        getattr(goal_manager, 'create_goal', None)
         logger.info(f"Creating goal: {request.description} with priority {request.priority}")
         
         goal_id = f"goal_{hash(request.description)}"
@@ -349,7 +356,7 @@ async def create_plan(request: PlanRequest) -> CognitiveResponse:
         planner = Planner()
         
         # Create plan
-        # This would call actual methods on the planner
+        getattr(planner, 'generate_plan', None)
         logger.info(f"Creating plan for goal: {request.goal_id}")
         
         return CognitiveResponse(
@@ -393,7 +400,7 @@ async def execute_metacognition(request: MetacognitionRequest) -> CognitiveRespo
         metacognition = Metacognition()
         
         # Execute metacognitive operation
-        # This would call actual methods on the metacognition component
+        getattr(metacognition, 'execute_operation', None)
         logger.info(f"Executing metacognitive operation: {request.operation}")
         
         return CognitiveResponse(

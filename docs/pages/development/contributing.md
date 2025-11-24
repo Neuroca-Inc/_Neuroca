@@ -25,7 +25,7 @@ Thank you for your interest in contributing to the NeuroCognitive Architecture (
 
 ## Code of Conduct
 
-We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](../community/code_of_conduct.md).
+We are committed to providing a welcoming and inclusive environment for all contributors. Please read and follow our [Code of Conduct](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/CODE_OF_CONDUCT.md).
 
 ## Getting Started
 
@@ -235,7 +235,7 @@ For feature requests, please:
 
 ## License
 
-By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](../../LICENSE) file for details.
+By contributing to NeuroCognitive Architecture, you agree that your contributions will be licensed under the project's license. See the [LICENSE](https://github.com/Modern-Prometheus-AI/Neuroca/blob/main/LICENSE) file for details.
 
 ---
 

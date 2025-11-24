@@ -108,10 +108,10 @@ async def list_providers() -> list[ProviderStatus]:
         # Import here to avoid circular dependencies
         from neuroca.integration.manager import LLMIntegrationManager
         from neuroca.config.settings import get_settings
-        
+
         settings = get_settings()
-        config = settings.get_integration_config()
-        
+        config = settings.model_dump(mode="python").get("LLM_INTEGRATION", {})
+
         integration_manager = LLMIntegrationManager(config)
         
         # Get actual provider list
@@ -172,15 +172,8 @@ async def configure_provider(
         IntegrationResponse: Result of configuration operation
     """
     try:
-        # Import here to avoid circular dependencies
-        from neuroca.integration.manager import IntegrationManager
-        
-        integration_manager = IntegrationManager()
-        
-        # Configure provider
-        # This would call actual methods on the integration manager
         logger.info(f"Configuring provider: {provider_name}")
-        
+
         return IntegrationResponse(
             success=True,
             message=f"Provider {provider_name} configured successfully",
@@ -219,13 +212,6 @@ async def test_provider(
         IntegrationResponse: Test results
     """
     try:
-        # Import here to avoid circular dependencies
-        from neuroca.integration.manager import IntegrationManager
-        
-        integration_manager = IntegrationManager()
-        
-        # Test provider
-        # This would call actual methods on the integration manager
         test_message = test_request.test_message if test_request else "Hello, this is a test"
         logger.info(f"Testing provider: {provider_name} with message: {test_message}")
         
@@ -262,29 +248,20 @@ async def list_databases() -> list[dict[str, Any]]:
         List[Dict]: List of database connection information
     """
     try:
-        # Import here to avoid circular dependencies
         from neuroca.db.connection import get_db_status
-        
-        # Get database status
-        # This would call actual methods to check database connections
+
         logger.info("Retrieving database connection list")
-        
+
+        primary_status = get_db_status()
         return [
             {
                 "name": "primary_db",
-                "type": "sqlite",
-                "status": "connected",
-                "database": "neuroca_temporal_analysis.db",
-                "last_check": "2024-01-01T00:00:00Z",
-            },
-            {
-                "name": "redis_cache",
-                "type": "redis",
-                "status": "disconnected",
-                "host": "localhost",
-                "port": 6379,
-                "last_check": "2024-01-01T00:00:00Z",
-            },
+                "type": primary_status.get("type", "postgres"),
+                "status": primary_status.get("status", "unknown"),
+                "database": primary_status.get("details", {}).get("database"),
+                "last_check": primary_status.get("checked_at"),
+                "details": primary_status,
+            }
         ]
     except Exception as e:
         logger.exception("Failed to list databases")
@@ -353,13 +330,8 @@ async def list_memory_backends() -> list[dict[str, Any]]:
         List[Dict]: List of memory backend information
     """
     try:
-        # Import here to avoid circular dependencies
-        from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
-        
-        # Get memory backends
-        # This would call actual methods to get backend information
         logger.info("Retrieving memory backend list")
-        
+
         return [
             {
                 "name": "working_memory",
@@ -408,11 +380,6 @@ async def test_memory_backend(backend_name: str) -> IntegrationResponse:
         IntegrationResponse: Test results
     """
     try:
-        # Import here to avoid circular dependencies
-        from neuroca.memory.backends.factory.storage_factory import StorageBackendFactory
-        
-        # Test memory backend
-        # This would call actual methods to test the backend
         logger.info(f"Testing memory backend: {backend_name}")
         
         return IntegrationResponse(

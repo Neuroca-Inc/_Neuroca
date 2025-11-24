@@ -9,13 +9,11 @@ This adapter is provided for backward compatibility during migration
 and will be removed in a future version.
 """
 
-import asyncio
 import logging
 import warnings
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from neuroca.memory.manager.memory_manager import MemoryManager
-from neuroca.memory.exceptions import MemoryManagerOperationError
 
 
 logger = logging.getLogger(__name__)

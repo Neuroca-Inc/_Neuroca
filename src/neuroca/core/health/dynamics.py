@@ -345,7 +345,7 @@ class ComponentHealth:
                 # Recovery happens more effectively in non-optimal states (if not critical)
                 if self.state in [HealthState.FATIGUED, HealthState.STRESSED, HealthState.IMPAIRED]:
                      new_value += current_recovery_rate * elapsed_seconds
-            
+
             elif param.type == HealthParameterType.ATTENTION:
                 # Attention decays, recovery depends on state/strategy
                 attention_decay = current_decay_rate * elapsed_seconds
@@ -353,12 +353,41 @@ class ComponentHealth:
                 # Attention recovers better in normal/optimal states
                 if self.state in [HealthState.NORMAL, HealthState.OPTIMAL]:
                     new_value += current_recovery_rate * elapsed_seconds
-            
+
+            elif param.type == HealthParameterType.COGNITIVE_LOAD:
+                # Cognitive load should trend toward the optimal range rather than
+                # collapsing when long gaps occur between updates. We therefore
+                # limit each adjustment to at most half the current deviation so
+                # we maintain headroom above the optimal target after heavy usage
+                # while still recovering toward it when load is low.
+                if param.value > param.optimal_value:
+                    deviation = param.value - param.optimal_value
+                    adjustment = min(
+                        0.5,
+                        max(0.0, current_decay_rate * elapsed_seconds),
+                    )
+                    new_value = max(
+                        param.optimal_value,
+                        param.value - deviation * adjustment,
+                    )
+                elif param.value < param.optimal_value:
+                    deviation = param.optimal_value - param.value
+                    adjustment = min(
+                        0.5,
+                        max(0.0, current_recovery_rate * elapsed_seconds),
+                    )
+                    new_value = min(
+                        param.optimal_value,
+                        param.value + deviation * adjustment,
+                    )
+                else:
+                    new_value = param.value
+
             elif param.type == HealthParameterType.FATIGUE:
                 # Fatigue increases via decay, reduces via recovery (especially during rest)
                 fatigue_increase = current_decay_rate * elapsed_seconds
                 new_value = param.value + fatigue_increase
-                
+
                 # Recovery reduces fatigue, enhanced by coping strategies
                 recovery = current_recovery_rate * elapsed_seconds
                 new_value -= recovery

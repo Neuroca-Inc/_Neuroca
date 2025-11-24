@@ -5,7 +5,7 @@ This module provides the RedisIndexing class for managing Redis indices for memo
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional
 
 from neuroca.memory.backends.redis.components.connection import RedisConnection
 from neuroca.memory.backends.redis.components.utils import RedisUtils

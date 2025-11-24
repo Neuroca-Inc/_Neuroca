@@ -41,7 +41,7 @@ from typing import Any, Optional, Union
 import dotenv
 import yaml
 # Handle Pydantic v1/v2 compatibility
-from pydantic import AnyHttpUrl, ConfigDict, Field, PostgresDsn, SecretStr, field_validator
+from pydantic import AnyHttpUrl, ConfigDict, Field, SecretStr, field_validator
 try:
     # Try Pydantic v2 imports
     from pydantic_settings import BaseSettings
@@ -279,7 +279,7 @@ class Settings(BaseSettings):
     """
     # Application metadata
     APP_NAME: str = "NeuroCognitive Architecture"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "1.0.0"
     APP_DESCRIPTION: str = "Biologically-inspired cognitive architecture for LLMs"
     
     # Environment configuration
@@ -329,7 +329,16 @@ class Settings(BaseSettings):
             kwargs["ENV"] = os.environ.get("NCA_ENV")
         
         # Load configuration from files
-        config_dict = self._load_config_files(kwargs.get("ENV", EnvironmentType.DEVELOPMENT))
+        # Determine environment early (before BaseSettings reads env vars)
+        # Prefer explicit kwargs, then environment variables, defaulting to development
+        env_hint: Any = (
+            kwargs.get("ENV")
+            or os.getenv("NCA_ENV")
+            or os.getenv("ENV")
+            or EnvironmentType.DEVELOPMENT
+        )
+
+        config_dict = self._load_config_files(env_hint)
         
         # Update kwargs with file config (env vars will still take precedence)
         kwargs.update(config_dict)

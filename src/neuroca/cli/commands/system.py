@@ -31,6 +31,7 @@ Examples:
     $ neuroca system backup --path /path/to/backups/
 """
 
+import copy
 import datetime
 import json
 import os
@@ -41,6 +42,7 @@ import subprocess
 import sys
 import time
 from collections import deque
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -48,6 +50,7 @@ import click
 import psutil
 import yaml
 from tabulate import tabulate
+from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from neuroca.config import settings
 from neuroca.core.exceptions import BackupRestoreError, ConfigurationError
@@ -68,6 +71,89 @@ SYSTEM_COMPONENTS = [
     "llm.integration",
     "api.service"
 ]
+
+
+class _PythonTagSafeLoader(yaml.SafeLoader):
+    """YAML loader that degrades Python-specific tags into plain data types."""
+
+
+def _construct_python_tag(loader: yaml.SafeLoader, suffix: str, node: Any) -> Any:
+    """Convert Python-specific YAML tags into standard Python primitives."""
+
+    if isinstance(node, ScalarNode):
+        return loader.construct_scalar(node)
+    if isinstance(node, SequenceNode):
+        return [loader.construct_object(child) for child in node.value]
+    if isinstance(node, MappingNode):
+        return {loader.construct_object(key): loader.construct_object(value) for key, value in node.value}
+    return loader.construct_object(node)
+
+
+_PythonTagSafeLoader.add_multi_constructor("tag:yaml.org,2002:python/", _construct_python_tag)
+_PythonTagSafeLoader.add_multi_constructor("!!python/", _construct_python_tag)
+
+
+def _snapshot_runtime_configuration() -> Mapping[str, Any]:
+    """Capture the current runtime configuration as a mapping."""
+
+    if hasattr(settings, "as_dict") and callable(getattr(settings, "as_dict")):
+        raw_snapshot = settings.as_dict()
+    elif hasattr(settings, "settings") and hasattr(settings.settings, "as_dict"):
+        raw_snapshot = settings.settings.as_dict()
+    else:
+        raise BackupRestoreError("Runtime settings interface does not expose as_dict().")
+
+    if not isinstance(raw_snapshot, Mapping):
+        raise BackupRestoreError("Runtime configuration snapshot must be a mapping.")
+
+    return copy.deepcopy(raw_snapshot)
+
+
+def _sanitize_config_snapshot(snapshot: Any) -> Any:
+    """Normalize configuration values into YAML-safe primitives."""
+
+    if isinstance(snapshot, Enum):
+        return snapshot.value
+    if snapshot is None or isinstance(snapshot, (bool, int, float, str)):
+        return snapshot
+    if isinstance(snapshot, os.PathLike):
+        return os.fspath(snapshot)
+    if isinstance(snapshot, Mapping):
+        return {str(key): _sanitize_config_snapshot(value) for key, value in snapshot.items()}
+    if isinstance(snapshot, (list, tuple, set, frozenset)):
+        return [_sanitize_config_snapshot(item) for item in snapshot]
+    return snapshot
+
+
+def _load_backup_configuration(config_path: str) -> Mapping[str, Any]:
+    """Load configuration data from a backup file, tolerating Python YAML tags."""
+
+    raw_text = Path(config_path).read_text(encoding="utf-8")
+    try:
+        loaded = yaml.safe_load(raw_text)
+    except yaml.YAMLError:
+        loaded = yaml.load(raw_text, Loader=_PythonTagSafeLoader)
+
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, Mapping):
+        raise BackupRestoreError("Backup configuration payload must be a mapping.")
+    return loaded
+
+
+def _apply_runtime_configuration(config_data: Mapping[str, Any]) -> None:
+    """Apply configuration values to the active runtime settings object."""
+
+    target = None
+    if hasattr(settings, "update_from_dict") and callable(getattr(settings, "update_from_dict")):
+        target = settings
+    elif hasattr(settings, "settings") and hasattr(settings.settings, "update_from_dict"):
+        target = settings.settings
+    if target is None:
+        raise BackupRestoreError("Runtime settings interface does not support update_from_dict().")
+
+    target.update_from_dict(dict(config_data))
+
 
 @click.group(name="system")
 def system_commands():
@@ -803,8 +889,10 @@ def _create_system_backup(backup_path: str, include_logs: bool = False,
             
             # Save current configuration
             config_file = os.path.join(config_dir, "settings.yaml")
-            with open(config_file, 'w') as f:
-                yaml.dump(settings.as_dict(), f, default_flow_style=False)
+            config_snapshot = _snapshot_runtime_configuration()
+            sanitized_snapshot = _sanitize_config_snapshot(config_snapshot)
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.safe_dump(sanitized_snapshot, f, default_flow_style=False, sort_keys=True)
             
             # Backup database if requested
             if include_data:
@@ -972,11 +1060,8 @@ def _restore_system_from_backup(backup_path: str) -> bool:
             # Restore configuration
             config_file = os.path.join(temp_dir, "config/settings.yaml")
             if os.path.exists(config_file):
-                with open(config_file) as f:
-                    config_data = yaml.safe_load(f)
-                
-                # Update configuration
-                settings.update_from_dict(config_data)
+                config_data = _load_backup_configuration(config_file)
+                _apply_runtime_configuration(config_data)
             
             # Restore database if included
             if metadata["includes"].get("data", False):

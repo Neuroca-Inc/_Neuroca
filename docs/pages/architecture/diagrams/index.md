@@ -16,7 +16,6 @@ This directory contains architectural diagrams of the NeuroCognitive Architectur
 ## Cross-Component Diagrams
 
 - [Data Flow Diagrams](./data-flow/index.md) - Data flow between major components
-- [Event System](./events/index.md) - Event propagation and handling
 - [Infrastructure Architecture](./infrastructure/index.md) - Deployment and infrastructure
 
 Each diagram provides progressively more detailed views of the system components.

@@ -364,6 +364,10 @@ class MemoryAuditTrail:
         scope_summary: dict[str, Any] | None,
     ) -> MemoryCreatedEvent:
         metadata = dict(summary.get("metadata_snapshot", {}))
+        # Ensure tags conform to expected list[str] shape for event metadata
+        tags_value = metadata.get("tags")
+        if isinstance(tags_value, dict) and "keys" in tags_value:
+            metadata["tags"] = list(tags_value.get("keys") or [])
         metadata["tier"] = tier
         if scope_summary:
             metadata["scope"] = scope_summary
@@ -391,6 +395,10 @@ class MemoryAuditTrail:
         new_memory_id: str | None,
     ) -> MemoryConsolidatedEvent:
         metadata = dict(summary.get("metadata_snapshot", {}))
+        # Ensure tags conform to expected list[str] shape for event metadata
+        tags_value = metadata.get("tags")
+        if isinstance(tags_value, dict) and "keys" in tags_value:
+            metadata["tags"] = list(tags_value.get("keys") or [])
         metadata.update(
             {
                 "source_tier": source_tier,
@@ -428,4 +436,3 @@ class MemoryAuditTrail:
 
 
 __all__ = ["MemoryAuditTrail", "MemoryLogSanitizer"]
-
