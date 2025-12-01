@@ -1,519 +1,228 @@
-# NeuroCognitive Architecture (NCA) API Examples
+# Neuroca HTTP API Examples (v1)
 
-This document provides practical examples for using the NeuroCognitive Architecture API. These examples demonstrate how to interact with the various components of the NCA system, including memory management, cognitive processes, health dynamics, and LLM integration.
+This document provides practical, **current** examples for using the Neuroca HTTP API surface as exposed by the FastAPI application. The examples here are aligned with the routes described in `endpoints.md` and the actual implementations in the `src/neuroca/api/routes/` package.
 
-## Table of Contents
+> All URLs below assume a local development server running at `http://127.0.0.1:8000` with the Neuroca routers mounted under the `/api` prefix. For example, `POST /v1/memory` means `POST http://127.0.0.1:8000/api/v1/memory`.
 
-- [Authentication](#authentication)
-- [Basic Usage](#basic-usage)
-- [Memory System Examples](#memory-system-examples)
-  - [Working Memory](#working-memory)
-  - [Short-Term Memory](#short-term-memory)
-  - [Long-Term Memory](#long-term-memory)
-- [Cognitive Process Examples](#cognitive-process-examples)
-- [Health Dynamics Examples](#health-dynamics-examples)
-- [LLM Integration Examples](#llm-integration-examples)
-- [Advanced Usage Patterns](#advanced-usage-patterns)
-- [Error Handling](#error-handling)
-- [Batch Operations](#batch-operations)
+## 1. Authentication and Environment
 
-## Authentication
+In the current default development configuration:
 
-Before using the API, you need to authenticate. Here's how to obtain and use an API token:
+- No API keys or OAuth flows are enforced by the routers themselves.
+- Memory routes expect a logical user context but fall back to a demo user when explicit auth is not configured.
+- LLM, health, metrics, and system routes can be protected by your reverse proxy or future auth middleware.
+
+For production or shared deployments you **must** place the API behind an authentication layer (for example, an API gateway that injects a `user_id` or `X-API-Key` header). Tasks B1–B3 in the monetization track will formalize this model; for now, the examples below run against an unauthenticated local instance.
+
+### 1.1 Starting the API locally
+
+From the repository root, with a Python virtual environment activated and dependencies installed:
+
+```bash
+uvicorn neuroca.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Once running, the interactive OpenAPI docs are available at:
+
+- `http://127.0.0.1:8000/docs` (Swagger UI)
+- `http://127.0.0.1:8000/redoc` (ReDoc), if enabled
+
+All HTTP examples below use `curl` and Python's `requests` library.
+
+## 2. Memory API v1 Examples
+
+The versioned memory API is mounted under `/api/v1/memory` and implemented in the `memory_v1` router. It exposes CRUD and listing operations over a unified memory record model.
+
+### 2.1 Create a memory — `POST /api/v1/memory`
+
+**curl**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/memory" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tier": "stm",
+    "content": "The meeting is scheduled for 3 PM tomorrow.",
+    "metadata": {
+      "source": "calendar",
+      "category": "appointment"
+    }
+  }'
+```
+
+**Python**
 
 ```python
 import requests
-import json
 
-# Get API token
+base_url = "http://127.0.0.1:8000/api"
+
 response = requests.post(
-    "https://api.neuroca.dev/v1/auth/token",
+    f"{base_url}/v1/memory",
     json={
-        "client_id": "your_client_id",
-        "client_secret": "your_client_secret"
-    }
-)
-
-if response.status_code == 200:
-    token = response.json()["access_token"]
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-else:
-    print(f"Authentication failed: {response.text}")
-```
-
-## Basic Usage
-
-### Creating a New NCA Instance
-
-```python
-# Create a new NCA instance
-response = requests.post(
-    "https://api.neuroca.dev/v1/instances",
-    headers=headers,
-    json={
-        "name": "My NCA Instance",
-        "description": "A test instance for exploring NCA capabilities",
-        "config": {
-            "memory_capacity": {
-                "working": 7,  # Miller's number for working memory capacity
-                "short_term": 100,
-                "long_term": 10000
-            },
-            "health_dynamics": {
-                "enabled": True,
-                "initial_values": {
-                    "energy": 100,
-                    "stress": 0,
-                    "fatigue": 0
-                }
-            }
-        }
-    }
-)
-
-instance_id = response.json()["instance_id"]
-print(f"Created NCA instance with ID: {instance_id}")
-```
-
-### Basic Interaction with the NCA
-
-```python
-# Send a prompt to the NCA instance
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/interact",
-    headers=headers,
-    json={
-        "prompt": "What is the capital of France?",
-        "context": "We're discussing European geography.",
-        "options": {
-            "use_working_memory": True,
-            "use_short_term_memory": True,
-            "use_long_term_memory": True
-        }
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
-```
-
-## Memory System Examples
-
-### Working Memory
-
-Working memory is used for immediate processing and has limited capacity.
-
-```python
-# Store information in working memory
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/working",
-    headers=headers,
-    json={
+        "tier": "stm",
         "content": "The meeting is scheduled for 3 PM tomorrow.",
-        "importance": 0.8,  # 0-1 scale
         "metadata": {
             "source": "calendar",
-            "category": "appointment"
-        }
-    }
+            "category": "appointment",
+        },
+    },
 )
+response.raise_for_status()
+memory = response.json()
+print("Created memory:", memory["id"], "tier:", memory.get("tier"))
+```
 
-memory_id = response.json()["memory_id"]
+A successful response returns a JSON memory record with an `id`, the resolved `user_id`, the selected `tier`, and any stored metadata. Capacity or validation failures are returned with appropriate HTTP status codes (see the endpoint reference).
 
-# Retrieve from working memory
+### 2.2 List memories — `GET /api/v1/memory`
+
+To list memories visible to the current user:
+
+```bash
+curl "http://127.0.0.1:8000/api/v1/memory?tier=stm&limit=10"
+```
+
+```python
+import requests
+
+base_url = "http://127.0.0.1:8000/api"
+
 response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/working/{memory_id}",
-    headers=headers
+    f"{base_url}/v1/memory",
+    params={"tier": "stm", "limit": 10},
 )
-
-print(json.dumps(response.json(), indent=2))
-
-# List all items in working memory
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/working",
-    headers=headers
-)
-
-print(f"Working memory items: {len(response.json()['items'])}")
+response.raise_for_status()
+memories = response.json()
+print("Returned", len(memories), "memory records")
 ```
 
-### Short-Term Memory
-
-Short-term memory has a larger capacity but decays over time without reinforcement.
+### 2.3 Retrieve a single memory — `GET /api/v1/memory/{memory_id}`
 
 ```python
-# Store information in short-term memory
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/short-term",
-    headers=headers,
-    json={
-        "content": "The client mentioned they prefer blue for the website theme.",
-        "importance": 0.6,
-        "retention_period": 86400,  # 24 hours in seconds
-        "metadata": {
-            "source": "client_meeting",
-            "category": "preferences"
-        }
-    }
-)
+import requests
 
-memory_id = response.json()["memory_id"]
+base_url = "http://127.0.0.1:8000/api"
+memory_id = "YOUR_MEMORY_ID"
 
-# Reinforce a memory to prevent decay
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/short-term/{memory_id}/reinforce",
-    headers=headers,
-    json={
-        "strength": 0.5  # 0-1 scale
-    }
-)
-
-# Search short-term memory
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/short-term/search",
-    headers=headers,
-    params={
-        "query": "website theme",
-        "limit": 5
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
+response = requests.get(f"{base_url}/v1/memory/{memory_id}")
+if response.status_code == 404:
+    print("Memory not found")
+else:
+    response.raise_for_status()
+    print(response.json())
 ```
 
-### Long-Term Memory
+## 3. LLM API Examples
 
-Long-term memory is persistent and has the largest capacity.
+The LLM API is mounted under `/api/llm` and is optimized for local-first providers such as Ollama. By default, the API uses the provider and model configured in the application settings (see the LLM route docs).
+
+### 3.1 Single-shot query — `POST /api/llm/query`
 
 ```python
-# Store information in long-term memory
+import requests
+
+base_url = "http://127.0.0.1:8000/api"
+
 response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/long-term",
-    headers=headers,
+    f"{base_url}/llm/query",
     json={
-        "content": "The company was founded in 2010 by Jane Smith and has grown to 500 employees.",
-        "importance": 0.9,
-        "metadata": {
-            "source": "company_history",
-            "category": "facts",
-            "tags": ["founding", "history", "growth"]
-        }
-    }
+        "prompt": "What is the capital of France?",
+        "provider": "ollama",
+        "model": "gemma3:4b",
+        "max_tokens": 128,
+        "temperature": 0.2,
+        "verbosity": 3,
+    },
 )
-
-memory_id = response.json()["memory_id"]
-
-# Retrieve from long-term memory with semantic search
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/long-term/semantic-search",
-    headers=headers,
-    params={
-        "query": "When was the company founded and by whom?",
-        "limit": 3
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
-
-# Transfer from short-term to long-term memory
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/transfer",
-    headers=headers,
-    json={
-        "source_type": "short_term",
-        "source_id": "short_term_memory_id",
-        "target_type": "long_term",
-        "importance_boost": 0.2
-    }
-)
+response.raise_for_status()
+data = response.json()
+print("Model response:")
+print(data["content"])
 ```
 
-## Cognitive Process Examples
+### 3.2 Streaming query (SSE) — `POST /api/llm/stream`
+
+The streaming endpoint returns an HTTP Server-Sent Events (SSE) stream. The example below uses the `sseclient-py` package, but any SSE-capable client library will work.
 
 ```python
-# Initiate a reasoning process
+import requests
+from sseclient import SSEClient  # pip install sseclient-py
+
+base_url = "http://127.0.0.1:8000/api"
+
+# Start the stream
 response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/cognitive/reason",
-    headers=headers,
+    f"{base_url}/llm/stream",
     json={
-        "question": "Should we expand our business to international markets?",
-        "context": "Our domestic market share is 45%, and we've seen 20% growth annually for 3 years.",
-        "options": {
-            "depth": "deep",  # shallow, medium, deep
-            "use_memory": True
-        }
-    }
+        "prompt": "Stream a short story about a curious robot.",
+        "provider": "ollama",
+        "model": "gemma3:4b",
+        "max_tokens": 128,
+    },
+    stream=True,
 )
 
-reasoning_id = response.json()["reasoning_id"]
+response.raise_for_status()
 
-# Get reasoning results
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/cognitive/reason/{reasoning_id}",
-    headers=headers
-)
-
-print(json.dumps(response.json(), indent=2))
-
-# Perform pattern recognition
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/cognitive/pattern",
-    headers=headers,
-    json={
-        "data": [
-            {"date": "2023-01-01", "sales": 1200},
-            {"date": "2023-01-02", "sales": 1250},
-            {"date": "2023-01-03", "sales": 1180},
-            # ... more data points
-        ],
-        "pattern_type": "trend",
-        "options": {
-            "sensitivity": 0.7
-        }
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
+client = SSEClient(response)
+for event in client.events():
+    if event.event == "token":
+        print(event.data, end="", flush=True)
+    elif event.event == "end":
+        break
 ```
 
-## Health Dynamics Examples
+## 4. Health, Metrics, and System Examples
 
-```python
-# Get current health status
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/health",
-    headers=headers
-)
+### 4.1 Basic health and readiness
 
-print(json.dumps(response.json(), indent=2))
-
-# Update energy level
-response = requests.patch(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/health",
-    headers=headers,
-    json={
-        "energy": 80  # Decrease energy to 80%
-    }
-)
-
-# Simulate rest to recover energy and reduce fatigue
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/health/rest",
-    headers=headers,
-    json={
-        "duration": 3600  # Rest for 1 hour (in seconds)
-    }
-)
-
-# Get health history
-response = requests.get(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/health/history",
-    headers=headers,
-    params={
-        "from": "2023-01-01T00:00:00Z",
-        "to": "2023-01-07T23:59:59Z",
-        "interval": "day"
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
+```bash
+curl "http://127.0.0.1:8000/api/health/live"
+curl "http://127.0.0.1:8000/api/health/ready"
 ```
 
-## LLM Integration Examples
+Many deployments also expose a detailed health endpoint (for example `/api/health/detailed`) that includes per-component health dynamics and recent events. See the health routes section in the endpoint reference for the exact paths available in your build.
 
-```python
-# Configure LLM integration
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/llm/configure",
-    headers=headers,
-    json={
-        "provider": "openai",
-        "model": "gpt-4",
-        "api_key": "your_openai_api_key",
-        "options": {
-            "temperature": 0.7,
-            "max_tokens": 1000
-        }
-    }
-)
+### 4.2 Querying metrics
 
-# Generate content with LLM through NCA
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/llm/generate",
-    headers=headers,
-    json={
-        "prompt": "Write a summary of the quarterly financial results.",
-        "context": "Revenue increased by 15%, but expenses grew by 20%.",
-        "options": {
-            "use_memory": True,
-            "format": "markdown"
-        }
-    }
-)
+Assuming metrics are enabled and at least one metric definition has been registered:
 
-print(json.dumps(response.json(), indent=2))
+```bash
+# List metric definitions
+curl "http://127.0.0.1:8000/api/metrics/definitions"
 
-# Analyze sentiment with LLM
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/llm/analyze",
-    headers=headers,
-    json={
-        "text": "I'm extremely disappointed with the customer service I received today.",
-        "analysis_type": "sentiment"
-    }
-)
-
-print(json.dumps(response.json(), indent=2))
+# Fetch timeseries data for a specific metric (for example, llm_requests_total)
+curl "http://127.0.0.1:8000/api/metrics/data/llm_requests_total"
 ```
 
-## Advanced Usage Patterns
+### 4.3 System information
 
-### Chaining Operations
-
-```python
-# Example of chaining operations: store memory, reason about it, then generate content
-
-# 1. Store information
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/short-term",
-    headers=headers,
-    json={
-        "content": "Sales increased by 15% in Q1, 12% in Q2, and 8% in Q3, but decreased by 3% in Q4.",
-        "importance": 0.8,
-        "metadata": {
-            "source": "financial_report",
-            "year": "2023"
-        }
-    }
-)
-
-# 2. Reason about the information
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/cognitive/reason",
-    headers=headers,
-    json={
-        "question": "What might be causing the sales slowdown throughout the year?",
-        "options": {
-            "use_memory": True,
-            "depth": "deep"
-        }
-    }
-)
-
-reasoning_result = response.json()["result"]
-
-# 3. Generate a report based on the reasoning
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/llm/generate",
-    headers=headers,
-    json={
-        "prompt": "Write a brief report on our sales trend and potential causes for the slowdown.",
-        "context": reasoning_result,
-        "options": {
-            "use_memory": True,
-            "format": "markdown"
-        }
-    }
-)
-
-final_report = response.json()["content"]
-print(final_report)
+```bash
+curl "http://127.0.0.1:8000/api/system/info"
 ```
 
-### Batch Processing
+Responses from the system routes include version, uptime, and configuration metadata useful for operators. Some system endpoints are intended for administrators only; protect them appropriately at the infrastructure layer.
 
-```python
-# Process multiple items in a batch
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/batch",
-    headers=headers,
-    json={
-        "items": [
-            {
-                "content": "Client meeting scheduled for Monday at 10 AM.",
-                "memory_type": "short_term",
-                "importance": 0.7
-            },
-            {
-                "content": "Project deadline is Friday, March 15th.",
-                "memory_type": "working",
-                "importance": 0.9
-            },
-            {
-                "content": "The new product launch generated $1.2M in first-month sales.",
-                "memory_type": "long_term",
-                "importance": 0.8
-            }
-        ]
-    }
-)
+## 5. Error Handling
 
-print(json.dumps(response.json(), indent=2))
+The API uses standard HTTP status codes and structured JSON error responses. A typical error might look like:
+
+```json
+{
+  "detail": "Memory not found"
+}
 ```
 
-## Error Handling
+When using `requests`, always call `raise_for_status()` to surface non‑2xx responses, and then inspect `response.json()` for additional details.
 
-```python
-# Example of handling API errors
-try:
-    response = requests.get(
-        f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/working/non_existent_id",
-        headers=headers
-    )
-    
-    if response.status_code != 200:
-        error_data = response.json()
-        print(f"Error: {error_data['error']}")
-        print(f"Message: {error_data['message']}")
-        print(f"Code: {error_data['code']}")
-        
-        # Handle specific error codes
-        if error_data['code'] == 'memory_not_found':
-            print("The requested memory item doesn't exist.")
-        elif error_data['code'] == 'memory_capacity_exceeded':
-            print("Memory capacity has been reached. Consider clearing some items.")
-        
-except requests.exceptions.RequestException as e:
-    print(f"Network error: {e}")
-```
+## 6. Conclusion
 
-## Batch Operations
+These examples demonstrate the core HTTP flows for the current Neuroca API surface: creating and querying memories, sending LLM requests (single‑shot and streaming), and inspecting health, metrics, and system status.
 
-```python
-# Batch retrieve multiple memory items
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/batch-retrieve",
-    headers=headers,
-    json={
-        "ids": [
-            {"type": "working", "id": "working_memory_id_1"},
-            {"type": "short_term", "id": "short_term_memory_id_1"},
-            {"type": "long_term", "id": "long_term_memory_id_1"}
-        ]
-    }
-)
+For more detailed information about specific endpoints, parameters, and response formats, refer to the HTTP API surface documentation and the generated OpenAPI schema:
 
-print(json.dumps(response.json(), indent=2))
+- `docs/pages/api/endpoints.md`
+- The `/docs` and `/openapi.json` endpoints exposed by the running FastAPI application.
 
-# Batch delete multiple memory items
-response = requests.post(
-    f"https://api.neuroca.dev/v1/instances/{instance_id}/memory/batch-delete",
-    headers=headers,
-    json={
-        "ids": [
-            {"type": "working", "id": "working_memory_id_2"},
-            {"type": "short_term", "id": "short_term_memory_id_2"}
-        ]
-    }
-)
-
-print(f"Deleted {response.json()['deleted_count']} memory items")
-```
-
-## Conclusion
-
-These examples demonstrate the core functionality of the NeuroCognitive Architecture API. For more detailed information about specific endpoints, parameters, and response formats, please refer to the [API Reference](./reference.md).
-
-For support, please contact us at justin@neuroca.dev or visit our [developer forum](https://forum.neuroca.dev).
+For support and early‑access discussions, use the same contact channels documented in the main project README.

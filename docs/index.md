@@ -6,85 +6,101 @@ Welcome to the official documentation for the NeuroCognitive Architecture (NCA) 
 
 NeuroCognitive Architecture (NCA) represents a fundamental shift away from common techniques like Retrieval-Augmented Generation (RAG), GraphRAG, PathRAG, and similar approaches. While those methods enhance LLMs by using external tools to **retrieve** information from vector databases or knowledge graphs at query time to augment a limited context window, **NCA enables the LLM itself to genuinely remember...** and not just remember, but remember persistently.
 
-Instead of relying on external lookups, NCA integrates a **dynamic, multi-tiered internal memory system** (Working, Episodic, Semantic) inspired by human cognition. Information isn't just fetched; it's processed, consolidated, prioritized, and even decays naturally over time based on relevance and interaction frequency, all managed by automatic background cognitive processes.
+Instead of relying on external lookups, NCA integrates a **dynamic, multi-tiered internal memory system** inspired by human cognition. Information is processed, consolidated, prioritized, and can decay over time based on relevance and interaction frequency, managed by background cognitive processes.
+
+In practice, the current implementation provides:
+
+* A **three-tier memory system** (Short-Term / Working, Medium-Term / Episodic, Long-Term / Semantic) backed by configurable storage backends.
+* Automatic promotion, consolidation, and decay logic inside the memory manager.
+* An LLM integration layer that can transparently invoke the memory system when configured (for example via [`llm.query_llm`](src/neuroca/api/routes/llm.py:175)).
 
 This allows an LLM equipped with NCA to:
 
-* **Organically Recall Context:** Access relevant past interactions, learned facts, user preferences, and evolving goals without explicit retrieval calls.
-* **Learn and Adapt:** Truly evolve its understanding over time based on its "experiences" stored within its memory system.
-* **Maintain Coherence:** Overcome the limitations of fixed context windows, enabling stable, long-term conversational understanding and task execution.
+* **Organically recall context:** Access relevant past interactions, learned facts, user preferences, and evolving goals without explicit retrieval calls from the *agent*.
+* **Learn and adapt:** Evolve its effective knowledge over time based on stored interactions and consolidation behaviour.
+* **Maintain coherence:** Push beyond fixed context windows by using memory tiers and summarization instead of raw history truncation alone.
 
-In essence, NCA focuses on building **intrinsic memory capabilities**, allowing the model to simply *remember*, rather than augmenting it with external data retrieval tools. This core memory function is supported by integrated cognitive control mechanisms and health dynamics, creating a more adaptive and contextually aware AI system.
+Some higher-level cognitive and health features described in the wider docs are **partially implemented or experimental**; where that is the case, the corresponding documents should be read as design intent rather than a strict API contract.
 
-## Key Features
+## Key Features (Current Implementation)
 
-- **Three-Tiered Memory System**
-  - Working Memory with capacity constraints and activation decay
-  - Episodic Memory with temporal context and emotional salience
-  - Semantic Memory as a knowledge graph with concept relationships
+* **Three-Tiered Memory System**
+  * Short-Term / Working memory with capacity / TTL-style constraints.
+  * Medium-Term / Episodic memory for recent interactions and session context.
+  * Long-Term / Semantic memory for consolidated knowledge and durable facts.
 
-- **Cognitive Control Mechanisms**
-  - Executive functions for goal-directed behavior
-  - Metacognition for self-monitoring and optimization
-  - Attention management with focus and distraction handling
+* **Tiered Memory Manager**
+  * Centralized `MemoryManager` orchestration over all tiers and backends.
+  * Support for in-memory and SQLite-style backends out-of-the-box.
+  * Search surfaces that combine semantic similarity with metadata filters.
 
-- **Health Dynamics**
-  - Energy management and resource allocation
-  - Simulated fatigue and recovery processes
-  - Homeostatic regulation with adaptive responses
+* **LLM Integration Layer**
+  * Provider-agnostic integration via an `LLMIntegrationManager`.
+  * HTTP LLM endpoint ([`/api/llm/query`](api/endpoints.md)) that can enable memory context per request.
+  * Optional streaming endpoint for token-by-token output.
 
-- **LLM Integration**
-  - Provider-agnostic interfaces (OpenAI, Anthropic, Ollama)
-  - Memory-enhanced prompting and context management
-  - Health-aware response processing
+* **Developer-Focused Demos**
+  * Working sandbox client ([`sandbox/working_nca_client.py`](sandbox/working_nca_client.py:1)) that exercises the tiered memory system directly.
+  * Benchmarks and tests under `tests/` and `benchmarks/` that validate memory behaviour and performance.
 
-- **Production-Ready Infrastructure**
-  - Kubernetes deployment with auto-scaling
-  - Comprehensive monitoring and alerting
-  - Backup and restore procedures
-  - Incident response runbooks
+## Planned and Experimental Components
+
+The following areas are present in the architecture and some code paths, but are still evolving and should be treated as **experimental**:
+
+* **Cognitive Control Mechanisms**
+  * Attention, planning, and metacognition components.
+  * Executive functions for goal-directed behaviour.
+
+* **Health Dynamics**
+  * Health models and dynamics managers.
+  * Health-aware modulation of responses.
+
+* **Production / SRE Layer**
+  * Kubernetes deployment patterns and auto-scaling strategies.
+  * Advanced monitoring and alerting integrations.
+  * Detailed incident runbooks and long-running soak-test procedures.
+
+Each experimental area is documented in more detail in the architecture and operations sections, with indication of what is implemented today versus planned.
 
 ## Quick Navigation
 
 ### User Documentation
 
-- [Getting Started](user/getting-started.md) - Setup and first steps
-- [Configuration](user/configuration.md) - Configuration options
-- [Examples](user/examples.md) - Example use cases
-- [Integration](user/integration.md) - Integrating with existing systems
+* [Integration](user/integration.md) — Integrating NCA with existing systems and autonomous agents.
 
 ### Technical Documentation
 
-- [Architecture Overview](architecture/components.md) - System components and interactions
-- [API Reference](api/endpoints.md) - API endpoints and schemas
-- [Memory Systems](architecture/decisions/adr-001-memory-tiers.md) - Memory implementation details
-- [Health System](architecture/decisions/adr-002-health-system.md) - Health dynamics implementation
+* [Architecture Overview](architecture/components.md) — System components and interactions.
+* [API Reference](api/endpoints.md) — LLM, memory, health, metrics, and system/admin endpoints.
+* [Memory Systems](architecture/decisions/adr-001-memory-tiers.md) — Memory tier architecture decisions.
+* [Health System](architecture/decisions/adr-002-health-system.md) — Health dynamics design and status.
 
 ### Developer Documentation
 
-- [Development Environment](development/environment.md) - Setting up the development environment
-- [Contributing Guidelines](development/contributing.md) - How to contribute
-- [Coding Standards](development/standards.md) - Code style and practices
-- [Workflow](development/workflow.md) - Development workflow
+* [Development Environment](development/environment.md) — Setting up the development environment.
+* [Contributing Guidelines](development/contributing.md) — How to contribute.
+* [Coding Standards](development/standards.md) — Code style and practices.
+* [Workflow](development/workflow.md) — Development workflow.
 
 ### Operations Documentation
 
-- [Deployment](operations/deployment.md) - Deployment procedures
-- [Monitoring](operations/monitoring.md) - Monitoring and observability
-- [Incident Response](operations/runbooks/incident-response.md) - Handling incidents
-- [Backup and Restore](operations/runbooks/backup-restore.md) - Data protection procedures
+* [Deployment](operations/deployment.md) — Deployment procedures and options.
+* [Monitoring](operations/monitoring.md) — Monitoring and observability.
+* [Incident Response](operations/runbooks/incident-response.md) — Handling incidents.
+* [Backup and Restore](operations/runbooks/backup-restore.md) — Data protection procedures.
 
 ## Project Status
 
-The NeuroCognitive Architecture has completed its implementation roadmap and is now considered production-ready. All major components have been implemented, tested, and optimized for performance:
+Neuroca / NCA is currently in an **active alpha** state:
 
-- ✅ Package structure and dependency resolution
-- ✅ Three-tiered memory system (Working, Episodic, Semantic)
-- ✅ Health dynamics system with homeostatic mechanisms
-- ✅ Cognitive control components for executive functions
-- ✅ LLM integration layer with provider adapters
-- ✅ Performance optimization with profiling and caching
-- ✅ Production deployment with Kubernetes
+* ✅ Core tiered memory system and manager.
+* ✅ Working HTTP LLM endpoint and integration manager.
+* ✅ Docker / Docker Compose paths for local and production-like runs.
+* ✅ Extensive unit, integration, and performance tests around memory tiers.
+* ⚠️ Cognitive control and health systems are present but evolving.
+* ⚠️ Some documentation and diagrams describe roadmap features not yet fully implemented.
+
+The public API surface (especially around cognitive/health components) may change as the architecture is refined. The memory and LLM integration paths documented under `api/` and `architecture/` are the most stable integration points.
 
 ## License
 

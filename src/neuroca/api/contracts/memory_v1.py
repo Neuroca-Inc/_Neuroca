@@ -158,11 +158,13 @@ class MemoryCreateRequestV1(BaseModel):
         *,
         user_id: str,
         session_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Convert the request to a dict accepted by the service layer."""
-
+ 
         payload = {
             "user_id": user_id,
+            "tenant_id": tenant_id,
             "content": self.content.to_service_payload(),
             "summary": self.summary,
             "importance": self.importance,
@@ -227,20 +229,22 @@ class MemoryTransferRequestV1(BaseModel):
 
 class MemoryListParamsV1(BaseModel):
     """Query parameters accepted by the list endpoint."""
-
+ 
     query: Optional[str] = Field(default=None)
     tier: Optional[str] = Field(default=None)
     tags: List[str] = Field(default_factory=list)
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
-
+    tenant_id: Optional[str] = Field(default=None)
+ 
     model_config = ConfigDict(extra="forbid")
-
-    def with_user(self, user_id: str) -> Dict[str, Any]:
+ 
+    def with_user(self, user_id: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """Return a dict suitable for instantiating MemorySearchParams."""
-
+ 
         return {
             "user_id": user_id,
+            "tenant_id": tenant_id or self.tenant_id,
             "query": self.query,
             "tier": self.tier,
             "tags": self.tags,

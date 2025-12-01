@@ -116,20 +116,18 @@ state = await monitor.assess_current_state()
 * [Embedding API](#embedding-api)
 * [Provider API](#provider-api)
 
-## REST API Endpoints
+## HTTP API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/memory/items` | GET | Retrieve memory items |
-| `/api/v1/memory/items` | POST | Store a new memory item |
-| `/api/v1/memory/items/{id}` | GET | Retrieve a specific memory item |
-| `/api/v1/memory/items/{id}` | PUT | Update a memory item |
-| `/api/v1/memory/items/{id}` | DELETE | Delete a memory item |
-| `/api/v1/memory/search` | POST | Search memory |
-| `/api/v1/health/status` | GET | Get system health status |
-| `/api/v1/health/components` | GET | List health monitored components |
-| `/api/v1/health/metrics` | GET | Get health metrics |
-| `/api/v1/system/info` | GET | Get system information |
+The HTTP API surface for design-partner deployments is documented in detail in
+`docs/pages/api/endpoints.md`. That document is the single source of truth for:
+
+- Paths and methods
+- Request and response schemas
+- Status codes and error semantics
+- Authentication expectations
+
+The table that previously appeared in this section described an earlier,
+hosted NCA SaaS API and is no longer accurate for the current Neuroca service.
 
 ## GraphQL API
 

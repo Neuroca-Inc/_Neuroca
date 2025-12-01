@@ -1,12 +1,19 @@
 # Project Changelog
 
-The NeuroCognitive Architecture publishes detailed release notes for every milestone. Refer to the [Release Notes](release-notes.md) for the canonical list of user-facing changes, migration guidance, and version compatibility details.
+The NeuroCognitive Architecture (NCA) is currently in an **active alpha** phase (see the project status section in the main documentation index). The public API surface, memory configuration options, and cognitive/health subsystems are still evolving, and breaking changes may occur between minor versions until a stable `1.0.0` contract is declared.
 
-For a high-level timeline:
+Formal, versioned release notes (including migration guidance and compatibility details) will be maintained in the published documentation site and in GitHub Releases once versioned milestones are cut.
 
-- **1.0.0** — General-availability milestone delivering async-first retrieval, the Qdrant vector backend, bidirectional relationship metadata, and refreshed operational tooling.
-- **1.0.0-rc1** — Release candidate focusing on the modularized memory manager, health monitoring refresh, and LangChain integration polish.
-- **0.9.x** — Iterative stabilization of the storage backends, audit trail improvements, and pre-release API hardening.
-- **0.8.x** and earlier — Initial public previews introducing the cognitive control loop, tiered memory architecture, and CLI tooling.
+## Where to find change history today
 
-Historical notes for prior branches are available in the repository history and accompanying GitHub releases.
+Until a stable release series is established, the most accurate view of how the system is changing is provided by:
+
+- The Git commit history of this repository.
+- The architecture and design documents under `docs/architecture/`.
+- The development and testing documentation under `docs/development/` and `docs/operations/`.
+
+These sources reflect the current implementation more reliably than a hand-maintained static list of historical versions.
+
+## Legacy and experimental branches
+
+Historical details for earlier experimental branches and prototypes remain available in the Git history and any associated GitHub releases. Those snapshots may not reflect the current APIs, recommended deployment patterns, or supported backends, and should be treated as archival rather than canonical guidance.

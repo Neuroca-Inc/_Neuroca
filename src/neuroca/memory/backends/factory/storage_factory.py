@@ -19,10 +19,20 @@ from neuroca.memory.backends.factory.operation_policy import (
 )
 from neuroca.memory.backends.in_memory_backend import InMemoryBackend
 from neuroca.memory.backends.sqlite_backend import SQLiteBackend
-from neuroca.memory.backends.sql_backend import SQLBackend
 from neuroca.memory.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
+
+# SQL backend is optional; import lazily to avoid requiring SQLAlchemy everywhere.
+try:
+    from neuroca.memory.backends.sql_backend import SQLBackend
+
+    SQL_AVAILABLE = True
+except ImportError:  # pragma: no cover - depends on optional SQL stack
+    SQL_AVAILABLE = False
+    logger.warning(
+        "SQL backend not available. Install SQL dependencies (e.g. sqlalchemy) for SQL support."
+    )
 
 # Import Redis conditionally as it requires external dependencies
 try:
@@ -87,9 +97,12 @@ class StorageBackendFactory:
     # Registry of backend implementations
     _backend_registry: Dict[BackendType, Type[BaseStorageBackend]] = {
         BackendType.MEMORY: InMemoryBackend,
-        BackendType.SQL: SQLBackend,
         BackendType.SQLITE: SQLiteBackend,
     }
+
+    # Register SQL backend only when its dependencies are available.
+    if "SQL_AVAILABLE" in globals() and SQL_AVAILABLE:
+        _backend_registry[BackendType.SQL] = SQLBackend
 
     # Add Redis backend only if it's available
     if REDIS_AVAILABLE:

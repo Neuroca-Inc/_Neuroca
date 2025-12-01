@@ -2,6 +2,11 @@
 
 This document defines the data schemas used throughout the NeuroCognitive Architecture (NCA) API. These schemas represent the structure of data objects exchanged between clients and the NCA system, ensuring consistent data validation and documentation.
 
+These schemas are **design-level reference models** rather than the canonical, implementation-accurate contracts. For the exact HTTP request and response payloads used by the running service, always refer to:
+
+- The generated OpenAPI document exposed by the FastAPI application (for example `/openapi.json` and `/docs` on a running instance).
+- The HTTP API surface documentation in [`endpoints.md`](docs/pages/api/endpoints.md:1), which is kept in sync with the actual route implementations.
+
 ## Table of Contents
 
 - [Common Schemas](#common-schemas)
