@@ -13,19 +13,31 @@ Defaults target a local Ollama daemon (http://127.0.0.1:11434) with model "gemma
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Deque, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 # Import the canonical manager/types from the integration layer
 from neuroca.integration.manager import LLMIntegrationManager
+from neuroca.core.exceptions import LLMQuotaExceededError
+from neuroca.core.models.user import User
+from neuroca.core.services.metrics import MetricsService
+from neuroca.api.dependencies import get_current_user
+from neuroca.api.routes.metrics import get_metrics_service
 
 # Lightweight in-process conversational memory (per session_id)
 from collections import deque
-from typing import Deque, Dict
 
 SESSIONS: Dict[str, Deque[str]] = {}
+
+# Soft LLM quota defaults for early design-partner deployments.
+LLM_DAILY_CALL_LIMIT = 1000
+LLM_SOFT_QUOTA_PERIOD = timedelta(hours=24)
+LLM_SOFT_QUOTA_NEAR_LIMIT_RATIO = 0.8
+LLM_SOFT_QUOTA_METRIC_NEAR = "usage.quota.llm.near_limit"
+LLM_SOFT_QUOTA_METRIC_EXCEEDED = "usage.quota.llm.exceeded"
 
 # Optional managers (created only when the user enables related features)
 try:
@@ -147,7 +159,10 @@ def _compose_prompt(
     verbosity_text = f"Verbosity preference: {vb}/10. Higher verbosity means more detail and thorough coverage."
 
     lines: list[str] = []
-    lines.append("System: You are Neuroca's local assistant operating over a local LLM. Follow all instructions faithfully.")
+    lines.append(
+        "System: You are Neuroca's local assistant operating over a local LLM. "
+        "Follow all instructions faithfully."
+    )
     if system_directive:
         lines.append(f"System Directive: {system_directive}")
     lines.append(f"Style: {style_text}")
@@ -165,6 +180,81 @@ def _compose_prompt(
     return "\n".join(lines)
 
 
+async def _enforce_llm_soft_quota(
+    *,
+    metrics_service: MetricsService,
+    current_user: User,
+    request: LLMQueryRequest,
+) -> None:
+    """Best-effort enforcement of per-tenant LLM soft quotas.
+
+    This helper consults the in-memory MetricsService for the last 24 hours of
+    LLM call activity for the (tenant, user, provider, model) tuple. When the
+    configured limit is exceeded it raises an HTTP 429 error; when a near-limit
+    threshold is crossed it records a separate quota metric but allows the
+    request to proceed.
+    """
+    if LLM_DAILY_CALL_LIMIT <= 0:
+        return
+
+    now = datetime.utcnow()
+    window_start = now - LLM_SOFT_QUOTA_PERIOD
+    tenant_id = getattr(current_user, "tenant_id", None)
+    user_id = getattr(current_user, "id", None)
+    labels = {
+        "tenant_id": str(tenant_id).strip() if tenant_id is not None else "unknown",
+        "user_id": str(user_id).strip() if user_id is not None else "unknown",
+        "provider": request.provider,
+        "model": request.model,
+    }
+    try:
+        data = await metrics_service.get_metric_data(
+            name="usage.llm.calls",
+            start_time=window_start,
+            end_time=now,
+            interval="1h",
+            aggregation=None,
+            limit=10_000,
+            labels=labels,
+        )
+        total_calls = sum(float(point["value"]) for point in data.points)
+        ratio = total_calls / float(LLM_DAILY_CALL_LIMIT)
+        if total_calls >= LLM_DAILY_CALL_LIMIT:
+            await metrics_service.record_metric(
+                name=LLM_SOFT_QUOTA_METRIC_EXCEEDED,
+                value=1,
+                labels=labels,
+            )
+            exc = LLMQuotaExceededError(
+                provider=request.provider,
+                quota_type="requests",
+                limit=LLM_DAILY_CALL_LIMIT,
+            )
+            logger.warning(
+                "LLM soft quota exceeded for tenant=%s user=%s: %s",
+                labels["tenant_id"],
+                labels["user_id"],
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=str(exc),
+            ) from exc
+        if ratio >= LLM_SOFT_QUOTA_NEAR_LIMIT_RATIO:
+            await metrics_service.record_metric(
+                name=LLM_SOFT_QUOTA_METRIC_NEAR,
+                value=1,
+                labels=labels,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug(
+            "LLM soft quota check failed; continuing without enforcement",
+            exc_info=True,
+        )
+
+
 # ---------- Routes ----------
 
 @router.post(
@@ -172,7 +262,11 @@ def _compose_prompt(
     summary="Query the LLM",
     response_model=LLMQueryResponse,
 )
-async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
+async def query_llm(
+    body: LLMQueryRequest,
+    current_user: User = Depends(get_current_user),
+    metrics_service: MetricsService = Depends(get_metrics_service),
+) -> LLMQueryResponse:
     """
     Execute a single prompt through the LLMIntegrationManager.
 
@@ -185,9 +279,14 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
         "max_tokens": 64,
         "temperature": 0.2
       }
-    """
+     """
+    await _enforce_llm_soft_quota(
+        metrics_service=metrics_service,
+        current_user=current_user,
+        request=body,
+    )
     cfg = _default_config(body.provider, body.model)
-
+ 
     # Conditionally construct optional managers so toggles actually take effect
     memory_manager = None
     health_manager = None
@@ -275,16 +374,38 @@ async def query_llm(body: LLMQueryRequest) -> LLMQueryResponse:
 
         # Shape response into a stable JSON envelope
         usage = None
+        prompt_tokens = None
+        completion_tokens = None
+        total_tokens = None
         try:
             if getattr(resp, "usage", None):
+                prompt_tokens = getattr(resp.usage, "prompt_tokens", None)
+                completion_tokens = getattr(resp.usage, "completion_tokens", None)
+                total_tokens = getattr(resp.usage, "total_tokens", None)
                 usage = Usage(
-                    prompt_tokens=getattr(resp.usage, "prompt_tokens", None),
-                    completion_tokens=getattr(resp.usage, "completion_tokens", None),
-                    total_tokens=getattr(resp.usage, "total_tokens", None),
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
                 )
         except Exception:
             # Non-fatal; usage is optional
-            pass
+            logger.debug("Failed to normalise LLM usage payload", exc_info=True)
+
+        # Best-effort per-tenant usage metering; never affects main response path.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            await metrics_service.record_llm_usage(
+                tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+                user_id=str(user_id).strip() if user_id is not None else None,
+                provider=getattr(resp, "provider", body.provider),
+                model=getattr(resp, "model", body.model),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
+        except Exception:
+            logger.debug("Failed to record LLM usage metrics", exc_info=True)
 
         return LLMQueryResponse(
             content=(resp.content or ""),

@@ -144,12 +144,30 @@ Until Task B3 wires these dependencies uniformly into each router, the safe defa
 - Health routes should be split between public liveness/readiness and authenticated, detailed diagnostics.
 - LLM routes must be gated to avoid abuse and unbounded resource consumption.
 
+## Tenant and Account Model (Task B2 Baseline)
+
+Task B2 introduces a minimal tenant/account concept used by downstream services without fully standardizing how identity providers encode tenants. The key invariants are:
+
+- The [`User`](src/neuroca/core/models/user.py:97) model now exposes an optional `tenant_id: str | None`.
+- [`authenticate_request()`](src/neuroca/api/middleware/authentication.py:336) is responsible for populating `User.tenant_id` based on your deployment's identity source (for example, a `tenant_id` or `org` claim in the JWT payload or an internal mapping from API-key service name to tenant).
+- Memory operations invoked via the v1 HTTP API propagate `tenant_id` into the memory service:
+  - New memories are tagged with the caller's `tenant_id` in their metadata when it is present.
+  - Listing and searching memories automatically filter by both `user_id` and `tenant_id` where a tenant is set.
+  - Update and delete operations enforce **cross-tenant isolation**: if both the stored record and the caller have non-null tenant IDs and they differ, the request fails with a domain-specific access error.
+- When either side lacks an explicit tenant (for example, legacy single-tenant deployments), access control falls back to user-based checks only. This preserves backwards compatibility while still providing strict isolation once tenants are in use.
+
+During the design-partner phase you are expected to:
+
+- Decide how tenant or account identifiers are represented in your IdP or API-key configuration.
+- Extend or configure [`authenticate_request()`](src/neuroca/api/middleware/authentication.py:336) so that `User.tenant_id` reflects that identifier.
+- Treat `tenant_id` as the unit of isolation for metering, quota enforcement, and billing in Tasks C1–C3.
+
 ## Future Extensions (Preview)
 
 The following items are out of scope for this document but inform the design:
 
-- Task B2 will introduce an explicit **tenant/account** abstraction and attach it to JWT and API keys.
+- Task B2 may be extended with a persistent tenant registry, self-service provisioning, and stronger validation of `tenant_id` values at the boundary.
 - Task B3 will harden role/permission checks across metrics and system routes and centralize admin vs. tenant access.
-- Task C1–C2 will use the authenticated identity (JWT subject or API-key service name) to attribute usage metrics and enforce soft quotas.
+- Tasks C1–C2 will use the authenticated identity (JWT subject or API-key service name) and `tenant_id` to attribute usage metrics and enforce soft quotas.
 
 These extensions will not change the basic header formats described here but may add required claims or labels.

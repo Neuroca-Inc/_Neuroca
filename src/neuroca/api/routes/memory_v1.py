@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import Any, List
 from uuid import UUID
 
@@ -24,6 +25,8 @@ from neuroca.api.contracts.memory_v1 import (
     MemoryTransferRequestV1,
     MemoryUpdateRequestV1,
 )
+from neuroca.core.services.metrics import MetricsService
+from neuroca.api.routes.metrics import get_metrics_service
 try:  # pragma: no cover - optional middleware may be unavailable in minimal envs
     from neuroca.api.middleware.authentication import authenticate_request
 except ModuleNotFoundError:  # pragma: no cover
@@ -37,6 +40,7 @@ from neuroca.core.exceptions import (
     MemoryNotFoundError,
     MemoryStorageError,
     MemoryTierFullError,
+    RateLimitExceededError,
 )
 from neuroca.memory.service import (
     MemoryResponse,
@@ -135,27 +139,138 @@ def _to_memory_record(memory: MemoryResponse) -> MemoryRecordV1:
     return record
 
 
+def _estimate_record_size_bytes(record: MemoryRecordV1) -> int:
+    """Approximate serialized size of a memory record for metering.
+
+    This is a best-effort approximation used only for usage gauges.
+    Failures return 0 and are treated as a no-op for storage metrics.
+    """
+    try:
+        size = 0
+        content = getattr(record, "content", None)
+        if content is not None:
+            text = getattr(content, "text", None)
+            if isinstance(text, str):
+                size += len(text.encode("utf-8"))
+            raw = getattr(content, "raw_content", None)
+            if raw is not None:
+                raw_str = raw if isinstance(raw, str) else str(raw)
+                size += len(raw_str.encode("utf-8"))
+        metadata = getattr(record, "metadata", None)
+        if metadata is not None:
+            payload = metadata.model_dump()
+            size += len(str(payload).encode("utf-8"))
+        return size
+    except Exception:
+        return 0
+
+
+MEMORY_DAILY_WRITE_LIMIT = 10_000
+MEMORY_SOFT_QUOTA_PERIOD = timedelta(hours=24)
+MEMORY_SOFT_QUOTA_NEAR_LIMIT_RATIO = 0.8
+MEMORY_SOFT_QUOTA_METRIC_NEAR = "usage.quota.memory.near_limit"
+MEMORY_SOFT_QUOTA_METRIC_EXCEEDED = "usage.quota.memory.exceeded"
+
+
+async def _enforce_memory_soft_quota(
+    *,
+    metrics_service: MetricsService,
+    current_user: User,
+) -> None:
+    """Best-effort enforcement of per-tenant memory write soft quotas.
+
+    This helper consults the in-memory MetricsService for the last 24 hours of
+    memory write activity for the current tenant. When the configured limit is
+    exceeded it raises an HTTP 429 error; when a near-limit threshold is
+    crossed it records a separate quota metric but allows the request to
+    proceed.
+    """
+    if MEMORY_DAILY_WRITE_LIMIT <= 0:
+        return
+
+    now = datetime.utcnow()
+    window_start = now - MEMORY_SOFT_QUOTA_PERIOD
+    tenant_id = getattr(current_user, "tenant_id", None)
+    labels = {
+        "tenant_id": str(tenant_id).strip() if tenant_id is not None else "unknown",
+    }
+
+    try:
+        total_writes = 0.0
+        for op_name in ("create", "update", "delete"):
+            metric_name = f"usage.memory.operations.{op_name}"
+            try:
+                data = await metrics_service.get_metric_data(
+                    name=metric_name,
+                    start_time=window_start,
+                    end_time=now,
+                    interval="1h",
+                    aggregation=None,
+                    limit=10_000,
+                    labels=labels,
+                )
+            except KeyError:
+                continue
+            total_writes += sum(float(point["value"]) for point in data.points)
+
+        ratio = total_writes / float(MEMORY_DAILY_WRITE_LIMIT)
+        if total_writes >= MEMORY_DAILY_WRITE_LIMIT:
+            await metrics_service.record_metric(
+                name=MEMORY_SOFT_QUOTA_METRIC_EXCEEDED,
+                value=1,
+                labels=labels,
+            )
+            exc = RateLimitExceededError(
+                limit=MEMORY_DAILY_WRITE_LIMIT,
+                window="24h",
+            )
+            logger.warning(
+                "Memory soft quota exceeded for tenant=%s: %s",
+                labels["tenant_id"],
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=str(exc),
+            ) from exc
+        if ratio >= MEMORY_SOFT_QUOTA_NEAR_LIMIT_RATIO:
+            await metrics_service.record_metric(
+                name=MEMORY_SOFT_QUOTA_METRIC_NEAR,
+                value=1,
+                labels=labels,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug(
+            "Memory soft quota check failed; continuing without enforcement",
+            exc_info=True,
+        )
+
+
 def _ensure_access(
     record: MemoryRecordV1, current_user: User, *, operation: str
 ) -> None:
     """Ensure the current user can operate on the supplied record."""
-
+ 
     expected_user = record.user_id
     if expected_user is None:
         return
-
+ 
     if getattr(current_user, "is_admin", False):
         return
-
+ 
     expected_identifier = str(expected_user).strip()
     if not expected_identifier:
         # If the record does not advertise an owner after validation we treat it as
         # unscoped and allow the operation to proceed.
         return
-
+ 
     raw_current_id = getattr(current_user, "id", None)
-    current_identifier = str(raw_current_id).strip() if raw_current_id is not None else ""
-
+    current_identifier = (
+        str(raw_current_id).strip() if raw_current_id is not None else ""
+    )
+ 
     if not current_identifier:
         raise MemoryAccessDeniedError(
             record.id,
@@ -163,7 +278,31 @@ def _ensure_access(
             operation,
             "Authenticated user is missing an identifier required for access validation.",
         )
-
+ 
+    record_tenant = getattr(record.metadata, "tenant_id", None)
+    current_tenant = getattr(current_user, "tenant_id", None)
+    normalized_record_tenant = (
+        str(record_tenant).strip() if record_tenant is not None else ""
+    )
+    normalized_current_tenant = (
+        str(current_tenant).strip() if current_tenant is not None else ""
+    )
+ 
+    if (
+        normalized_record_tenant
+        and normalized_current_tenant
+        and normalized_record_tenant != normalized_current_tenant
+    ):
+        raise MemoryAccessDeniedError(
+            record.id,
+            current_identifier,
+            operation,
+            (
+                "Tenant mismatch between record and authenticated principal; "
+                "cross-tenant access is not permitted."
+            ),
+        )
+ 
     if expected_identifier != current_identifier:
         raise MemoryAccessDeniedError(record.id, current_identifier, operation)
 
@@ -190,15 +329,35 @@ async def create_memory(
     payload: MemoryCreateRequestV1,
     current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MemoryRecordV1:
+    await _enforce_memory_soft_quota(
+        metrics_service=metrics_service,
+        current_user=current_user,
+    )
     logger.debug("User %s creating memory", getattr(current_user, "id", "<unknown>"))
     try:
         service_payload = payload.to_service_payload(
             user_id=str(getattr(current_user, "id", "")),
             session_id=getattr(current_user, "session_id", None),
+            tenant_id=getattr(current_user, "tenant_id", None),
         )
         created = await memory_service.create_memory(service_payload)
         record = _to_memory_record(created)
+        # Best-effort per-tenant metering for memory creation.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            size_bytes = _estimate_record_size_bytes(record)
+            await metrics_service.record_memory_operation(
+                tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+                user_id=str(user_id).strip() if user_id is not None else None,
+                operation="create",
+                tier=record.tier,
+                size_bytes=size_bytes or None,
+            )
+        except Exception:
+            logger.debug("Failed to record create_memory usage metrics", exc_info=True)
         return record
     except MemoryTierFullError as exc:
         logger.warning("Memory tier full: %s", exc)
@@ -229,6 +388,7 @@ async def get_memory(
     memory_id: UUID,
     current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MemoryRecordV1:
     logger.debug("User %s retrieving memory %s", getattr(current_user, "id", "<unknown>"), memory_id)
     try:
@@ -238,6 +398,19 @@ async def get_memory(
         )
         record = _to_memory_record(memory)
         _ensure_access(record, current_user, operation="read")
+        # Best-effort metering for single-record read.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            await metrics_service.record_memory_operation(
+                tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+                user_id=str(user_id).strip() if user_id is not None else None,
+                operation="read",
+                tier=record.tier,
+                size_bytes=None,
+            )
+        except Exception:
+            logger.debug("Failed to record get_memory usage metrics", exc_info=True)
         return record
     except MemoryNotFoundError as exc:
         logger.warning("Memory %s not found", memory_id)
@@ -277,7 +450,12 @@ async def list_memories(
         params.tags,
     )
     try:
-        search_params = MemorySearchParams(**params.with_user(str(getattr(current_user, "id", ""))))
+        search_params = MemorySearchParams(
+            **params.with_user(
+                str(getattr(current_user, "id", "")),
+                tenant_id=str(getattr(current_user, "tenant_id", "")).strip() or None,
+            )
+        )
         results = await memory_service.list_memories(
             search_params,
             user=current_user,
@@ -303,7 +481,12 @@ async def update_memory(
     payload: MemoryUpdateRequestV1,
     current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MemoryRecordV1:
+    await _enforce_memory_soft_quota(
+        metrics_service=metrics_service,
+        current_user=current_user,
+    )
     logger.debug("User %s updating memory %s", getattr(current_user, "id", "<unknown>"), memory_id)
     try:
         existing = await memory_service.get_memory(
@@ -321,7 +504,21 @@ async def update_memory(
             roles=getattr(current_user, "roles", []),
             allow_admin=getattr(current_user, "is_admin", False),
         )
-        return _to_memory_record(updated)
+        updated_record = _to_memory_record(updated)
+        # Best-effort metering for update operations.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            await metrics_service.record_memory_operation(
+                tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+                user_id=str(user_id).strip() if user_id is not None else None,
+                operation="update",
+                tier=updated_record.tier,
+                size_bytes=None,
+            )
+        except Exception:
+            logger.debug("Failed to record update_memory usage metrics", exc_info=True)
+        return updated_record
     except MemoryNotFoundError as exc:
         logger.warning("Memory %s not found for update", memory_id)
         raise HTTPException(
@@ -357,7 +554,12 @@ async def delete_memory(
     memory_id: UUID,
     current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> Response:
+    await _enforce_memory_soft_quota(
+        metrics_service=metrics_service,
+        current_user=current_user,
+    )
     logger.debug("User %s deleting memory %s", getattr(current_user, "id", "<unknown>"), memory_id)
     try:
         existing = await memory_service.get_memory(
@@ -366,6 +568,21 @@ async def delete_memory(
         )
         record = _to_memory_record(existing)
         _ensure_access(record, current_user, operation="delete")
+
+        # Best-effort metering for delete operations, including storage gauge.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            size_bytes = _estimate_record_size_bytes(record)
+            await metrics_service.record_memory_operation(
+                tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+                user_id=str(user_id).strip() if user_id is not None else None,
+                operation="delete",
+                tier=record.tier,
+                size_bytes=size_bytes or None,
+            )
+        except Exception:
+            logger.debug("Failed to record delete_memory usage metrics", exc_info=True)
 
         await memory_service.delete_memory(memory_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -398,7 +615,12 @@ async def transfer_memory(
     request: MemoryTransferRequestV1,
     current_user: User = Depends(authenticate_request),
     memory_service: MemoryService = Depends(get_memory_service),
+    metrics_service: MetricsService = Depends(get_metrics_service),
 ) -> MemoryRecordV1:
+    await _enforce_memory_soft_quota(
+        metrics_service=metrics_service,
+        current_user=current_user,
+    )
     logger.debug(
         "User %s transferring memory %s to %s",
         getattr(current_user, "id", "<unknown>"),
@@ -417,7 +639,33 @@ async def transfer_memory(
             UUID(str(request.memory_id)),
             request.target_tier,
         )
-        return _to_memory_record(transferred)
+        new_record = _to_memory_record(transferred)
+        # Best-effort metering: model transfer as delete from old tier + create in new tier.
+        try:
+            tenant_id = getattr(current_user, "tenant_id", None)
+            user_id = getattr(current_user, "id", None)
+            size_bytes = _estimate_record_size_bytes(record)
+            normalized_tenant = (
+                str(tenant_id).strip() if tenant_id is not None else None
+            )
+            normalized_user = str(user_id).strip() if user_id is not None else None
+            await metrics_service.record_memory_operation(
+                tenant_id=normalized_tenant,
+                user_id=normalized_user,
+                operation="delete",
+                tier=record.tier,
+                size_bytes=size_bytes or None,
+            )
+            await metrics_service.record_memory_operation(
+                tenant_id=normalized_tenant,
+                user_id=normalized_user,
+                operation="create",
+                tier=new_record.tier,
+                size_bytes=size_bytes or None,
+            )
+        except Exception:
+            logger.debug("Failed to record transfer_memory usage metrics", exc_info=True)
+        return new_record
     except MemoryNotFoundError as exc:
         logger.warning("Memory %s not found for transfer", request.memory_id)
         raise HTTPException(

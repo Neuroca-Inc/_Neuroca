@@ -659,18 +659,51 @@ def clear_context() -> None:
 def get_context() -> dict[str, Any]:
     """
     Get the current thread's logging context.
-    
+
     Returns:
         Dict[str, Any]: Current context dictionary
-    
+
     Example:
         context = get_context()
         print(f"Current correlation_id: {context.get('correlation_id')}")
     """
     if not hasattr(_context_store, "context"):
         _context_store.context = {}
-    
+
     return _context_store.context.copy()
+
+
+def set_request_logging_context(
+    *,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> None:
+    """
+    Update the logging context with request-scoped identifiers.
+
+    This helper is intended for HTTP middleware and authentication layers so
+    that all subsequent log messages emitted from the current thread
+    automatically include request, user, and tenant identifiers.
+
+    Args:
+        request_id: Opaque identifier for the current request or correlation.
+        user_id: Logical identifier of the authenticated user, when available.
+        tenant_id: Logical identifier of the tenant or account, when available.
+    """
+    updates: dict[str, Any] = {}
+
+    if request_id is not None:
+        updates["request_id"] = request_id
+
+    if user_id is not None:
+        updates["user_id"] = user_id
+
+    if tenant_id is not None:
+        updates["tenant_id"] = tenant_id
+
+    if updates:
+        add_context(**updates)
 
 
 # Initialize default logging configuration
@@ -685,7 +718,8 @@ __all__ = [
     "add_context",
     "clear_context",
     "get_context",
+    "set_request_logging_context",
     "LogLevel",
     "LogFormat",
-    "LogOutput"
+    "LogOutput",
 ]

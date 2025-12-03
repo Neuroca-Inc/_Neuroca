@@ -52,6 +52,7 @@ from pydantic import BaseModel, ValidationError
 from neuroca.config.settings import get_settings
 from neuroca.core.models.user import User
 from neuroca.db.repositories.user_repository import UserRepository
+from neuroca.monitoring.logging import set_request_logging_context
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -381,6 +382,12 @@ async def authenticate_request(
         
         # Log successful authentication
         logger.info(f"User authenticated: {user.id}")
+
+        tenant_id = getattr(user, "tenant_id", None)
+        set_request_logging_context(
+            user_id=str(user.id),
+            tenant_id=str(tenant_id).strip() if tenant_id is not None else None,
+        )
         
         return user
         

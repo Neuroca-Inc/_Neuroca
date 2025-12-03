@@ -27,7 +27,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from neuroca.config.settings import get_settings
-from neuroca.core.auth import Permission, User, get_current_user, require_permissions
 from neuroca.core.exceptions import MetricNotFoundException, MetricValidationError
 from neuroca.core.models.metrics import (
     MemoryMetrics,
@@ -38,7 +37,9 @@ from neuroca.core.models.metrics import (
     PerformanceMetrics,
     SystemHealthMetrics,
 )
+from neuroca.core.models.user import User
 from neuroca.core.services.metrics import MetricsService
+from neuroca.api.dependencies import get_current_admin_user, get_current_user
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -305,7 +306,7 @@ async def submit_metrics_batch(
 async def register_metric_definition(
     definition: MetricDefinitionRequest,
     metrics_service: MetricsService = Depends(get_metrics_service),
-    current_user: User = Depends(get_current_user)
+    admin_user: User = Depends(get_current_admin_user)
 ):
     """
     Register a new metric definition.
@@ -315,10 +316,11 @@ async def register_metric_definition(
     
     Requires admin permissions to create new metric definitions.
     """
-    logger.debug(f"Registering new metric definition: {definition.name}")
-    
-    # Check for admin permissions
-    require_permissions(current_user, [Permission.ADMIN])
+    logger.info(
+        "Registering new metric definition '%s' requested by admin user %s",
+        definition.name,
+        getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+    )
     
     try:
         new_definition = await metrics_service.register_metric_definition(
@@ -402,7 +404,7 @@ async def get_metric_definition(
 async def delete_metric_definition(
     name: str = Path(..., description="Name of the metric definition to delete"),
     metrics_service: MetricsService = Depends(get_metrics_service),
-    current_user: User = Depends(get_current_user)
+    admin_user: User = Depends(get_current_admin_user)
 ):
     """
     Delete a metric definition.
@@ -412,10 +414,11 @@ async def delete_metric_definition(
     
     Requires admin permissions.
     """
-    logger.debug(f"Deleting metric definition: {name}")
-    
-    # Check for admin permissions
-    require_permissions(current_user, [Permission.ADMIN])
+    logger.info(
+        "Deleting metric definition '%s' requested by admin user %s",
+        name,
+        getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+    )
     
     try:
         await metrics_service.delete_metric_definition(name)
