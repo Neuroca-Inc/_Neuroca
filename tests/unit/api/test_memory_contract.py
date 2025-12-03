@@ -10,21 +10,33 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from neuroca.api.contracts.memory_v1 import MemoryCreateRequestV1, MemoryRecordV1
+from neuroca.api.contracts.memory_v1 import (
+    MemoryCreateRequestV1,
+    MemoryMetadataPayloadV1,
+    MemoryRecordV1,
+)
 from neuroca.api.routes import memory_v1
 from neuroca.api.routes.memory import router as memory_router
-from neuroca.api.routes.memory_v1 import _to_memory_record
-from neuroca.core.exceptions import MemoryStorageError
+from neuroca.api.routes.memory_v1 import _ensure_access, _to_memory_record
+from neuroca.core.exceptions import MemoryAccessDeniedError, MemoryStorageError
 from neuroca.memory.service import MemoryResponse, MemorySearchParams
 
 
 class DummyUser:
     """Minimal user returned by the authentication dependency."""
-
-    def __init__(self, user_id: str = "user-1", *, is_admin: bool = False, session_id: str | None = None) -> None:
+ 
+    def __init__(
+        self,
+        user_id: str = "user-1",
+        *,
+        is_admin: bool = False,
+        session_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
         self.id = user_id
         self.is_admin = is_admin
         self.session_id = session_id
+        self.tenant_id = tenant_id
         self.roles: list[str] = []
 
 
@@ -186,7 +198,40 @@ def test_to_memory_record_coerces_uuid_user_identifier() -> None:
         content={"text": "hello"},
         metadata={"tier": "stm"},
     )
-
+ 
     record = _to_memory_record(response)
-
+ 
     assert record.user_id == str(owner)
+ 
+ 
+def test_ensure_access_allows_same_tenant_and_user() -> None:
+    record = MemoryRecordV1(
+        id="mem-tenant-1",
+        tier="stm",
+        user_id="user-1",
+        metadata=MemoryMetadataPayloadV1(
+            user_id="user-1",
+            tenant_id="tenant-a",
+        ),
+    )
+ 
+    user = DummyUser(user_id="user-1", tenant_id="tenant-a")
+ 
+    _ensure_access(record, user, operation="read")
+ 
+ 
+def test_ensure_access_rejects_cross_tenant_access() -> None:
+    record = MemoryRecordV1(
+        id="mem-tenant-2",
+        tier="stm",
+        user_id="user-1",
+        metadata=MemoryMetadataPayloadV1(
+            user_id="user-1",
+            tenant_id="tenant-a",
+        ),
+    )
+ 
+    user = DummyUser(user_id="user-1", tenant_id="tenant-b")
+ 
+    with pytest.raises(MemoryAccessDeniedError):
+        _ensure_access(record, user, operation="read")

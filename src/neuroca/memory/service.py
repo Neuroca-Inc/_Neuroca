@@ -208,11 +208,15 @@ class User(BaseModel):
     """Simple User model for API compatibility."""
     
     def __init__(self, **kwargs):
-        self.username = kwargs.get('username', '')
-        self.email = kwargs.get('email', '')
-        self.is_active = kwargs.get('is_active', True)
-        self.is_admin = kwargs.get('is_admin', False)
-        self.roles = kwargs.get('roles', [])
+        self.username = kwargs.get("username", "")
+        self.email = kwargs.get("email", "")
+        self.is_active = kwargs.get("is_active", True)
+        self.is_admin = kwargs.get("is_admin", False)
+        self.roles = kwargs.get("roles", [])
+        # Optional identity fields used by API routes and access checks
+        self.id = kwargs.get("id")
+        self.session_id = kwargs.get("session_id")
+        self.tenant_id = kwargs.get("tenant_id")
         super().__init__(**kwargs)
 
 # Response models for API compatibility
@@ -279,12 +283,13 @@ class MemorySearchParams(BaseModel):
     """Search parameters for memory queries."""
     
     def __init__(self, **kwargs):
-        self.user_id = kwargs.get('user_id')
-        self.query = kwargs.get('query', '')
-        self.tier = kwargs.get('tier')
-        self.tags = kwargs.get('tags', [])
-        self.limit = kwargs.get('limit', 50)
-        self.offset = kwargs.get('offset', 0)
+        self.user_id = kwargs.get("user_id")
+        self.tenant_id = kwargs.get("tenant_id")
+        self.query = kwargs.get("query", "")
+        self.tier = kwargs.get("tier")
+        self.tags = kwargs.get("tags", [])
+        self.limit = kwargs.get("limit", 50)
+        self.offset = kwargs.get("offset", 0)
         super().__init__(**kwargs)
 
 # Memory tier enum-like class
@@ -413,12 +418,17 @@ class MemoryService:
         await self._ensure_initialized()
         logger.debug(f"Service: Creating memory for user {memory_data.get('user_id')}")
         
+        tenant_id_value = memory_data.get("tenant_id")
+        base_metadata: dict[str, Any] = {"user_id": memory_data.get("user_id")}
+        if tenant_id_value is not None:
+            base_metadata["tenant_id"] = tenant_id_value
+        
         # Use the real MemoryManager interface
         memory_id = await self.memory_manager.add_memory(
             content=memory_data.get("content"),
             summary=memory_data.get("summary"),
             importance=memory_data.get("importance", 0.5),
-            metadata={'user_id': memory_data.get('user_id')},
+            metadata=base_metadata,
             tags=memory_data.get("tags", []),
             initial_tier=self._resolve_initial_tier(memory_data.get("tier")),
         )
@@ -428,7 +438,7 @@ class MemoryService:
             user_id=memory_data.get("user_id"),
             session_id=memory_data.get("session_id"),
         )
-
+ 
         stored_item = await self.memory_manager.retrieve_memory(
             memory_id,
             scope=scope,
@@ -494,26 +504,34 @@ class MemoryService:
         """
         await self._ensure_initialized()
         logger.debug(f"Service: Listing memories for user {search_params.user_id}")
-
+ 
         metadata_filters: dict[str, Any] | None = None
         resolved_user_id = self._coerce_optional_str(search_params.user_id)
         if resolved_user_id is not None:
             metadata_filters = {"metadata.user_id": resolved_user_id}
-
+ 
+        resolved_tenant_id = self._coerce_optional_str(
+            getattr(search_params, "tenant_id", None)
+        )
+        if resolved_tenant_id is not None:
+            if metadata_filters is None:
+                metadata_filters = {}
+            metadata_filters["metadata.tenant_id"] = resolved_tenant_id
+ 
         tiers: list[str] | None = None
         if search_params.tier:
             try:
                 tiers = [MemoryTier.from_string(search_params.tier).storage_key]
             except ValueError:
                 tiers = [str(search_params.tier)]
-
+ 
         scope = self._build_scope(
             user=user,
             user_id=resolved_user_id,
             roles=roles,
             allow_admin=allow_admin,
         )
-
+ 
         results = await self.memory_manager.search_memories(
             query=search_params.query,
             limit=search_params.limit,

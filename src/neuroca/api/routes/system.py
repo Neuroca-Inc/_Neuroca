@@ -32,11 +32,12 @@ import psutil
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from neuroca.api.auth.dependencies import get_admin_user
 from neuroca.api.models.responses import ErrorResponse, StandardResponse
 from neuroca.config.settings import get_settings
+from neuroca.core.models.user import User
 from neuroca.core.system.diagnostics import SystemDiagnostics
 from neuroca.core.system.health import ComponentStatus, HealthChecker
+from neuroca.api.dependencies import get_current_admin_user
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ class MaintenanceModeRequest(BaseModel):
     description="Returns basic information about the NCA system including version, environment, and uptime."
 )
 async def get_system_info(
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> SystemInfo:
     """
     Retrieve basic system information.
@@ -131,7 +132,10 @@ async def get_system_info(
         boot_datetime = datetime.datetime.fromtimestamp(boot_time)
         uptime = int(time.time() - boot_time)
         
-        logger.debug(f"System info requested by admin user {admin_user.get('username')}")
+        logger.debug(
+            "System info requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         return SystemInfo(
             version=settings.version,
@@ -158,7 +162,7 @@ async def get_system_info(
 )
 async def health_check(
     detailed: bool = Query(False, description="Include detailed component information"),
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> HealthCheckResponse:
     """
     Perform a comprehensive health check of the NCA system.
@@ -177,7 +181,10 @@ async def health_check(
         HTTPException: If there's an error performing the health check
     """
     try:
-        logger.debug(f"Health check requested by admin user {admin_user.get('username')}")
+        logger.debug(
+            "Health check requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         # Create health checker and run checks
         health_checker = HealthChecker()
@@ -212,7 +219,7 @@ async def health_check(
 )
 async def get_configuration(
     filter: Optional[str] = Query(None, description="Filter configuration by key prefix"),
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> list[ConfigurationItem]:
     """
     Retrieve the current system configuration.
@@ -231,7 +238,10 @@ async def get_configuration(
         HTTPException: If there's an error retrieving configuration
     """
     try:
-        logger.debug(f"Configuration requested by admin user {admin_user.get('username')}")
+        logger.debug(
+            "Configuration requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         settings = get_settings()
         
         # Convert settings to configuration items
@@ -272,7 +282,7 @@ async def get_configuration(
 )
 async def update_configuration(
     update_request: ConfigurationUpdateRequest,
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> StandardResponse:
     """
     Update a system configuration setting.
@@ -291,7 +301,10 @@ async def update_configuration(
         HTTPException: If the configuration update fails
     """
     try:
-        logger.info(f"Configuration update requested by admin user {admin_user.get('username')}")
+        logger.info(
+            "Configuration update requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         settings = get_settings()
         
         # Check if setting exists
@@ -338,7 +351,7 @@ async def update_configuration(
     description="Returns current system resource utilization metrics."
 )
 async def get_resource_utilization(
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> ResourceUtilization:
     """
     Retrieve current system resource utilization.
@@ -356,7 +369,10 @@ async def get_resource_utilization(
         HTTPException: If there's an error retrieving resource metrics
     """
     try:
-        logger.debug(f"Resource utilization requested by admin user {admin_user.get('username')}")
+        logger.debug(
+            "Resource utilization requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         # Get CPU usage
         cpu_percent = psutil.cpu_percent(interval=0.5)
@@ -404,7 +420,7 @@ async def get_resource_utilization(
 async def set_maintenance_mode(
     request: MaintenanceModeRequest,
     background_tasks: BackgroundTasks,
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> StandardResponse:
     """
     Enable or disable system maintenance mode.
@@ -425,7 +441,11 @@ async def set_maintenance_mode(
     """
     try:
         action = "enabled" if request.enabled else "disabled"
-        logger.info(f"Maintenance mode {action} requested by admin user {admin_user.get('username')}")
+        logger.info(
+            "Maintenance mode %s requested by admin user %s",
+            action,
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         settings = get_settings()
         
@@ -467,7 +487,7 @@ async def set_maintenance_mode(
 )
 async def restart_system(
     background_tasks: BackgroundTasks,
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> StandardResponse:
     """
     Initiate a controlled system restart.
@@ -486,7 +506,10 @@ async def restart_system(
         HTTPException: If initiating the restart fails
     """
     try:
-        logger.warning(f"System restart requested by admin user {admin_user.get('username')}")
+        logger.warning(
+            "System restart requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         # Add restart task to background tasks
         background_tasks.add_task(
@@ -514,7 +537,7 @@ async def restart_system(
 )
 async def run_diagnostics(
     components: Optional[str] = Query(None, description="Comma-separated list of components to diagnose"),
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> dict[str, Any]:
     """
     Run comprehensive system diagnostics.
@@ -533,7 +556,10 @@ async def run_diagnostics(
         HTTPException: If diagnostics fail
     """
     try:
-        logger.info(f"System diagnostics requested by admin user {admin_user.get('username')}")
+        logger.info(
+            "System diagnostics requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         # Parse components if provided
         component_list = None
@@ -564,7 +590,7 @@ async def get_system_logs(
     level: Optional[str] = Query(None, description="Log level filter (DEBUG, INFO, WARNING, ERROR, CRITICAL)"),
     component: Optional[str] = Query(None, description="Component filter"),
     limit: int = Query(100, description="Maximum number of log entries to return"),
-    admin_user: dict = Depends(get_admin_user)
+    admin_user: User = Depends(get_current_admin_user)
 ) -> list[dict[str, Any]]:
     """
     Retrieve recent system logs.
@@ -585,7 +611,10 @@ async def get_system_logs(
         HTTPException: If retrieving logs fails
     """
     try:
-        logger.debug(f"System logs requested by admin user {admin_user.get('username')}")
+        logger.debug(
+            "System logs requested by admin user %s",
+            getattr(admin_user, "username", getattr(admin_user, "id", "unknown")),
+        )
         
         # Validate log level if provided
         if level and level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
