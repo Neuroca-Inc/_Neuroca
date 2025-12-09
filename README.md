@@ -3,7 +3,7 @@
   <img src="src/neuroca/assets/images/Neuroca-logo.png" alt="Neuroca Logo" width="400"/>
 </p>
 
-<h3 align="center"><i>Persistent Memory System for LLMs (NCA)</i></h3>
+<h3 align="center"><i>Persistent Memory SDK for LLMs (NCA)</i></h3>
 <p align="center"><span style="color:green"><strong>NEW:</strong> Neuroca benchmarks results <a href="https://github.com/justinlietz93/_Neuroca/tree/main/benchmarks/memory_systems_comparison">here</a></span></p>
 
 <p align="center">
